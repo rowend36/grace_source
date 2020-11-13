@@ -57,16 +57,11 @@
         modalEl.modal('open');
         return container;
     };
-    var getText = function(text,func,cancel){
+    var getText = function(text,func){
         var answer = prompt(text);
-        if(answer){
-            setTimeout(function() {
-                func(answer);
-            });
-        }
-        else{
-            setTimeout(cancel);
-        }
+        setTimeout(function(){
+            func(answer);
+        });
     };
     global.Notify = {
         notify:notify,

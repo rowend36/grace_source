@@ -1,10 +1,15 @@
 (function(global) {
     "use strict";
     var Utils = global.Utils;
-    global.createCacheFs = function(fs) {
+    var normalize = global.FileUtils.normalize;
+    var dirname = global.FileUtils.dirname;
+    var filename = global.FileUtils.filename;
+    global.createCacheFs = function(fs,cacheSize) {
+        if(fs.cachedFs)
+            return fs.cachedFs;
         var cached = {};
         var enoents = {};
-        var max_size = 1000000;
+        var max_size = cacheSize || 1000000;
         var size = 0;
         var slimCache = function() {
             var a = Object.keys(cached);
@@ -32,7 +37,7 @@
             if (size > max_size) {
                 slimCache();
             }
-            if(typeof res=='string'){
+            if (typeof res == 'string') {
                 res = toBuffer(res).buffer;
             }
             if (cached[path]) {
@@ -114,6 +119,7 @@
                 cb = opts;
                 opts = null;
             }
+            path = normalize(path);
             var enc = !opts || typeof opts == 'string' ? opts : opts.encoding;
             var item = cached[path];
             if (item && (!enc || enc == "utf8")) {
@@ -150,12 +156,20 @@
                 cb = opts;
                 opts = null;
             }
+            path = normalize(path);
             var enc = !opts || typeof opts == 'string' ? opts : opts.encoding;
             var item = cached[path];
             if (item) {
-                if (res && item.canSave && (!enc || enc == 'utf8')) {
+                if (item.canSave && (!enc || enc == 'utf8')) {
                     item.willSave = true;
-                    push(path, res, true);
+                    if(res){
+                        push(path, res, true);
+                    }
+                    else if(enoents[path])delete enoents[path];
+                    var dir = cached[dirname(path)];
+                    if (dir && dir.fileList.indexOf(filename(path)) < 0) {
+                        dir.fileList.push(filename(path));
+                    }
                     save();
                     setTimeout(cb, 0);
                     return;
@@ -179,22 +193,96 @@
                         else pop(path);
                     }
                 }
+                if (!e) {
+                    var dir = cached[dirname(path)];
+                    if (dir && dir.fileList.indexOf(filename(path)) < 0) {
+                        dir.fileList.push(filename(path));
+                    }
+                }
                 cb && cb(e);
             });
-        }
+        };
+        cacheFs.readdir = cacheFs.getFiles = function(path, opts, cb) {
+            if (typeof opts == "function") {
+                cb = opts;
+                opts = null;
+            }
+            path = normalize(path);
+            path = path.replace(/\/$/, '');
+            var item = cached[path];
+            if (item) {
+                item.count++;
+                if (item.fileList) {
+                    return setTimeout(function() {
+                        cb(null, item.fileList);
+                    });
+                }
+                //unlikely
+                return setTimeout(function() {
+                    cb({
+                        code: 'ENOTDIR',
+                        message: 'ENOTDIR'
+                    });
+                });
+            }
+            if (enoents[path]) {
+                return setTimeout(function() {
+                    cb({
+                        code: 'ENOENT',
+                        message: 'ENOENT'
+                    });
+                });
+            }
+            var dir = cached[dirname(path)];
+            if (dir) {
+                dir.count--;
+                var t = dir.fileList;
+                var name = filename(path);
+                if (t.indexOf(name + "/") < 0) {
+                    if (t.indexOf(name) > -1) {
+                        return cb({
+                            code: 'ENOTDIR',
+                            message: 'ENOTDIR'
+                        });
+                    }
+                    //unlikely
+                    console.error(path + ' not found in', t);
+                    return setTimeout(function() {
+                        cb({
+                            code: 'ENOENT',
+                            message: 'ENOENT'
+                        });
+                    });
+                }
+            }
+            fs.getFiles(path, function(e, list) {
+                if (e && e.code == 'ENOENT') {
+                    enoents[path] = true;
+                }
+                else if (list) {
+                    cached[path] = {
+                        fileList: list,
+                        count: 100 + list.length,
+                        size: list.length
+                    };
+                }
+                cb(e, list);
+            });
+
+        };
         cacheFs.stat = function(path, opts, cb) {
             if (typeof opts == "function") {
                 cb = opts;
                 opts = null;
             }
 
-            var isLstat = (opts == true || (opts && opts.isLstat == true))
+            var isLstat = (opts === true || (opts && opts.isLstat));
 
             if (cached[path]) {
                 var stat = getStat(cached[path], isLstat);
                 if (stat) {
                     setTimeout(function() {
-                        cb(null, stat)
+                        cb(null, stat);
                     });
                     return;
                 }

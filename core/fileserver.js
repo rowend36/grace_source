@@ -99,6 +99,7 @@
                 fs = new StubFileServer("./libs/js/lightning-fs.js", global.getBrowserFileServer);
             }
             fs.id = "inApp";
+            fs.cachedFs = fs;
         }
         return fs;
     };
@@ -486,7 +487,7 @@
                     root = conf.root;
                 }
             }
-            return new RESTFileServer(address, root);
+            return (window.rfs = new RESTFileServer(address, root));
         }, [{
                 name: "address",
                 caption: "Address",

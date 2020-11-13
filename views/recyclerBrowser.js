@@ -179,8 +179,8 @@
     FileItemHolder.prototype.compute = function() {
         return (this.hidden ? 0 : this.height) + (this.widget ? this.widget.height() : 0);
     };
-    Object.defineProperty(FileItemHolder.prototype,"0",{
-        get: function(){
+    Object.defineProperty(FileItemHolder.prototype, "0", {
+        get: function() {
             this.find("");
             return this.bound[0];
         }
@@ -284,7 +284,11 @@
             return this.attrs[text];
         }
         else {
-            this.view && this.view.attr(text, value);
+            if (this.view) {
+                this.view.attr(text, value);
+            }
+            else if (this.bound)
+                this.bound.attr(text, value);
             if (text == "class") {
                 this.classes.length = 0;
             }
@@ -295,7 +299,11 @@
         return this.widget;
     }
     FileItemHolder.prototype.addClass = function(text) {
-        this.view && this.view.addClass(text);
+        if (this.view) {
+            this.view.addClass(text);
+        }
+        else if (this.bound)
+            this.bound.addClass(text);
         this.classes.indexOf(text) < 0 && this.classes.push(text);
         if (text == "destroyed") {
             this.hide();
@@ -306,7 +314,12 @@
     }
     FileItemHolder.prototype.null = {};
     FileItemHolder.prototype.removeClass = function(text) {
-        this.view && this.view.removeClass(text);
+        if (this.view) {
+            this.view.removeClass(text);
+        }
+        else if (this.bound)
+            this.bound.removeClass(text);
+        
         var index = this.classes.indexOf(text);
         index > -1 && this.classes.splice(index, 1);
         if (text == 'destroyed') {

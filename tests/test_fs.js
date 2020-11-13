@@ -41,7 +41,7 @@ var compare_exist = function(e, e2, type) {
 }
 var compare_result = function(e, r, e2, r2, compare) {
     compare_exist(e, e2, 'Error');
-    compare_exist(r, r2, 'Error');
+    compare_exist(r, r2, 'Result');
     if (e) {
         compare_error(e, e2);
         console.log(e);
@@ -175,8 +175,9 @@ var test_equal_fs = function(fs1, fs2, tests) {
                 });
             },
             compare: function(r,r2){
-                compare_array(r,r2);
+                console.log('integrity 1');
                 compare_array(testData[0],r);
+                console.log('integrity 2');
                 compare_array(testData[0],r2);
             }
         }

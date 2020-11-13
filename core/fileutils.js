@@ -97,6 +97,34 @@
         rootDir: appConfig.projectRoot,
         fileServer: null
     };
+
+    var StatProps = {
+        isDirectory: function() {
+            return this.type == "dir";
+        },
+        isSymbolicLink: function() {
+            return this.type == "symlink";
+        },
+        isFile: function() {
+            return this.type == "file";
+        },
+        dev: 2114,
+        uid: 0,
+        gid: 0,
+        rdev: 0,
+        blksize: 4096,
+        birthtime: new Date(0)
+    };
+    var bits = {
+        //socket: 140000,
+        symlink: 120000,
+        file: 100000,
+        //block: 60000,
+        dir: 40000
+        //character: 20000,
+        //fifo: 10000
+    };
+
     var serverFactories = [];
     var needsRecreate;
     var FileUtils = {
@@ -118,29 +146,17 @@
             } while (newpath != path);
             return path;
         },
+        dirname: function(path){
+            if(!path || path=="/")return null;
+            path = FileUtils.cleanFileList(path);
+            return path.split('/').slice(0,-1).join('/')||'/';
+        },
         join: function(base, path) {
             return base.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
         },
         createStats: function(stat) {
-            var StatProps = {
-                isDirectory: function() {
-                    return this.type == "dir";
-                },
-                isSymbolicLink: function() {
-                    return this.type == "symlink";
-                },
-                isFile: function() {
-                    return this.type == "file";
-                },
-                dev: 2114,
-                mode: 33188,
-                uid: 0,
-                gid: 0,
-                rdev: 0,
-                blksize: 4096,
-                birthtime: new Date(0)
-            };
             return Object.assign(Object.create(StatProps), stat, {
+                mode: parseInt(bits[stat.type] + 644, 8),
                 atimeMs: stat.atimeMs || stat.mtimeMs,
                 ctimeMs: stat.ctimeMs || stat.mtimeMs,
                 mtime: new Date(stat.mtimeMs),
@@ -616,17 +632,17 @@
         },
         extnames: function(name) {
             var exts = [];
-            var match=0;
-            while ((match = name.indexOf(".",match))>-1) {
-                exts.push(name.substring(match+1));
+            var match = 0;
+            while ((match = name.indexOf(".", match)) > -1) {
+                exts.push(name.substring(match + 1));
             }
             return exts;
         },
         isBinaryFile: function(name) {
             //return new RegExp("\\\.(" + (binaryFiles.join("|")) + ")$").test(name);
-            var match=0;
-            while ((match = name.indexOf(".",match))>-1) {
-                if(binaryFiles.indexOf((name=name.substring(match+1)))>-1){
+            var match = 0;
+            while ((match = name.indexOf(".", match)) > -1) {
+                if (binaryFiles.indexOf((name = name.substring(match + 1))) > -1) {
                     return true;
                 }
             }

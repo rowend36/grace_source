@@ -9,9 +9,8 @@
     var Notify = global.Notify;
     var AutoCloseable = global.AutoCloseable;
     var configEvents = global.configEvents;
-    var pleaseCache = global.createCacheFs;
     var appConfig = global.registerAll({
-        "gitDir": ".git",
+        "gitdir": ".grace-git",
         "gitUsername": "",
         "gitName": "",
         "gitEmail": "",
@@ -22,7 +21,49 @@
     global.registerValues({
         "gitCorsProxy": "Possible value: https://cors.isomorphic-git.org/ \nSee isomorphic-git.com/issues",
         "gitName": "The name that will be used in commits",
+        "gitdir": "The name of the git dir. Grace git support(branching,pulling) is still experimental.\n Using '.git' might corrupt your data."
     });
+    var pleaseCache = global.createCacheFs;
+    var clean = FileUtils.cleanFileList;
+    var relative = FileUtils.relative;
+    var normalize = FileUtils.normalize;
+    var isDirectory = FileUtils.isDirectory;
+    var join = FileUtils.join;
+    var dirname = FileUtils.dirname;
+    var cache = {},
+        fileCache;
+
+    function getCache() {
+        clearCache();
+        return cache;
+    }
+    var clearCache = Utils.debounce(function() {
+        cache = {};
+        fileCache = null;
+    }, 10000);
+
+    function findRoot(rootDir, fs) {
+        return new Promise(function(resolve, reject) {
+            var dir = appConfig.gitdir;
+            var check = function(root) {
+                fs.readdir(join(root, dir), function(e) {
+                    if (!e) {
+                        resolve(root);
+                    }
+                    else {
+                        if (e.code == 'ENOENT') {
+                            if (root != '/') {
+                                return check(dirname(root));
+                            }
+                            return reject(new Error('Not found'));
+                        }
+                        else return reject(e);
+                    }
+                });
+            };
+            check(rootDir);
+        });
+    }
 
     function getStatus(item) {
         var status = {
@@ -52,16 +93,12 @@
         password: ""
     };
 
-    var clean = FileUtils.cleanFileList;
-    var relative = FileUtils.relative;
-    var normalize = FileUtils.normalize;
-    var isDirectory = FileUtils.isDirectory;
 
     function initRepo(ev, root, fs) {
         git.init({
             fs: fs,
             dir: root,
-            gitDir: appConfig.gitDir
+            gitdir: join(root, appConfig.gitdir)
         }).then(function(a) {
             Notify.info("New repository created");
             ev.browser.reload(true);
@@ -70,12 +107,42 @@
         });
     }
 
+    function doRevert(ev, root, fs) {
+        Notify.prompt("This will revert all changes to working directory.\nTo confirm operation, type 'REVERT'", function(ans) {
+            if (ans == 'REVERT') {
+                git.revert({
+                    fs: fs,
+                    dir: root,
+                    gitdir: join(root, appConfig.gitdir),
+                    author: {
+                        name: appConfig.gitName,
+                        email: appConfig.gitEmail,
+                    },
+                    message: ans
+                }).then(function() {
+                    Notify.info("Commit Successful");
+                }, function(e) {
+                    if ((e + "").indexOf("No name was provided") > -1) {
+                        Notify.prompt("Enter Author name", function(name) {
+                            if (name) {
+                                configure("gitName", name, "git");
+                                doCommit(ev, root, fs, message);
+                            }
+                        });
+                    }
+                    else Notify.error(e);
+                });
+            }
+        });
+    }
+
     function doCommit(ev, root, fs) {
-        Notify.prompt("Enter Commit Message", function(ans) {
+        var commit = function(ans) {
+            if (!ans) return;
             git.commit({
                 fs: fs,
                 dir: root,
-                gitDir: appConfig.gitDir,
+                gitdir: join(root, appConfig.gitdir),
                 author: {
                     name: appConfig.gitName,
                     email: appConfig.gitEmail,
@@ -86,13 +153,17 @@
             }, function(e) {
                 if ((e + "").indexOf("No name was provided") > -1) {
                     Notify.prompt("Enter Author name", function(name) {
-                        configure("gitName", name, "git");
-                        doCommit(ev, root, fs);
+                        if (name) {
+                            configure("gitName", name, "git");
+                            commit(ans);
+                        }
                     });
                 }
                 else Notify.error(e);
             });
-        });
+        };
+        Notify.prompt("Enter Commit Message", commit);
+
     }
 
     function cloneRepo(ev, root, fs) {
@@ -101,7 +172,7 @@
                 var p = git.clone({
                     fs: fs,
                     http: http,
-                    gitDir: appConfig.gitDir,
+                    gitdir: join(root, appConfig.gitdir),
                     dir: root,
                     onAuth: function() {
                         return new Promise(function(resolve) {
@@ -122,7 +193,7 @@
         });
     }
 
-
+    //File Ops
     function update(view) {
         return function(status) {
             var name = clean(view.attr("filename"));
@@ -147,7 +218,9 @@
     function stageFile(ev, root, fs) {
         var r = [ev.filepath];
         var stub = ev.browser;
+        var cache = getCache();
         if (stub.marked) {
+            fs = pleaseCache(fs);
             r = stub.marked.map(function(t) {
                 return ev.rootDir + t;
             });
@@ -157,11 +230,15 @@
                 fs: fs,
                 dir: root,
                 filepath: clean(relative(root, p)),
-                gitDir: appConfig.gitDir,
+                gitdir: join(root, appConfig.gitdir),
+                cache: cache
             };
+
             var end = function() {
-                var view = ev.browser.getElement(ev.browser.filename(p));
-                git.status(a).then(update(view));
+                if (stub.rootDir == ev.rootDir) {
+                    var view = ev.browser.getElement(ev.browser.filename(p));
+                    git.status(a).then(update(view));
+                }
             };
             if (ev.browser.getElement(ev.browser.filename(p)).attr('deleted')) {
                 git.remove(a).then(end);
@@ -173,7 +250,9 @@
     function unstageFile(ev, root, fs) {
         var r = [ev.filepath];
         var stub = ev.browser;
+        var cache = getCache();
         if (stub.marked) {
+            fs = pleaseCache(fs);
             r = stub.marked.map(function(t) {
                 return ev.rootDir + t;
             });
@@ -182,14 +261,17 @@
             var a = {
                 fs: fs,
                 dir: root,
+                cache: cache,
                 filepath: clean(relative(root, p)),
-                gitDir: appConfig.gitDir,
+                gitdir: join(root, appConfig.gitdir)
             };
             var s = git.status(a).then(
                 function() {
                     var end = function() {
-                        var view = ev.browser.getElement(ev.browser.filename(p));
-                        git.status(a).then(update(view));
+                        if (stub.rootDir == ev.rootDir) {
+                            var view = ev.browser.getElement(ev.browser.filename(p));
+                            git.status(a).then(update(view));
+                        }
                     };
                     if (s == "added" || s == "*added") {
                         git.remove(a).then(end);
@@ -207,18 +289,21 @@
         var reload = Utils.delay(function() {
             ev.browser.reload();
         }, 200)
+        var cache = getCache();
         if (stub.marked) {
+            fs = pleaseCache(fs);
             r = stub.marked.map(function(t) {
                 return ev.rootDir + t;
             });
         }
         Notify.ask('Delete ' + r.join("\n") + ' permanently and stage?', function() {
-            r.forEach(function(p) {
+            Utils.asyncforEach(r, function(p) {
                 var a = {
                     fs: fs,
                     dir: root,
+                    cache: cache,
                     filepath: clean(relative(root, p)),
-                    gitDir: appConfig.gitDir,
+                    gitdir: join(root, appConfig.gitdir),
                 };
                 git.remove(a).then(function() {
                     Notify.info("Delete staged");
@@ -227,34 +312,91 @@
                     Notify.info("Deleted " + p);
                     reload();
                 });
-            });
+            }, null, 5);
         });
+    }
+
+    function showStatusAll(ev, root, fs, next) {
+        var stub = ev.browser;
+        var cache = getCache();
+        var fs = pleaseCache(fs);
+        var r = stub.hier.slice(stub.pageStart, stub.pageEnd).map(function(t) {
+            return stub.rootDir + t;
+        });
+        Utils.asyncForEach(r.filter(function(e){
+            return !FileUtils.isDirectory(e);
+        }), function(p, i, next, cancel) {
+            var a = {
+                fs: fs,
+                dir: root,
+                filepath: clean(relative(root, p)),
+                gitdir: join(root, appConfig.gitdir),
+                cache: cache
+            };
+            var end = function(status) {
+                if (stub.rootDir == ev.rootDir) {
+                    var view = ev.browser.getElement(ev.browser.filename(p));
+                    update(view)(status);
+                    next();
+                }
+                else cancel(true);
+            };
+
+            git.status(a).then(end);
+        }, nested, 15, false, true);
+
+        function nested(e) {
+            if (e && e !== true)return failure(e);
+            var stubs = stub.childStubs;
+            if (!stubs){
+                return (next||success)()
+            }
+            var folders = Object.keys(stubs)
+            Utils.asyncForEach(folders,function(a,i,next){
+                if(stubs[a].stub.css('display')=='none')next();
+                else showStatusAll({
+                    browser:stubs[a],
+                    rootDir:stubs[a].rootDir
+                },root,fs,next)
+            },next||success);
+        }
+
     }
 
     function showStatus(ev, root, fs) {
         var r = [ev.filepath];
         var stub = ev.browser;
-        var reload = Utils.delay(function() {
-            ev.browser.reload();
-        }, 200)
+        var cache = getCache();
         if (stub.marked) {
+            fs = pleaseCache(fs);
             r = stub.marked.map(function(t) {
                 return ev.rootDir + t;
             });
         }
-        r.forEach(function(p) {
+        Utils.asyncForEach(r, function(p, i, next, cancel) {
             var a = {
                 fs: fs,
                 dir: root,
                 filepath: clean(relative(root, p)),
-                gitDir: appConfig.gitDir,
+                gitdir: join(root, appConfig.gitdir),
+                cache: cache
             };
-            var view = ev.browser.getElement(ev.browser.filename(p));
+            var end = function(status) {
+                if (stub.rootDir == ev.rootDir) {
+                    var view = ev.browser.getElement(ev.browser.filename(p));
+                    update(view)(status);
+                    next();
+                }
+                else cancel(true);
+            };
 
-            git.status(a).then(update(view));
-        });
+            git.status(a).then(end);
+        }, function(e) {
+            if (!e) success()
+        }, 15, false, true);
     }
 
+    //Status
     var unmodified;
     //had to come up with something faster than statusMatrix
     function loadCachedStatus(dir, fs, files, cb, error, progress) {
@@ -265,23 +407,25 @@
             time = unmodified.time;
             newlist = [];
             modified = [];
+            t = files.length;
             files.forEach(function(name) {
                 if (unmodified.indexOf(name) < 0) {
                     modified.push(name);
                 }
                 else newlist.push(name);
             });
+            a = modified.length;
             cb(modified, false);
-            progress(100 * (modified.length) / files.length);
+            progress(100 * a / files.length);
             Utils.asyncForEach(newlist, each,
                 function() {
                     cb([], true);
                     cb = null;
                 }, 5);
         };
-        var time, newlist;
+        var time, newlist, t, a;
         var each = function(name, i, next) {
-            fs.stat(name, function(e, s) {
+            fs.stat(join(dir, name), function(e, s) {
                 if (s && (time > s.mtime)) {
                     //pass
                 }
@@ -292,7 +436,7 @@
                     }
                     cb([name], false);
                 }
-                progress(100 * (i + 1 + modified.length) / files.length);
+                progress(100 * (i + a) / files.length);
                 next();
             });
         }
@@ -303,7 +447,7 @@
             unmodified = null;
         }
         if (!unmodified) {
-            fs.readFile(dir + "/.git-status", "utf8", function(e, s) {
+            fs.readFile(join(dir, appConfig.gitdir + "-status"), "utf8", function(e, s) {
                 if (s) {
                     unmodified = s.split("\n");
                     unmodified.time = new Date(parseInt(unmodified.shift()));
@@ -322,7 +466,7 @@
     function saveStatusToCache() {
         if (unmodified) {
             var a = unmodified.time.getTime() + "\n" + unmodified.join("\n");
-            unmodified.fs.writeFile(unmodified.dir + '/.git-status', a, "utf8");
+            unmodified.fs.writeFile(join(unmodified.dir, appConfig.gitdir + "-status"), a, "utf8");
         }
     }
 
@@ -379,13 +523,13 @@
                     untracked.push(a);
                 });
             }
-            if (cb(untracked)) {
+            if (cb(untracked) !== false) {
                 Utils.asyncForEach(toCheck,
                     function(folder, i, next) {
-                        getUntracked(dir, curdir + folder, fs, list, function(list) {
+                        getUntracked(dir, join(curdir, folder), fs, list, function(list) {
                             return cb(list);
-                        }, next);
-                    });
+                        }, next, deep, precheck);
+                    }, finished);
             }
         });
     }
@@ -402,7 +546,7 @@
             modal.off('click', '.file-item', handleClick);
             stopped = true;
             saveStatusToCache();
-            
+
         }));
         modal.addClass('grey')
         var addName = function(name, status) {
@@ -433,7 +577,8 @@
                         git.status({
                             dir: root,
                             fs: fs,
-                            filepath: name
+                            filepath: name,
+                            gitdir: join(root, appConfig.gitdir)
                         }).then(function(s) {
                             if (s == "absent") addUntracked(name);
                             else
@@ -458,12 +603,38 @@
                     else method = 'add';
                 }
                 if (name.endsWith('/')) {
-                    Notify.error('Cannot add folder.');
+                    var list = [];
+                    getUntracked(root, join(root, name), fs, fulllist.slice(0), function(names) {
+                        list.push.apply(list, names);
+                    }, function() {
+                        var sample = list.slice(0, 20).join(' ,');
+                        Notify.ask('Add all files in ' + name + "?\n   " + (sample.length > 100 ? sample.substring(0, 100) + '....' : sample) + "(" + list.length + " files)", function() {
+                            $(a).detach();
+                            Utils.asyncForEach(list, function(name, i, next, cancel) {
+                                git.add({
+                                    dir: root,
+                                    fs: fs,
+                                    filepath: name,
+                                    gitdir: join(root, appConfig.gitdir),
+                                }).then(next, function(e) {
+                                    Notify.error('Failed to add ' + name);
+                                    cancel(e);
+                                });
+                            }, function(e) {
+                                if (e) failure(e);
+                                else {
+                                    success();
+                                }
+                            }, (list.length > 100 ? 4 : 1), false, true)
+                        });
+                    }, true);
+
                 }
                 else git[method]({
                     dir: root,
                     fs: fs,
-                    filepath: name
+                    filepath: name,
+                    gitdir: join(root, appConfig.gitdir)
                 }).then(end, failure);
 
             });
@@ -473,21 +644,27 @@
         var percent = function(text) {
             modal.find('.progress').css('width', text + "%");
         }
-        var files;
         fs = pleaseCache(fs);
+        var fulllist;
+        var files;
         var iter;
+        //not really needed
+        //but we need all the juice we can get
+        var cache = getCache();
         git.listFiles({
             dir: root,
-            fs: fs
+            fs: fs,
+            gitdir: join(root, appConfig.gitdir),
+            cache: cache
         }).then(function(list) {
             if (list.length > 15) {
                 Notify.info('This might take some time');
             }
-
+            fulllist = list;
             getUntracked(root, root + "/", fs, list.slice(0), function(names) {
                 names.forEach(addUntracked);
                 return !stopped;
-            }, function() {});
+            });
             var multiple = 100;
             loadCachedStatus(root, fs, list, function(s, finished) {
                 if (iter) {
@@ -500,7 +677,9 @@
                     git.status({
                         dir: root,
                         fs: fs,
-                        filepath: name
+                        filepath: name,
+                        gitdir: join(root, appConfig.gitdir),
+                        cache: cache
                     }).then(function(s) {
                         addName(name, s);
                         if (!stopped) {
@@ -524,6 +703,7 @@
     }
 
 
+    //refs
     function addRemote(ev, root, fs) {
         var html = ["<form>",
             "<label>Enter remote name</label>",
@@ -542,18 +722,19 @@
             e.preventDefault();
             var name = $(this).find('#inputName')[0].value;
             var url = $(this).find('#inputUrl')[0].value;
-            if(name && url){
+            if (name && url) {
                 git.addRemote({
                     fs,
                     dir: root,
                     remote: name,
-                    url: url
+                    url: url,
+                    gitdir: join(root, appConfig.gitdir)
                 }).then(success, failure);
             }
-            else{
-                Notify.error((name?"Name ":"Url ")+'cannot be empty');
+            else {
+                Notify.error((name ? "Name " : "Url ") + 'cannot be empty');
             }
-        }).find('button').click(function(e){
+        }).find('button').click(function(e) {
             e.preventDefault();
             e.stopPropagation();
             $(el).modal('close');
@@ -562,13 +743,15 @@
     }
 
     function gotoRef(ev, root, fs, ref, noCheckout) {
+        fs = pleaseCache(fs);
         git.checkout({
             fs: fs,
             dir: root,
             ref: ref,
+            gitdir: join(root, appConfig.gitdir),
             noCheckout: noCheckout
         }).then(function() {
-            Notify.info((noCheckout?'Updated HEAD to point at ':'Checked out files from ' )+ ref);
+            Notify.info((noCheckout ? 'Updated HEAD to point at ' : 'Checked out files from ') + ref);
         }, function() {
             Notify.error('Error: switching branch');
         });
@@ -599,13 +782,13 @@
             branchList.current = currentBranch;
             branchList.items = branches;
             branchList.render();
-            $(branchList.getElementAtIndex(branches.indexOf(currentBranch))).removeClass('tabbable').addClass('selected');
+            $(branchList.getElementAtIndex(branches.indexOf(currentBranch))).removeClass('tabbable').addClass('yellow');
             $(branchList.$el).modal('open');
         }
-        git.listBranches({ fs, dir: root }).then(
+        git.listBranches({ fs, dir: root, gitdir: join(root, appConfig.gitdir) }).then(
             function(b) {
                 branches = b;
-                git.currentBranch({ fs, dir: root }).then(showModal);
+                git.currentBranch({ fs, dir: root, gitdir: join(root, appConfig.gitdir) }).then(showModal);
             });
     }
 
@@ -614,16 +797,20 @@
     }
 
     function failure(e) {
+        console.error(e);
         Notify.error("Error: " + e.toString());
     }
 
     function createBranch(ev, root, fs) {
         Notify.prompt('Enter Branch Name', function(name) {
-            git.branch({
-                dir: root,
-                fs: fs,
-                ref: name
-            }).then(success, failure);
+            if (name) {
+                git.branch({
+                    dir: root,
+                    fs: fs,
+                    ref: name,
+                    gitdir: join(root, appConfig.gitdir)
+                }).then(success, failure);
+            }
         });
     }
 
@@ -631,22 +818,23 @@
         switchBranch(ev, root, fs, true);
     }
 
+    //FileUtils guarantees only one browser will
+    //use overflow at a time
+    //global variables are allowed
     var gitRoot = "";
+    var lastEvent;
     var detectRepo = function(ev, btn, yes, no) {
         var dir;
         dir = ev.rootDir;
         lastEvent = ev;
-        git.findRoot({
-            fs: ev.browser.fileServer,
-            filepath: dir
-        }).then(function(path) {
-            gitRoot = path;
-            yes.show(btn);
-        }, function(e) {
-            console.log(e);
-            gitRoot = ev.rootDir;
-            no.show(btn);
-        });
+        findRoot(dir, ev.browser.fileServer)
+            .then(function(path) {
+                gitRoot = path;
+                yes.show(btn);
+            }, function(e) {
+                gitRoot = ev.rootDir;
+                no.show(btn);
+            });
     };
     var detectHierarchyRepo = function(ev, btn, yes, no) {
         ev.browser.menu && ev.browser.menu.hide();
@@ -657,24 +845,7 @@
             }), ev.browser.getElement(ev.filename)[0], yes, no)
         });
     }
-    var GitMenu = {
-        "view-stage": {
-            icon: 'view_headline',
-            caption: "View Stage",
-            onclick: showStage
-        },
-        "do-commit": {
-            icon: 'save',
-            caption: "Commit",
-            onclick: doCommit
-        },
-    };
-    var NoGitMenu = {
-        "init-repo": {
-            caption: "Initialize Repository",
-            onclick: initRepo
-        }
-    };
+
     var GitFileMenu = {
         "show-file-status": {
             caption: "Show file status",
@@ -693,13 +864,68 @@
             onclick: deleteFromTree
         }
     };
+    var GitMenu = {
+        "view-stage": {
+            icon: 'view_headline',
+            caption: "View Stage",
+            onclick: showStage
+        },
+        "show-status": {
+            icon: 'view_headline',
+            caption: "Show Changed Files",
+            onclick: showStatusAll
+        },
+        "branches": {
+            icon: "git",
+            caption: "Branches",
+            childHier: {
+                "create-branch": {
+                    icon: "add",
+                    caption: "Create Branch",
+                    onclick: createBranch
+                },
+                "switch-branch": {
+                    icon: "swap_horiz",
+                    caption: "Checkout Branch",
+                    onclick: switchBranch
+                },
+                "switch-branch-nocheckout": {
+                    icon: "swap_horiz",
+                    caption: "Set HEAD branch",
+                    onclick: switchBranchNoCheckout
+                }
+            }
+        },
+        "do-commit": {
+            icon: 'save',
+            caption: "Commit",
+            onclick: doCommit
+        },
+        "do-revert": {
+            icon: 'undo',
+            caption: "Revert",
+            onclick: doRevert
+        }
+    };
+    var NoGitMenu = {
+        "init-repo": {
+            caption: "Initialize Repository",
+            onclick: initRepo
+        },
+        "clone-repo": {
+            caption: "Clone Existing Repository",
+            onclick: cloneRepo
+        }
+    };
+
     var GitFileOverflow = new Overflow();
-    GitFileOverflow.setHierarchy(GitFileMenu);
     var GitOverflow = new Overflow();
-    GitOverflow.setHierarchy(GitMenu);
     var NoGitOverflow = new Overflow();
+
+    GitFileOverflow.setHierarchy(GitFileMenu);
+    GitOverflow.setHierarchy(GitMenu);
     NoGitOverflow.setHierarchy(NoGitMenu);
-    var lastEvent;
+
     GitOverflow.onclick = GitFileOverflow.onclick = NoGitOverflow.onclick = function(e, id, span, data) {
         data.onclick && data.onclick(lastEvent, gitRoot, lastEvent.browser.fileServer);
         return true;
@@ -742,33 +968,6 @@
         },
         hasChild: true,
         close: false
-    };
-    var colors = {
-        //file ignored by a .gitignore rule
-        "ignored": "done",
-        //file unchanged from HEAD commit
-        "unmodified": "done",
-        //file has modifications, not yet staged
-        "*modified": "done",
-        //file has been removed, but the removal is not yet staged
-        "*deleted": "",
-        //file is untracked, not yet staged
-        "*added": "done",
-        //file not present in HEAD commit, staging area, or working dir
-        "absent": "",
-        //file has modifications, staged
-        "modified": "done",
-        //file has been removed, staged
-        "deleted": "",
-        //previously untracked file, staged
-        "added": "done",
-        //working dir and HEAD commit match, but index differs
-        "*unmodified": "done",
-        //file not present in working dir or HEAD commit, but present in the index
-        "*absent": "",
-        //file was deleted from the index, but is still in the working dir
-        "*undeleted": "",
-        "*undeletemodified": ""
     };
 
     FileUtils.registerOption("files", ["create"], "git-opts", GitOption);

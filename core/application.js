@@ -72,7 +72,6 @@
 
     function clearLastCallback(err) {
         var app_e = app.getError(accessKey);
-        console.error(app_e);
         var error = app_e ? toNodeError(app_e) : err;
         if (c[count]) {
             c[count](error);
@@ -90,11 +89,16 @@
     function encodeBufferToBytes(buffer) {
         return Base64.encode(new Uint8Array(buffer.buffer || buffer));
     }
-
+    var HEX_ARRAY = [0,1,2,3,4,5,6,7,8,9];
+    HEX_ARRAY.A=10;
+    HEX_ARRAY.B=11;
+    HEX_ARRAY.C=12;
+    HEX_ARRAY.D=13;
+    HEX_ARRAY.E=14;
+    HEX_ARRAY.F=15;
     function decodeBytesToBuffer(base64) {
         return Base64.decode(base64);
     }
-
     function asyncify(app, func, baseIndex) {
         return function() {
             var callback, index = arguments.length - 1;
@@ -138,7 +142,6 @@
     };
 
     function toNodeError(e) {
-        console.log('parse '+e);
         var code;
         var err = new Error();
         err.origin = e;
@@ -152,16 +155,14 @@
             err.code = err.message = code;
         }
         else {
-            console.error(new Error(e));
+            console.error("unknown error",new Error(e));
             err.code = err.message = 'EUNKNOWN';
         }
-        console.log(code);
         return err;
     }
 
     function throwError(err) {
         var app_e = app.getError(accessKey);
-        console.error(app_e);
         var error = app_e ? toNodeError(app_e) : err;
         throw error;
     }
@@ -212,19 +213,14 @@
         };
         this.statSync = function(path, isLstat) {
             try {
-                return JSON.parse(app.stat(path, !!isLstat, accessKey));
+                return FileUtils.createStats(JSON.parse(app.stat(path, !!isLstat, accessKey)));
             }
             catch (err) {
                 throwError(err);
             }
         };
         this.lstatSync = function(path) {
-            try {
-                return JSON.parse(app.stat(path, true, accessKey));
-            }
-            catch (err) {
-                throwError(error);
-            }
+            return this.statSync(path,true);
         };
         this.copyFileSync = function(path, dest, overwrite) {
             try {
@@ -247,7 +243,7 @@
                 return app.newFolder(path, accessKey);
             }
             catch (err) {
-                throwError(error);
+                throwError(err);
             }
         };
         this.renameSync = function(path, dest) {
@@ -255,7 +251,7 @@
                 return app.rename(path, dest, accessKey);
             }
             catch (err) {
-                throwError(error);
+                throwError(err);
             }
         };
         var deleteSync = function(path) {
@@ -263,7 +259,7 @@
                 return app.delete(path, accessKey);
             }
             catch (err) {
-                throwError(error);
+                throwError(err);
             }
         };
         this.unlinkSync = this.rmdirSync = deleteSync;
@@ -375,10 +371,30 @@
         this.getRoot = function() {
             return path;
         };
+        this.symlinkSync = function(path, dest) {
+            try {
+                return app.symlink(path, dest, accessKey);
+            }
+            catch (err) {
+                throwError(err);
+            }
+        };
+        this.readlinkSync = function(path) {
+            try {
+                return app.readlink(path, accessKey);
+            }
+            catch (err) {
+                throwError(err);
+            }
+        };
+        this.symlink = asyncify(this, this.symlinkSync, 1);
+        this.readlink = asyncify(this, this.readlinkSync, 1);
+
+        
 
     };
     FileUtils.registerFileServer('application', "Default FileSystem", function(conf) {
-        return new AppFileServer(conf && conf.root);
+        return (window.afs = new AppFileServer(conf && conf.root));
     }, {
         name: "root",
         caption: "Root Directory",

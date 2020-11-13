@@ -152,7 +152,7 @@
                 '</span>' +
                 '<button class="material-icons select side-1">' +
                 //"<b style='/*position:absolute;left:50px;right:50px;overflow:scroll*/'>" + this.rootDir + "</b>" +
-                "bookmarks</button>" +
+                "history</button>" +
                 "<button class='side-2 create center'><i class='material-icons'>more_vert</i></button>" +
                 "</div>"
             );
@@ -178,7 +178,7 @@
                 };
             };
             this.header.find(".create").click(function(e) {
-                self.showCtxMenu(self.createDropdown, $(this)[0]);
+                (self.tree || self).showCtxMenu((self.tree || self).createDropdown, $(this)[0]);
                 e.stopPropagation();
             });
             this.header.find(".fill_box a").click(function(e) {
@@ -207,10 +207,16 @@
                 this.header.append(
                     '<div class="h-50 edge_box-2">\
                     <div class="flow-text fill_box"><span id = "num_marked" >' + this.marked.length + '  </span> of <span id = "num_total">' + this.hier.length + '</span></div>\
+                    <span id="selectAll" class="side-1 material-icons">select_all</span>\
                     <span id="cancelMark" class="side-2 material-icons">close</span>\
                 </div>');
                 this.header.find("#cancelMark").click(function(e) {
                     self.exitSelectMode();
+                });
+                this.header.find("#selectAll").click(function(e) {
+                    self.hier.slice(self.pageStart,self.pageEnd).forEach(function(name){
+                        this.mark(name);
+                    },self);
                 });
                 break;
             default:
@@ -1385,19 +1391,19 @@
             "mark-file": "Mark multiple"
         },
         "create-dropdown": {
-            "new-file": "New File",
             "paste-file": {
                 className: "hide-if-clip-empty",
                 caption: "Paste"
             },
+            "new-file": "New File",
             "new-folder": "New Folder",
-            "filter-files": "Filter",
             "reload-browser": "Reload",
             "add-bookmark": "Add to Bookmarks",
             "open-tree": "Enable TreeView",
             "open-project": "Open as Project Folder",
             "new-browser": "Add Storage",
             "delete-browser": "Close Storage",
+            "filter-files": "Filter",
             "show-current-doc": {
                 caption: "Show current file",
                 sortIndex: 100
@@ -1691,8 +1697,10 @@
     ChildStub.prototype.childFolderDropdown = "childStub-folder-dropdown";
     ChildStub.prototype.nestedFolderDropdown = "nested-folder-dropdown";
     ChildStub.prototype.nestedFileDropdown = "nested-file-dropdown";
+    ChildStub.prototype.createDropdown = "nested-create-dropdown";
     ChildStub.prototype.fileDropdown = "childStub-file-dropdown";
     ChildStub.prototype.menuItems = {
+        "nested-create-dropdown": Object.create(FileBrowser.prototype.menuItems['create-dropdown']),
         "nested-folder-dropdown": {
             "expand-all": {
                 caption: "Unfold Children",
@@ -1718,6 +1726,10 @@
     };
     Object.assign(
         ChildStub.prototype.menuItems["childStub-folder-dropdown"],
+        ChildStub.prototype.menuItems["nested-folder-dropdown"]
+    );
+    Object.assign(
+        ChildStub.prototype.menuItems["nested-create-dropdown"],
         ChildStub.prototype.menuItems["nested-folder-dropdown"]
     );
     Object.assign(

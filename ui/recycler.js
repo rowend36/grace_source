@@ -227,19 +227,23 @@
         }
         if (!this.view) {
             this.view = this.cache.pop(null, insertBefore);
-            this.bindView(this, index);
-        }
-        else if (restack) {
-            if (insertBefore) {
-                this.view[0].parentElement.insertBefore(this.view[0], insertBefore);
-            }
-            else this.view[0].parentElement.appendChild(this.view[0]);
-        }
-        if (this.lastY != this.y) {
             this.lastY = this.y;
             this.view.css("top", this.y + 'px');
+            this.bindView(this, index);
         }
-    }
+        else {
+            if (restack) {
+                if (insertBefore) {
+                    this.view[0].parentElement.insertBefore(this.view[0], insertBefore);
+                }
+                else this.view[0].parentElement.appendChild(this.view[0]);
+            }
+            if (this.lastY != this.y) {
+                this.lastY = this.y;
+                this.view.css("top", this.y + 'px');
+            }
+        }
+    };
     RecyclerViewHolder.prototype.detach = function(index) {
         if (!this.visible) return;
         this.visible = false;
@@ -364,23 +368,23 @@
         var renderlist = [];
         var begin = this.lastIndex;
         var isFirst = true;
-        var view,views=this.views;
-        if (this.changes > SCROLL_DOWN){
-            var above = 0;
-            for (var i = begin - 1; i >= above; i--) {
-                view = views[i];
-                if ((view.height + view.y) < start)
-                    break;
-                else if (view.y > end) {
-                    continue;
-                }
-                if (isFirst) {
-                    this.lastIndex = i;
-                    isFirst = false;
-                }
-                renderlist.unshift(view);
+        var view, views = this.views;
+        //if (true || this.changes > SCROLL_DOWN){
+        var above = 0;
+        for (var i = begin - 1; i >= above; i--) {
+            view = views[i];
+            if ((view.height + view.y) < start)
+                break;
+            else if (view.y > end) {
+                continue;
             }
+            if (isFirst) {
+                this.lastIndex = i;
+                isFirst = false;
+            }
+            renderlist.unshift(view);
         }
+        //}
         var below = views.length;
         for (var l = begin; l < below; l++) {
             view = views[l];
