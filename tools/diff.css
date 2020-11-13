@@ -1,0 +1,45 @@
+.acediff-gutter-removed {
+    text-align: left;
+    color: red;
+}
+
+.acediff-gutter-added .ace_fold-widget,
+.acediff-gutter-removed .ace_fold-widget {
+    margin-left: auto;
+    float: right;
+}
+
+.acediff-gutter-added {
+    color: green;
+}
+
+.acediff-inline {
+    display: block;
+    position: absolute;
+}
+
+.acediff-content-removed .acediff-inline {
+    background: rgb(255, 0, 0);
+    opacity: 0.7;
+}
+
+.acediff-swapped .acediff-gutter-removed {
+    border-right: 1px solid red;
+}
+
+.acediff-content-added .acediff-inline {
+    background: rgb(0, 255, 0);
+    opacity: 0.5;
+}
+
+.acediff-removed {
+    opacity: 0.4;
+    position: absolute;
+    background: rgb(0, 255, 0);
+}
+
+.acediff-added {
+    opacity: 0.4;
+    position: absolute;
+    background: red;
+}

@@ -1,0 +1,99 @@
+(function(global) {
+    var FileUtils = global.FileUtils;
+    var Doc = global.Doc;
+    var docs = global.docs;
+    var Editors = global.Editors;
+    var appConfig = global.appConfig;
+    function createSettingsMenu(el) {
+        var OptionsPanel = ace.require("ace/ext/options").OptionPanel;
+        var SettingsPanel = new OptionsPanel(null, el[0]);
+        var sessionOption = function(obj) {
+            obj.getValue = function(editor) {
+                return editor.getOption('session-' + obj.path);
+            };
+            obj.onchange = function(val, editor) {
+                editor.setOption("session-" + obj.path, val);
+            };
+            return obj;
+        };
+        SettingsPanel.add({
+            "Session": {
+                "Soft Wrap": sessionOption({
+                    type: "buttonBar",
+                    path: "wrap",
+                    items: [
+                        { caption: "Off", value: "off" },
+                        { caption: "View", value: "free" },
+                        { caption: "margin", value: "printMargin" },
+                        { caption: "40", value: "40" },
+                        { caption: "Default", value: "default" }
+                    ]
+                }),
+                "Soft Tabs": [sessionOption({
+                    path: "useSoftTabs"
+                }), sessionOption({
+                    path: "tabSize",
+                    type: "number",
+                    values: [2, 3, 4, 8, 16]
+                })],
+                "Encoding": {
+                    type: "select",
+                    onchange: function(val) {
+                        Doc.setEncoding(appConfig.currentDoc,val);
+                    },
+                    getValue: function() {
+                        return docs[appConfig.currentDoc].encoding || 'utf8';
+                    },
+                    get items(){
+                        return FileUtils.availableEncodings(docs[appConfig.currentDoc].getFileServer());
+                    }
+                },
+                "Read Only": sessionOption({
+                    type: "checkbox",
+                    path: "readOnly"
+                }),
+                "Hide Non-Latin Chars": sessionOption({
+                    type: "checkbox",
+                    path: "hideNonLatinChars"
+                }),
+                "Live Autocompletion": sessionOption({
+                    path: "enableLiveAutocompletion"
+                }),
+                "Intellisense": sessionOption({
+                    path: "enableIntelligentAutocompletion"
+                }),
+                "Show Function Parameters Hints": sessionOption({
+                    path: "enableArgumentHints"
+                }),
+
+            },
+            "General": {
+                "Read Only": {
+                    type: "checkbox",
+                    path: "readOnly"
+                }
+            },
+            "Interaction": {
+                "Hide Non-Latin Chars": {
+                    type: "checkbox",
+                    path: "hideNonLatinChars"
+                },
+                "Intellisense": {
+                    path: "enableIntelligentAutocompletion"
+                },
+                "Show Function Parameters Hints": {
+                    path: "enableArgumentHints"
+                },
+            },
+            "Appearance": {
+                "Scrollable Gutters": {
+                    type: "checkbox",
+                    path: "scrollableGutter"
+                }
+            }
+        });
+        SettingsPanel.setEditor(Editors.getSettingsEditor());
+        return SettingsPanel;
+    }
+    global.createSettingsMenu = createSettingsMenu;
+})(Modules);

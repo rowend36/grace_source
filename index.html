@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta name="viewport" content="width=device-width, user-scalable=no initial-scale=1.0" />
+    <meta charset='utf-8' />
+    <link rel="shortcut icon" href="./favicon.ico">
+    <link rel="stylesheet" href="./libs/css/materialize.min.css">
+    <link rel="stylesheet" href="./main.css">
+    <script type="text/javascript" src="./libs/js/eruda.min.js"></script>
+    <script>
+         eruda.init([]);
+            
+    </script>
+</head>
+
+<body class="editor-primary">
+
+    <div id="side-menu" class="clipboard-empty container sidenav">
+
+        <ul id="selector" class="ui tabs" data-nav-behaviour="tabs">
+            
+            <li class="tab">
+                <a href="#hierarchy_tab">
+                    <i class="material-icons" style="width:100%">work</i>
+                </a>
+            </li>
+            <li class="tab">
+                <a href="#search_container">
+                    <i class="material-icons">search</i>
+                </a>
+            </li>
+            <li class="tab">
+                <a href="#settings">
+                    <i class="material-icons">settings</i>
+                </a>
+            </li>
+        </ul>
+
+        <div id="hierarchy_tab">
+            <span class="header toggleBelow" tabIndex=0>Open Documents<span class="material-icons">keyboard_arrow_down</span></span>
+            <ul id="opendocs" class="fileview">
+
+            </ul>
+            <span class="header toggleBelow" tabIndex=0>Find file<span class="material-icons">keyboard_arrow_down</span></span>
+            <div class="find_file edge_box-2 h-50">
+                <div class="fill_box p-5"><input type="text" name="search_text" id="search_text" value="" /></div>
+                <button id="find_file_btn" class="side-1 material-icons">search</button>
+                <button id="find_file_cancel_btn" class="side-2 material-icons">refresh</button>
+            </div>
+
+            <ul id="hierarchy" class="fileview">
+            </ul>
+        </div>
+        <div id="search_container" class="" style="padding:15px">
+
+            <span>Search</span>
+            <div class="edge_box-2 h-50">
+
+                <div class="fill_box input-field pb-10 inline">
+                    <input id="searchInput" placeholder="Search for" type="text" class="">
+                </div>
+
+                <button id="searchBtn" class="side-1 material-icons">search</button>
+                <button id='searchConfig' class="side-2 material-icons">view_headline</button>
+            </div>
+            <div class='replaceBox'>
+                <span>Replace</span>
+                <div class="edge_box-2 h-50">
+                    <div class="input-field inline pb-10 fill_box">
+                        <input id="replaceInput" placeholder="Replace with" type="text" class="">
+                    </div>
+                    <button id="undoReplaceBtn" class="side-1"><i class="material-icons">autorenew</i></button>
+                    <button id="replaceBtn" class="side-2"><i class="material-icons">swap_horiz</i></button>
+                </div>
+            </div>
+            <div class="ace_search_options">
+                <button id='toggleReplace' class="left material-icons">keyboard_arrow_down</button>
+                <button id="toggleRegex" class="right ace_button">.*</button>
+                <button id="caseSensitive" class="right ace_button">Aa</button>
+                <button id="toggleWholeWord" class="right ace_button checked">[Abc]</button>
+            </div>
+            <h6 id="searchInfo"></h6>
+            <div id="loading"><span>Searching...</span><br/><button id= "searchStop" class='btn red center'>Stop</button></div>
+            <div id="searchResults">
+
+            </div>
+            <button id="showMoreResults" class="btn blue center">More..</button>
+        </div>
+
+        <div id="settings" style="">
+
+        </div>
+
+
+    </div>
+
+    <div class="sidenav-pushable ui" id="action_bar">
+        <button class="sidenav-trigger abs-left" data-target="side-menu">
+            <i class="material-icons big menu-icon" >menu</i>
+        </button>
+        <div id="status-text">
+            <span id="status-filename" class="clipper">Open a file</span>
+        </div>
+        <ul id="menu" class="singleTab tabs"></ul>
+        <button class="dropdown-trigger abs-right" data-target="overflow-menu">
+            <i class="material-icons big menu-icon">more_vert</i>
+        </button>
+    </div>
+
+    <!-- Modal Structure -->
+    <div id="createBrowserModal" class="modal">
+        <div class="modal-content">
+            <h6>Pick Storage Type</h6>
+            <select id="browserType">
+            </select>
+        </div>
+        <div class="modal-footer">
+            <a href="#!" class="modal-close waves-effect waves-green btn-flat">Cancel</a>
+            <a id="create" href="#!" class="modal-close waves-effect waves-green btn-flat">Done</a>
+        </div>
+    </div>
+
+    <div class="sidenav-pushable" id="viewroot">
+
+
+    </div>
+    <button class="sidenav-pushable" id="toolbar-toggle"><i class="material-icons">keyboard_arrow_down</i></button>
+
+    <button id="runButton" class="btn-floating btn btn-large waves-effect waves-light">
+        <i class="material-icons">play_arrow</i>
+    </button>
+    <script type="text/javascript" src="./libs/js/jquery-2.2.0.min.js"></script>
+    <script type="text/javascript" src="./libs/js/polyfill.js"></script>
+    <script type="text/javascript" src="./libs/js/materialize.js"></script>
+    <script type="text/javascript" src="./libs/js/base64.js"></script>
+
+
+    <script type="text/javascript" src="./src-min-noconflict/ace.js"></script>
+    <script type="text/javascript" src="./src-min-noconflict/ext-themelist.js"></script>
+    <script type="text/javascript" src="./src-min-noconflict/ext-language_tools.js"></script>
+    <script type="text/javascript" src="./src-min-noconflict/ext-tern.js"></script>
+    <link rel="stylesheet" href="./src-min-noconflict/ext-tern.css">
+    <script type="text/javascript" src="./src-min-noconflict/ext-html_beautify.js"></script>
+    <script type="text/javascript" src="./src-min-noconflict/ext-modelist.js"></script>
+
+
+    <script type="text/javascript" src="./core/environment.js"></script>
+    <script type="text/javascript" src="./core/utils.js"></script>
+    <script type="text/javascript" src="./core/events.js"></script>
+    <script type="text/javascript" src="./core/statemanager.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./core/fileutils.js"></script>
+    <script type="text/javascript" src="./core/application.js"></script>
+
+    <script type="text/javascript" src="./tabbable.js"></script>
+    <script type="text/javascript" src="./core/focusmanager.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./ui/notification.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./core/navigation.js"></script>
+    <!--<script type="text/javascript" src="./libs/js/lightning-fs.js" charset="utf-8"></script>-->
+    <script type="text/javascript" src="./core/fileserver.js"></script>
+    <script type="text/javascript" src="./core/databasestorage.js"></script>
+    <!--Implemented in application-->
+    <!--<script type="text/javascript" src="./core/delayedstorage.js"></script>-->
+    <script type="text/javascript" src="./core/document.js"></script>
+    <script type="text/javascript" src="./core/clipboard.js" charset="utf-8"></script>
+
+    <script type="text/javascript" src="./ui/linearlayout.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./ui/overflow.js"></script>
+    <script type="text/javascript" src="./ui/itemlist.js"></script>
+    <script type="text/javascript" src="./views/tabs.js"></script>
+    <script type="text/javascript" src="./views/charbar.js" charset="utf-8"></script>
+
+    <!--todo load this views asynchronously since they are not immediately used!-->
+    <script type="text/javascript" src="./ui/sidenav.js"></script>
+
+
+    <script type="text/javascript" src="./editor/multiEditor.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./editor/editors.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./editor/viewPagers.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./editor/autocompletion.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./prefs/key_binding.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./prefs/load_settings.js" charset="utf-8"></script>
+
+    <script src="main.js" type="text/javascript" charset="utf-8"></script>
+    <!--<script type="text/javascript" src="./tests/test_fs.js"></script>-->
+    <script type="text/javascript" src="./core/cachefileserver.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./libs/js/isomorphic-git.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./libs/js/isomorphic-http.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./tools/git.js"></script>
+    
+</body>
+
+</html>
