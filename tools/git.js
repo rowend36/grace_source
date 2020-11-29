@@ -192,7 +192,8 @@
                     cache: cache,
                     dir: root,
                     gitdir: join(root, appConfig.gitdir),
-                    ref: 'HEAD'
+                    ref: 'HEAD',
+                    force: true
                 }).then(function() {
                     Notify.info("Revert Successful");
                 }, failure);
@@ -810,6 +811,8 @@
     //A final solution might be to just put a preference for unmodified
     //files, but that will be pending when we can cache stats
     //as the result will be two stat calls
+    //or to check the index for actual difference in stats
+    //but for now, it works so I'm cool
     */
 
     function loadCachedStatus(dir, commit, fs, files, cb, error, progress) {
@@ -856,9 +859,15 @@
         }
 
 
-        if (unmodified && (unmodified.commit != commit || unmodified.fs != fs || unmodified.dir != dir)) {
-            saveStatusToCache();
-            unmodified = null;
+        if (unmodified){
+            if (unmodified.fs != fs || unmodified.dir != dir) {
+                saveStatusToCache();
+                unmodified = null;
+            }
+            else if (unmodified.commit != commit) {
+                unmodified = null;
+                return cb(files,true);
+            }
         }
         if (!unmodified) {
             fs.readFile(join(dir, appConfig.gitdir + "-status"), "utf8", function(e, s) {
@@ -866,10 +875,16 @@
                     unmodified = s.split("\n");
                     unmodified.time = new Date(parseInt(unmodified.shift()));
                     unmodified.commit = unmodified.shift();
-                    unmodified.fs = fs;
-                    unmodified.dir = dir;
-                    unmodified.clean = true;
-                    genList();
+                    if(unmodified.commit!=commit){
+                        unmodified = null;
+                        cb(files, true);
+                    }
+                    else{
+                        unmodified.fs = fs;
+                        unmodified.dir = dir;
+                        unmodified.clean = true;
+                        genList();
+                    }
                 }
                 else {
                     cb(files, true);
@@ -969,9 +984,10 @@
 
         }));
         modal.addClass('grey')
+        var branchName;
         var addName = function(name, status) {
             if (status == 'unmodified') {
-                pushUnmodified(root, fs, name)
+                pushUnmodified(root, fs, name,branchName);
                 return;
             }
             var staged = true;
@@ -1136,7 +1152,8 @@
                     percent(100);
                 }, 3);
             }
-            if (true) {
+            if (false) {
+                //in a future where cached status is unnecessary
                 go();
             }
             else {
@@ -1146,7 +1163,7 @@
                     gitdir: join(root, appConfig.gitdir),
                     cache: cache
                 }).then(function(branch) {
-                        console.log(branch);
+                        branchName = branch;
                         loadCachedStatus(root, branch, fs, list, function(s, finished) {
                             if (iter) {
                                 files.push.apply(files, s);
@@ -1215,18 +1232,32 @@
     }
 
     function gotoRef(ev, root, fs, ref, noCheckout) {
+        var progress = createProgress("Checking out "+ref);
         fs = pleaseCache(fs);
         git.checkout({
             fs: fs,
             dir: root,
             ref: ref,
             cache: cache,
+            onProgress: progress.update,
             gitdir: join(root, appConfig.gitdir),
             noCheckout: noCheckout
         }).then(function() {
+            progress.dismiss();
             Notify.info((noCheckout ? 'Updated HEAD to point at ' : 'Checked out files from ') + ref);
-        }, function() {
-            Notify.error('Error: switching branch');
+        }, function(e) {
+            progress.dismiss();
+            if(e.code = 'CheckoutConflictError'){
+                Notify.modal({
+                    header: 'Unable To Checkout '+ref,
+                    body: e.message,
+                    dismissible: false
+                });
+            }
+            else {
+                console.error(e);
+                Notify.error('Error while switching branch');
+            }
         });
     }
 
@@ -1408,15 +1439,16 @@
             caption: "Push Changes",
             onclick: doPush
         },
+        "do-revert": {
+            icon: 'warning',
+            caption: "Revert",
+            className: "red-text",
+            onclick: doRevert
+        },
         "configure": {
             caption: "..Authentication",
             onclick: doConfig
         }
-        /*"do-revert": {
-            icon: 'undo',
-            caption: "Revert",
-            onclick: doRevert
-        }*/
     };
     var NoGitMenu = {
         "init-repo": {
