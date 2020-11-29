@@ -282,7 +282,7 @@
             data.set("encoding", encoding);
             data.set("content", new Blob([content]), path);
             var req = new XMLHttpRequest();
-            req.open('POST', server + "/save?path="+path.replace('/','%2F'), true);
+            req.open('POST', server + "/save?path="+path.replace(/\//g,'%2F'), true);
             req.send(data);
             req.onload = function() {
                 if (req.status == 200)

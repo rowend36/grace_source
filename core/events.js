@@ -96,10 +96,13 @@
             }
         },
         off: function(event, func) {
-            if (!func) return;
-            if (this._eventRegistry[event] == func) this._eventRegistry[event] = null;
-            else if (this._eventRegistry[event]) {
-                this._eventRegistry[event] = this._eventRegistry[event].filter(Utils.filter(func));
+            var reg = this._eventRegistry[event];
+            if (!(reg && func)) return;
+            if (typeof reg=="function"){
+                if (reg == func) this._eventRegistry[event] = null;
+            }
+            else if (reg !== true) {
+                this._eventRegistry[event] = reg.filter(Utils.filter(func));
             }
         },
         triggerForever: function(event) {

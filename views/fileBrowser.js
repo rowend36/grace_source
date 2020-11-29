@@ -6,6 +6,7 @@
     var appConfig = global.registerAll({
         'recentFolders': '',
         'showHiddenFiles': true,
+        'markFileOnHold': true,
         'expandAllFilter': ".git/,node_modules/,build/",
         'root:file-browser': '/sdcard/',
     }, "files");
@@ -161,7 +162,7 @@
                 var e;
                 var options = [];
                 for (e of recentFolders)
-                    if (e!=self.rootDir && options.indexOf(e) < 0)
+                    if (e != self.rootDir && options.indexOf(e) < 0)
                         options.push(e);
                 for (e of FileUtils.getBookmarks())
                     if (options.indexOf(e) < 0)
@@ -170,7 +171,7 @@
                 dropdown.setHierarchy(options);
                 dropdown.show(this);
                 dropdown.onclick = function(ev, id, element, item) {
-                    safeGoto(self,item);
+                    safeGoto(self, item);
                     return true;
                 };
                 dropdown.ondismiss = function(ev) {
@@ -214,9 +215,9 @@
                     self.exitSelectMode();
                 });
                 this.header.find("#selectAll").click(function(e) {
-                    self.hier.slice(self.pageStart,self.pageEnd).forEach(function(name){
+                    self.hier.slice(self.pageStart, self.pageEnd).forEach(function(name) {
                         this.mark(name);
-                    },self);
+                    }, self);
                 });
                 break;
             default:
@@ -440,12 +441,16 @@
             var t = $(e.target);
             if (!t.hasClass("file-item"))
                 t = t.closest(".file-item");
-            if (t.hasClass("folder-item")) {
+            if (appConfig.markFileOnHold && !self.inSelectMode) {
+                self.enterSelectMode(t.attr('filename'));
+            }
+            else if (t.hasClass("folder-item")) {
                 self.showCtxMenu(self.folderDropdown, t[0]);
             }
             else if (t.length && !t.hasClass("back-button")) {
                 self.showCtxMenu(self.fileDropdown, t[0]);
             }
+            e.stopPropagation();
             e.preventDefault();
         });
         this.root.on('click.filebrowser', ".go_right", function() {
@@ -1297,10 +1302,21 @@
             FileUtils.activeFileBrowser.menu.hide();
         }
         FileUtils.activeFileBrowser = this;
-        if (copiedPath == null)
+        if (!copiedPath)
             $(document.body).addClass("clipboard-empty");
         else {
             $(document.body).removeClass("clipboard-empty");
+        }
+        if (name) {
+            var hasName = menu + "_" + name.replace(/\./g, "_");
+            if (this.menuItems[hasName]) {
+                menu = hasName;
+            }
+            else {
+                var hasExt = menu + "-" + FileUtils.extname(name);
+                if (this.menuItems[hasExt])
+                    menu = hasExt;
+            }
         }
         var menuEl = this.overflows[menu];
         if (!menuEl) {
@@ -1330,18 +1346,18 @@
         return a;
     };
     FileBrowser.prototype.filter = function(text) {
-        var hier = this.hier;
-        var filtered = this.hier.filter(function(i, e) {
+        var hier = this.hier.original || this.hier;
+        var filtered = hier.filter(function(i, e) {
             if (i.toLowerCase().indexOf(text.toLowerCase()) > -1) {
                 return true;
             }
             return false;
         });
+        filtered.original = hier;
+        this.selected = false;
         this.inFilter = true;
         this.updateHierarchy(filtered);
         this.inFilter = false;
-        this.selected = false;
-        this.hier = hier;
     };
 
     FileBrowser.prototype.folderDropdown = "folder-dropdown";
@@ -1728,6 +1744,8 @@
         ChildStub.prototype.menuItems["childStub-folder-dropdown"],
         ChildStub.prototype.menuItems["nested-folder-dropdown"]
     );
+    ChildStub.prototype.menuItems["childStub-folder-dropdown"]["open-tree"] = "Return to ListView";
+
     Object.assign(
         ChildStub.prototype.menuItems["nested-create-dropdown"],
         ChildStub.prototype.menuItems["nested-folder-dropdown"]

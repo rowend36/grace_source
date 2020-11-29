@@ -240,10 +240,10 @@ function DocumentTab(tabEl, listEl, infoEl) {
             this.setActive(id, false, false);
         }
     }
-    this.insertTab = function(index, id, name, annotations) {
+    this.insertTab = function(index, id, name, annotations,info) {
         if (!index && index !== 0)
             index = tabs.indexOf(this.active);
-        this.addTab(id, name, annotations);
+        this.addTab(id, name, annotations,info);
         this.moveTab(index, id);
     }
     this.moveTab = function(index, id, relative) {
@@ -251,8 +251,9 @@ function DocumentTab(tabEl, listEl, infoEl) {
         Utils.assert(oldIndex > -1)
         if (relative)
             index = oldIndex + index;
-        if (oldIndex == index)
+        if (oldIndex == index){
             return;
+        }
         if (index >= tabs.length && oldIndex === tabs.length - 1) {
             return;
         }

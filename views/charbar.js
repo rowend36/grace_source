@@ -340,15 +340,14 @@ Modules.ModKeyInput = function(FocusManager, toolbar, clipboard) {
         modKeyInput.style.height = '50px';
         modKeyInput.style.top = '0px';
         modKeyInput.style.right = '0px';
-        modKeyInput.value = "X"
+        modKeyInput.value = "_"
         modKeyInput.style.position = "absolute";
         event.addListener(modKeyInput, "input", function(e) {
             var char = modKeyInput.value[1];
             if (char) {
-
                 doHandle(keys[char.toLowerCase()], /[A-Z]/.test(char) ? keys.KEY_MODS.shift : 0, char);
             }
-            modKeyInput.value = "X"
+            modKeyInput.value = "_"
             e.stopPropagation();
         });
         document.body.appendChild(modKeyInput);
@@ -375,6 +374,7 @@ Modules.ModKeyInput = function(FocusManager, toolbar, clipboard) {
         });
         event.addCommandKeyListener(modKeyInput, function(e, hashId, keyCode) {
             doHandle(keyCode, hashId);
+            modKeyInput.value = "_";
             e.stopPropagation();
         });
 

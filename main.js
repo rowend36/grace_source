@@ -26,7 +26,7 @@
         'disableOptimizedFileBrowser': false,
         "applicationTheme": "editor",
         "singleTabLayout": false,
-        "disableBackButtonTabSwitch": false
+        "disableBackButtonTabSwitch": false,
     });
     global.registerValues({
         "applicationTheme": "editor ,classic (needs reload)"
@@ -121,7 +121,9 @@
             }
             return false;
         }
-        else {}
+        else {
+
+        }
         switch (doc) {
             case "tabs":
                 return true;
@@ -167,7 +169,7 @@
     //ClipBoard
     var ClipBoard = global.Clipboard;
     var clipboard = new ClipBoard();
-        
+
     function initClipBoard() {
         var appStorage = global.appStorage;
         var savedClip = global.getObj('clipboard', []);
@@ -206,7 +208,16 @@
         var copyFilePath = {
             caption: 'Copy File Path',
             onclick: function(ev) {
-                clipboard.text = ev.filepath || ev.rootDir;
+                if (ev.filepath && ev.browser.getParent) {
+                    var root = false;
+                    var a = ev.browser.getParent();
+                    while (a && a.rootDir) {
+                        root = a.rootDir;
+                        a = a.getParent();
+                    }
+                    clipboard.text = root ? "./" + FileUtils.relative(root, ev.filepath) : ev.filepath;
+                }
+                else clipboard.text = ev.filepath || ev.rootDir;
                 ev.preventDefault();
             }
         };
@@ -408,9 +419,16 @@
         SettingsPanel.render();
         //settingsMenu.find('select').formSelect({ dropdownOptions: { height: 300, autoFocus: false } });
         settingsMenu.find('button').addClass('btn btn-group').parent().addClass("btn-group-container");
-        settingsMenu.find('input').filter('[type=checkbox]').addClass('checkbox').after("<span></span>").next().click(function(e) { $(this).prev().click() });
+        global.styleCheckbox(settingsMenu);
     }
-
+    global.styleCheckbox = function(el){
+        el = el.find('[type=checkbox]').addClass('checkbox');
+        for(var i =0;i<el.length;i++){
+            var a = el.eq(i);
+            if (!a.next().is("span")) a.after("<span></span>");
+        }
+        el.next().click(function(e) { $(this).prev().click() });
+    };
     //tern
     Functions.switchToDoc = function(name, pos, end, autoload, cb) {
         var c = Doc.forPath(name) || Doc.forPath("/" + name);
@@ -497,54 +515,6 @@
 
     var currentDoc = appConfig.currentDoc;
 
-    function loadScript(script, cb) {
-        var scr = document.createElement('script');
-        scr.src = script;
-        scr.onload = function() {
-            cb();
-        };
-        document.body.appendChild(scr);
-    }
-    //Everything in bootlist
-    //needs to be run after boot
-    //either because they need getEditor
-    //or they are simply tasking
-    //Todo spread to other files
-    var BootList = [];
-
-    BootList.next = function() {
-        if (BootList.length < 1) {
-            appEvents.triggerForever('fully-loaded');
-            BootList = null;
-            return;
-        }
-        var nextItem = BootList.shift();
-        if (nextItem.ignoreIf)
-            return BootList.next();
-        if (nextItem.name) {
-            console.debug(nextItem.name);
-        }
-        if (nextItem.func)
-            setTimeout(function() {
-                try {
-                    nextItem.func();
-                }
-                catch (e) {
-                    try {
-                        console.error(e);
-                        nextItem.error && nextItem.error(e);
-                    }
-                    catch (i) {
-                        console.error(i);
-                    }
-                }
-                BootList.next();
-            }, 30);
-        else if (nextItem.script) {
-            loadScript(nextItem.script, BootList.next);
-        }
-    };
-
 
     var Grace = {
         get editor() {
@@ -579,7 +549,7 @@
         },
         doc: {
             get: function() {
-                return docs[currentDoc]
+                return docs[currentDoc];
             }
         },
         editor: {
@@ -588,6 +558,10 @@
         clipboard: {
             value: clipboard
         }
+    });
+    var BootList = new global.BootList(function() {
+        BootList = null;
+        appEvents.trigger('fully-loaded');
     });
 
     function bootEditor() {
@@ -753,169 +727,13 @@
     }, {
         script: "./ui/splits.js"
     }, {
-        script: "./run/runmanager.js",
-    }, {
-        script: "./run/preview.js"
+        script: "./preview/previewer.js"
     }, {
         name: "Creating run manager",
+        script: "./preview/modes.js"
+    }, {
         func: function() {
-            var appConfig = global.appConfig;
-            global.registerAll({
-                "allowLiveReload": true,
-                "splitPreview": true,
-                "useSoftNewWindow": false
-            });
-            var RunMode = global.RunMode;
-            var Notify = global.Notify;
-            var createPreview = global.createPreview;
-            var runMngr = new RunMode(window);
-            var previewer;
-            var schemes = /^(http|ftp|ssh)/;
-            var HTMLPreview = {
-                id: "mode-html",
-                run: function(path, errors, runMode, args, realpath, doc) {
-                    doc = doc || Doc.forPath(path);
-                    if (doc && path.indexOf("localhost") < 0 && path.indexOf(":") < 0 && !schemes.test(path)) {
-                        path = FileUtils.join(doc.getFileServer().href, path);
-                    }
-                    if (!appConfig.splitPreview) {
-                        if (Env.newWindow && !appConfig.useSoftNewWindow) {
-                            Env.newWindow(path);
-                        }
-                        else this.runInWindow(path, errors, runMode);
-                    }
-                    else {
-                        this.runInSplit(path, errors, runMode);
-                    }
-                },
-                canRun: function(path, mngr) {
-                    return true;
-                },
-                runInWindow: function(path, errors, runMngr) {
-                    if (previewer) {
-                        previewer.setEditor(getEditor());
-                        if (previewer.isHidden())
-                            previewer.show(true);
-                    }
-                    else {
-                        previewer = createPreview(getEditor());
-                        previewer.show(true);
-                    }
-                    previewer.setPath(path);
-                    previewer.stopLiveUpdate();
-
-                },
-                runInSplit: function(path, errors, runMngr) {
-                    var live = appConfig.allowLiveReload;
-                    if (previewer) {
-                        previewer.setEditor(getEditor());
-                        if (previewer.isHidden())
-                            previewer.show();
-                    }
-                    else {
-                        previewer = createPreview(getEditor());
-                        previewer.show();
-                    }
-                    previewer.setPath(path);
-                    if (live)
-                        previewer.startLiveUpdate();
-                    else
-                        previewer.stopLiveUpdate();
-                }
-            };
-            var NodeRun = {
-                id: 'mode-node',
-                run: function(path, errors, runMngr, args, realpath) {
-                    if (this.pending) return;
-                    this.pending = setTimeout(function() {
-                        this.pending = false;
-                    }, Utils.parseTime('30s'));
-                    $.post(appConfig._server + "/run/", {
-                        command: args || "node " + path,
-                        currentDir: FileUtils.getProject().rootDir
-                    }, function(res) {
-                        var result = JSON.parse(res);
-                        if (result.output) {
-                            console.log(result.output);
-                        }
-                        if (result.error) {
-                            console.error(result.error);
-                            if (Array.isArray(result.error)) {
-                                errors.push.apply(errors, result.error);
-                            }
-                            else {
-                                errors.push(result.error);
-                            }
-                        }
-                        if (NodeRun.pending) {
-                            clearTimeout(NodeRun.pending);
-                            NodeRun.pending = null;
-                            if (path == "!norun") return;
-                            else if (path.endsWith(".js"))
-                                JSRun.run(path, errors, runMngr);
-                            else HTMLPreview.run(path, errors, runMngr);
-                        }
-                    });
-                },
-                hasArgs: true,
-                noRun: "!norun"
-            };
-            var JSRun = {
-                id: "mode-script",
-                paths: {},
-                scriptStub: "",
-                canRun: function(path) {
-                    return this.paths[currentDoc];
-                },
-                run: function(path, errors, runMngr) {
-                    var code = this.scriptStub + "<script>" + docs[currentDoc].getValue() + "</script>";
-                    path = "data:text/html," + encodeURIComponent(code);
-                    HTMLPreview.run(path, errors, runMngr);
-                },
-                runInSplit: HTMLPreview.runInSplit
-            };
-            JSRun.scriptStub = "<script>function log(a){\n" +
-                "if(typeof(a)=='object')a = JSON.stringify(a);\n" +
-                "document.write(a+'\\n')};\n" +
-                "window.onerror = function(a,b,c,d){\n" +
-                "log('ERROR '+a+' at position'+(c-NUM_LINES)+','+d);}\n" +
-                "console.log=console.error=console.warn=log</script>\n";
-            JSRun.scriptStub = JSRun.scriptStub.replace('NUM_LINES', JSRun.scriptStub.split("\n").length - 1);
-            runMngr.register(["html"], HTMLPreview);
-            runMngr.register(["js"], JSRun);
-            runMngr.register([], NodeRun);
-            runMngr.reload();
-            Functions.run = function(editor) {
-                var doc;
-                if (typeof(editor) == ace.Editor) {
-                    doc = Doc.forSession(editor.session);
-                }
-                else {
-                    doc = docs[currentDoc];
-                }
-                if (!doc) return;
-                if (!runMngr.executeDoc(doc)) {
-                    Notify.info('No run configuration');
-                }
-            };
-            Editors.addCommands([{
-                name: "run",
-                bindKey: { win: "F7", mac: "Command-Alt-N" },
-                exec: Functions.run
-            }]);
-            var menu = global.MainMenu;
-            menu.addOption('run-as', {
-                caption: 'Run as',
-                close: false,
-                hasChild: true,
-                onclick: function(ev, id, el) {
-                    runMngr.configure(el);
-                }
-            }, true);
             $("#runButton").click(Functions.run);
-            $("#runButton").on('contextmenu', function() {
-                runMngr.configure($("#runButton")[0]);
-            });
         }
     });
     BootList.push({
@@ -935,6 +753,14 @@
                 recognizers: [
                     [Hammer.Swipe, { threshold: 3.0, direction: Hammer.DIRECTION_HORIZONTAL }]
                 ]
+            });
+            swipeDetector.on('hammer.input', function(ev) {
+                if (ev.isFirst) {
+                    var fileview = $(ev.target).closest('.fileview');
+                    if (fileview[0] && (" " + fileview[0].parentElement.className + " ").indexOf(" fileview ") > -1) {
+                        swipeDetector.stop();
+                    }
+                }
             });
             swipeDetector.on('swipeleft', function(ev) {
                 SidenavLeftTab.goleft();
@@ -1050,14 +876,13 @@
             SearchPanel.init(SidenavLeft);
         }
     });
-
+    BootList.push({
+        name: "Material Colors",
+        style: "./libs/css/material-colors.css"
+    });
     //DiffTooling
     BootList.push({
         name: "Diff Tooling",
-        script: "./libs/js/diff_match_patch.js"
-    }, {
-        script: "./tools/ace-inline-diff.js"
-    }, {
         script: "./tools/diff.js"
     });
     BootList.push({

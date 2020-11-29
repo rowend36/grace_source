@@ -10,7 +10,6 @@
     }
     function createSplit(parent,children,direction,sizes,gutterSize){
       var handler = resizeHandler(parent);
-      Utils.inspect(arguments);
       parent.data("splitter", Split(children, {
             // sizes: [75],
             minSize: 25,
@@ -86,6 +85,7 @@
             pop.detach()
             createSplit(parent,parent.children.toArray(),direction,sizes);
         }
+        resizeHandler(parent)();
         return true;
     }
     global.SplitManager = {

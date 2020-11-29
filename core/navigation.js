@@ -177,18 +177,24 @@
         }
     };
     var direction = null;
-
+    var skipped;
     function doSkip(editor_textInput, dir) {
+        if(skipped)clearSkip();
+        skipped = editor_textInput;
         $(editor_textInput.parentElement).addClass('nav-skipcontainer');
         editor_textInput.addEventListener('keydown', skip, true);
         direction = dir || 39;
     }
+    function clearSkip(){
+        $(skipped.parentElement).removeClass('nav-skipcontainer');
+        skipped.removeEventListener('keydown', skip, true);
+        skipped = null;
+    }
     var skip = function(e) {
         var key = parseInt(e.keyCode);
         if (key >= 16 && key <= 18) return;
-        $(this.parentElement).removeClass('nav-skipcontainer');
-        this.removeEventListener('keydown', skip, true);
-        if (key == 9 || (key == direction + 1 || key == direction - 1)) {
+        clearSkip();
+        if (key == 9 || (key<41 && key>36)){//(key == direction + 1 || key == direction - 1)) {
             e.target.blur()
             nav.handler.$listener(e, true);
             FocusManager.focusIfKeyboard(nav.handler.$receiver,false);
@@ -207,6 +213,7 @@
 
     var nav = {
         moveTo: function(a, force) {
+            if(skipped)clearSkip();
             if (a == nav.lastEl) return;
             if (a == nav.handler.$receiver) return;
             do {

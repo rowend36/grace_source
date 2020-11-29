@@ -1557,8 +1557,8 @@ var $jscomp$this = this;
 
         var _defaults = {
             opacity: 0.5,
-            inDuration: 250,
-            outDuration: 250,
+            inDuration: 100,
+            outDuration: 50,
             onOpenStart: null,
             onOpenEnd: null,
             onCloseStart: null,

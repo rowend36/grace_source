@@ -30,7 +30,7 @@ button:active{
 .theme-dark .nav-skipcontainer{
     border: 3px solid #ffeb3b !important;
 }
-.nav-focused .material-icons{
+button.nav-focused .material-icons, button.nav-focused.material-icons{
     -webkit-animation: color-change 1000ms ease-in 0s 10 alternate;
     -moz-animation: color-change 1000ms ease-in 0s 10 alternate;
     -o-animation: color-change 1000ms ease-in 0s 10 alternate;
@@ -239,14 +239,109 @@ tr.ace_optionsMenuEntry span {
 /*region*materialize*/
 
 .modal {
-    background: inherit;
+    background: #fefefe;
+    display: none;
+    position: fixed;
+    left: 0;
+    right: 0;
+    padding: 0;
+    max-height: 70%;
+    width: 55%;
+    margin: auto;
+    overflow-y: auto;
+    border-radius: 2px;
+    will-change: top, opacity
+}
+
+.modal:focus {
+    outline: none
+}
+
+@media only screen and (max-width: 992px) {
+    .modal {
+        width: 80%
+    }
+}
+
+.modal h1,
+.modal h2,
+.modal h3,
+.modal h4 {
+    margin-top: 0
+}
+
+.modal .modal-content {
+    padding: 24px
+}
+
+.modal .modal-close {
+    cursor: pointer
+}
+
+.modal .modal-footer {
+    border-radius: 0 0 2px 2px;
+    padding: 4px 6px;
+    height: 56px;
+    width: 100%;
+    text-align: right
+}
+
+.modal .modal-footer .btn,
+.modal .modal-footer .btn-large,
+.modal .modal-footer .btn-small,
+.modal .modal-footer .btn-flat {
+    margin: 6px 0
+}
+
+.modal-overlay {
+    position: fixed;
+    z-index: 999;
+    top: -25%;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    height: 125%;
+    width: 100%;
+    background: #000;
+    display: none;
+    will-change: opacity
+}
+
+.modal.modal-fixed-footer {
+    padding: 0;
+    height: 70%
+}
+
+.modal.modal-fixed-footer .modal-content {
+    position: absolute;
+    height: calc(100% - 56px);
+    max-height: 100%;
+    width: 100%;
+    overflow-y: auto
+}
+
+.modal.modal-fixed-footer .modal-footer {
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
+    position: absolute;
+    bottom: 0
+}
+
+.modal.bottom-sheet {
+    top: auto;
+    bottom: -100%;
+    margin: 0;
+    width: 100%;
+    max-height: 45%;
+    border-radius: 0;
+    will-change: bottom, opacity
+}
+
+
+.modal {
     color: inherit;
     z-index: 250;
 }
 
-.modal .modal-footer {
-    background: inherit;
-}
 
 .modal .modal-header {
     width: auto;
@@ -1455,19 +1550,22 @@ h6 {
 
 @keyframes color-change {
     0% {
+        color: transparent;
+    }
+    17% {
+        color: #2196F3;
+    }
+    33% {
+        color: transparent;
+    }
+    50% {
         color: red;
     }
-    20% {
-        color: blue;
+    67% {
+        color: transparent;
     }
-    40% {
-        color: green;
-    }
-    60% {
+    83% {
         color: yellow;
-    }
-    100% {
-        color: red;
     }
 }
 
@@ -1641,9 +1739,64 @@ h6 {
 
 /*region*sidenav*/
 
+.sidenav {
+    background: inherit;
+    position: fixed;
+    width: 300px;
+    left: 0;
+    top: 0;
+    margin: 0;
+    -webkit-transform: translateX(-100%);
+    transform: translateX(-100%);
+    height: 100%;
+    height: calc(100% + 60px);
+    height: -moz-calc(100%);
+    padding-bottom: 60px;
+    z-index: 999;
+    will-change: transform;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+    -webkit-transform: translateX(-105%);
+    transform: translateX(-105%)
+}
+
+
+.sidenav.right-aligned {
+    right: 0;
+    -webkit-transform: translateX(105%);
+    transform: translateX(105%);
+    left: auto;
+    -webkit-transform: translateX(100%);
+    transform: translateX(100%)
+}
+
+.drag-target {
+    height: 100%;
+    width: 10px;
+    position: fixed;
+    top: 0;
+    z-index: 998
+}
+
+.drag-target.right-aligned {
+    right: 0
+}
+
+
+.sidenav-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    opacity: 0;
+    height: 120vh;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 997;
+    display: none
+}
+
 #side-menu {
     visibility: hidden;
-    background: inherit;
     max-width: 100vw;
     overflow: hidden;
 }
@@ -1708,6 +1861,61 @@ h6 {
 
 
 /*region*dropdown*/
+.dropdown-content {
+    background: white;
+    margin: 0;
+    display: none;
+    min-width: 100px;
+    overflow-y: auto;
+    opacity: 0;
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 9999;
+    -webkit-transform-origin: 0 0;
+    transform-origin: 0 0
+}
+
+.dropdown-content:focus {
+    outline: 0
+}
+
+.dropdown-content li {
+    clear: both;
+    color: rgba(0, 0, 0, 0.87);
+    cursor: pointer;
+    min-height: 50px;
+    line-height: 1.5rem;
+    width: 100%;
+    text-align: left
+}
+
+
+.dropdown-content li:focus {
+    outline: none
+}
+
+.dropdown-content li.divider {
+    min-height: 0;
+    height: 1px
+}
+
+.dropdown-content li>a,
+.dropdown-content li>span {
+    font-size: 16px;
+    color: #2196F3;
+    display: block;
+    line-height: 22px;
+    padding: 14px 16px
+}
+
+.dropdown-content li>a>i {
+    height: inherit;
+    line-height: inherit;
+    float: left;
+    margin: 0 24px 0 0;
+    width: 24px
+}
 
 .dropdown-content {
     padding-top: 10px;
@@ -1788,13 +1996,13 @@ h6 {
 }
 .keyboard-listener {
     position: absolute;
-    top: 50%;
-    right: 10px;
+    top: 0;
+    left: 50%;
     width: 40px;
     height: 40px;
     overflow: hidden;
-    opacity: 0.3;
-    z-index: 3000;
+    opacity: 0;
+    z-index: 0;
 }
 .keyboard-listener textarea {
     overflow: hidden;

@@ -6,7 +6,7 @@
     global.manageState(window);
     var AutoCloseable = global.AutoCloseable;
 
-    function Overflow(btn, ctx, keepFocus = true,align="right") {
+    function Overflow(btn, ctx, keepFocus = true, align = "right") {
         var id = Utils.genID("o");
         var childElems = {};
         var nav = [];
@@ -37,7 +37,7 @@
                 childElems[nav.join(">")] = elem;
             }
             document.body.appendChild(elem);
-            Overflow.positionContainer(elem, parent, document.body,event,align);
+            Overflow.positionContainer(elem, parent, document.body, event, align);
             elem.style.zIndex = (index = ++Overflow.count) + 1100;
             $(elem).fadeIn();
             global.Navigation.addRoot(elem, hideOverflow);
@@ -191,6 +191,21 @@
                     hideOverflow(e);
                 }
             },
+            update: function(w) {
+                var el = childElems.root;
+                if (w) {
+                    root = {
+                        root: {
+                            childHier: w
+                        }
+                    };
+                }
+                current = current || root;
+                if (el) {
+                    var elem = Overflow.createElement(w||root.root.childHier, id);
+                    el.innerHTML = elem.innerHTML;
+                }
+            },
             setHierarchy: function(w, changed) {
                 var store = [].concat(nav);
                 if (nav.length) {
@@ -339,13 +354,13 @@
                 el.style.left = "auto";
                 return;
             }
-            else{
+            else {
                 //a way to do shiftFull
                 //1 fade other element
                 //2 border
             }
         }
-        if (align == "right" || (align=="mobile" && window.innerWidth>400)) {
+        if (align == "right" || (align == "mobile" && window.innerWidth > 400)) {
             el.style.right = maxW - Math.max(w + 10, rect.right - 10) + "px";
             el.style.left = "auto";
         }
@@ -354,10 +369,10 @@
             el.style.right = "auto";
         }
         else {
-            var space = align=="full"?20:align=="mobile"?Math.min(20,(maxW-w)/2):(maxW - w)/2;
+            var space = align == "full" ? 20 : align == "mobile" ? Math.min(20, (maxW - w) / 2) : (maxW - w) / 2;
             //full
-            el.style.right = space  + "px";
-            el.style.left = space  + "px";
+            el.style.right = space + "px";
+            el.style.left = space + "px";
         }
 
     };
@@ -378,7 +393,7 @@
                 caption: opts[i].innerHTML
             });
         }
-        var dropdown = new Overflow(null,null,null,"mobile");
+        var dropdown = new Overflow(null, null, null, "mobile");
         dropdown.setHierarchy(items);
         dropdown.show(select);
         dropdown.onclick = function(ev, id, element, item) {

@@ -84,8 +84,8 @@ app.post("/info", function(req, res) {
             var stat = {
                 size: st.size,
                 mode: st.mode,
-                mtimeMs: st.mtime.getTime(),
                 ino: st.ino,
+                mtimeMs: st.mtime.getTime(),
                 type: req.body.isLstat && st.isSymbolicLink() ? "symlink" : st.isDirectory() ? "dir" : "file"
             };
             res.status(200);

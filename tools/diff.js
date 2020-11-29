@@ -1,5 +1,5 @@
 (function(global) {
-    var AceInlineDiff = global.AceInlineDiff;
+    var AceInlineDiff;
     var DocsTab = global.DocsTab;
     var FileUtils = global.FileUtils;
     var Utils = global.Utils;
@@ -10,6 +10,7 @@
     var appConfig = global.appConfig;
     var hintDoc = global.DocsTab.$hintActiveDoc;
     var MainMenu = global.MainMenu;
+    var BootList = global.BootList;
     DocsTab.registerPopulator('d', {
         getName: function(id) {
             return Storage.getItem(id) && Storage.getItem(id).filename;
@@ -44,8 +45,30 @@
         });
     if (Storage.itemList.length)
         DocsTab.recreate();
+    var doDiff = function(args) {
+        cachedArgs.push(arguments);
+        if(!bootList.started)
+            bootList.next();
+    };
+    var cachedArgs = [];
+    var bootList = new BootList(function() {
+        doDiff = doDiffLoaded;
+        AceInlineDiff = global.AceInlineDiff;
+        bootList = null;
+        cachedArgs.forEach(function(i){
+            try{
+                doDiff.apply(null, i);
+            }
+            catch(e){}
+        });
+    });
+    bootList.push({
+        script: "./libs/js/diff_match_patch.js"
+    }, {
+        script: "./tools/ace-inline-diff.js"
+    });
 
-    function doDiff(windowId, res, filepath, filename, doc, newWindow) {
+    function doDiffLoaded(windowId, res, filepath, filename, doc, newWindow) {
         function close() {
             Storage.removeItem(windowId);
             differ.destroy();
@@ -53,8 +76,7 @@
             editor.setSession(null);
             Editors.closeEditor(editor);
         }
-        //this window will never close
-        var diffWindow = Editors.getEditorWindow(windowId, filename, null, close);
+        var diffWindow = Editors.getEditorWindow(windowId, filename, null, close,doc.id||null);
         var c = diffWindow.onEnter;
         diffWindow.onEnter = function(host) {
             c(host);

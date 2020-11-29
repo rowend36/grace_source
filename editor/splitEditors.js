@@ -1,4 +1,5 @@
 (function(global) {
+    'use strict';
     var getMainEditor = global.getMainEditor;
     var Doc = global.Doc;
     var DocsTab = global.DocsTab;
@@ -111,6 +112,7 @@
     };
 })(Modules);
 (function(global) {
+    'use strict';
     var app = global.AppEvents;
     var getEditor = global.getMainEditor;
     var Doc = global.Doc;
@@ -132,16 +134,19 @@
         if (numSplits === 0) {
             getEditor().isSplit = true;
             app.on('beforeCloseTab', onBeforeCloseTab);
-            app.on('changeEditor', onChangeEditor);
+            getEditor().on("mousedown",mousedown);
             NameTags.init();
         }
         numSplits++;
         var container = SplitManager.add($(edit.container), direction);
         var editor = Editors.createEditor(container);
+        editor.on("mousedown",mousedown);
+        var doc = Doc.forSession(edit.session);
+        if(doc)
+            editor.setSession(doc.cloneSession());
         editor.isSplit = true;
         NameTags.createTag(editor);
         Editors.setEditor(editor);
-        editor.resize();
         editor.focus();
     }
 
@@ -160,7 +165,6 @@
                 unclickable(getEditor().container);
                 getEditor().off('mousedown', mousedown);
                 app.off('beforeCloseTab', onBeforeCloseTab);
-                app.off('changeEditor', onChangeEditor);
                 NameTags.hide();
             }
         }
@@ -185,37 +189,38 @@
             exec: removeSplitEditor
         },
     ];
-    var onChangeEditor = function(e) {
-        if(e.oldEditor && e.oldEditor.isSplit){
-            clickable(e.oldEditor.container);
-            e.oldEditor.on("mousedown", mousedown);
-        }
-        if(e.editor && e.editor.isSplit){
-            unclickable(e.editor.container);
-            e.editor.off("mousedown", mousedown);
-        }
-    }
+    // var onChangeEditor = function(e) {
+    //     if(e.oldEditor && e.oldEditor.isSplit){
+    //         clickable(e.oldEditor.container);
+    //         e.oldEditor.on("mousedown", mousedown);
+    //     }
+    //     if(e.editor && e.editor.isSplit){
+    //         unclickable(e.editor.container);
+    //         e.editor.off("mousedown", mousedown);
+    //     }
+    // };
     var onBeforeCloseTab = function(e) {
         var doc = e.doc;
         if (numSplits > 0) {
             var editor;
-            if (doc.clones && doc.clones.length > 0) {
-                editor = getEditor();
-                if (doc == Doc.forSession(editor.session))
-                    editor.execCommand("Remove Split");
-                else
-                    Notify.warn('Document active in multiple panes');
+            if (doc){
+                if (doc.clones && doc.clones.length > 0) {
+                    editor = getEditor();
+                    if (doc == Doc.forSession(editor.session))
+                        editor.execCommand("Remove Split");
+                    else
+                        Notify.warn('Document active in multiple panes');
+                }
+                else {
+                    editor = getEditor(doc.session);
+                    editor.execCommand('Remove Split');
+                }
+                e.preventDefault();
             }
-            else {
-                editor = getEditor(doc.session);
-                editor.execCommand('Remove Split');
-            }
-            e.preventDefault();
         }
         else {
             console.error('Invalid State');
             app.off('beforeCloseTab', onBeforeCloseTab);
-            app.off('changeEditor', onChangeEditor);
         }
     };
     global.SplitEditors = {
@@ -225,7 +230,7 @@
             if (numSplits < 1) return false;
             var curDoc = Doc.forSession(getEditor().session);
             if (curDoc == doc) return true;
-            editor = getEditor(doc.session);
+            var editor = getEditor(doc.session);
             if (editor && editor.isSplit) {
                 Editors.setEditor(editor);
                 FocusManager.focusIfKeyboard(editor,true);

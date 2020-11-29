@@ -395,10 +395,10 @@
     };
     FileUtils.registerFileServer('application', "Default FileSystem", function(conf) {
         return (window.afs = new AppFileServer(conf && conf.root));
-    }, {
+    }, [{
         name: "root",
         caption: "Root Directory",
         value: '/sdcard/',
         type: "text"
-    });
+    }]);
 })(Modules);

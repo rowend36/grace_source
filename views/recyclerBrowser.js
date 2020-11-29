@@ -395,6 +395,7 @@
             this.renderer.register(this.renderer.views.indexOf(el) + 1, renderer);
 
             this.childStubs[name] = new RecyclerChildStub(childStub, this.childFilePath(name), this.fileServer, true, renderer);
+            childStub.detach();
             childStub[0].navBehaviour = new RecyclerNavBehaviour(this.childStubs[name]);
             this.childStubs[name].cache = this.cache.clone(this.childStubs[name].root[0]);
             this.childStubs[name].renderer.onBeforeRender = this.onChildRender.bind(this.childStubs[name]);

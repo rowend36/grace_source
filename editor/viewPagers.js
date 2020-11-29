@@ -5,12 +5,13 @@
     var Utils = global.Utils;
     var TEMP_SESSION = new ace.EditSession("");
     var Notify = global.Notify;
-    global.showClickable = function(el){
-        
+    global.showClickable = function(el) {
+
     };
-    global.hideClickable = function(el){
-        
+    global.hideClickable = function(el) {
+
     };
+
     function ViewPager(editor) {
         var edit = editor.container;
         if (!edit) {
@@ -84,8 +85,8 @@
                         }
                         catch (e) {
                             console.error('host enter threw exception force removing tab', e);
-                            Notify.error('Plugin error: '+id);
-                            ViewPager.forceClose(id,this.views[id]);
+                            Notify.error('Plugin error: ' + id);
+                            ViewPager.forceClose(id, this.views[id]);
                             e.stopPropagation();
                         }
                     }
@@ -195,7 +196,7 @@
     };
 
     //viewpager
-    Editors.getTabWindow = function(id, name, info, onClose) {
+    Editors.getTabWindow = function(id, name, info, onClose,insert) {
         if (!doneInit)
             ViewPager.init();
         var pager = getEditor().viewPager;
@@ -206,10 +207,13 @@
             DocsTab.setActive(id, true, true);
         };
         pager.add(id, host);
+        if (insert!==undefined) {
+            global.DocsTab.insertTab(global.DocsTab.indexOf(insert)+1,id, name, null, info);
+        }
         global.DocsTab.addTab(id, name, null, info);
         return host;
     };
-    Editors.getEditorWindow = function(id, name, info, onClose) {
+    Editors.getEditorWindow = function(id, name, info, onClose, insert) {
         if (!doneInit)
             ViewPager.init();
         var pager = getEditor().viewPager;
@@ -220,6 +224,9 @@
             global.DocsTab.setActive(id, true, true);
         };
         pager.add(id, host);
+        if (insert!==undefined) {
+            global.DocsTab.insertTab(global.DocsTab.indexOf(insert)+1,id, name, null, info);
+        }
         global.DocsTab.addTab(id, name, null, info);
         return host;
     };
@@ -262,7 +269,7 @@
         });
         doneInit = true;
     };
-    ViewPager.forceClose = function(id,errant) {
+    ViewPager.forceClose = function(id, errant) {
         if (errant && !errant.autoClose && errant.onClose) {
             try {
                 errant.onClose();

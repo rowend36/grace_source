@@ -24,10 +24,13 @@
     var Notify = global.Notify;
     var Utils = global.Utils;
     var Tabs;
+    //priority for checkpoints user creates
+    var USER_CHECKPOINT_PRIORITY = 15;
+    //priority for content for recovering session
     var CONTENT_PRIORITY = 10;
+    //priority for closed docs
     var STASH_PRIORITY = 5;
-    var USER_CHECKPOINT_PRIORITY = 10;
-    var maxDocCacheSize = Math.min(5000, Math.max(10, Utils.parseSize(appConfig.maxDocCacheSize)));
+    var maxDocCacheSize = Math.min(1000000, Math.max(5000, Utils.parseSize(appConfig.maxDocCacheSize)));
 
     function updateDiff(session, undoManager, from) {
         var diff, delta, i;
@@ -85,19 +88,21 @@
             return obj;
         },
         load: function(doc, obj) {
-            doc.unserialize(obj);
             if (obj.contentSize) {
                 var contentKey = Doc.hasBlob(doc.id, "content");
                 if (contentKey) {
                     var content = Doc.restoreBlob(contentKey);
                     if (content && content.length == obj.contentSize) {
-                        doc.session.$fromUndo = true;
-                        doc.setValue(content);
-                        doc.session.$fromUndo = false;
+                        obj.content = content;
+                        doc.unserialize(obj);
                         return;
                     }
+                    else console.error("Document length mismatch");
                 }
-                console.error('Cache content wiped ', doc.id);
+                else console.error('Cache content wiped ', doc.id);
+                doc.savedFolds = obj.folds;
+                obj.folds = [];
+                doc.unserialize(obj);
                 doc.savedUndos = doc.session.$undoManager;
                 doc.session.setUndoManager(null);
                 doc.contentSize = obj.contentSize;
@@ -105,6 +110,7 @@
                 doc.dirty = true;
 
             }
+            else doc.unserialize(obj);
         },
         refresh: function(doc, res) {
             if (doc.getSize()) {
@@ -120,6 +126,9 @@
                     if (updateDiff(doc.session, doc.savedUndos, doc.lastSave)) {
                         Utils.assert(doc.getSize() == doc.contentSize);
                         doc.session.setUndoManager(doc.savedUndos);
+                        doc.savedFolds.forEach(function(fold) {
+                            doc.session.addFold(fold.placeholder, Range.fromPoints(fold.start, fold.end));
+                        });
                         doc.dirty = (doc.contentSize != res.length);
                     }
                     else doc.setClean();
@@ -139,6 +148,7 @@
             }
             delete doc.needsRefresh;
             delete doc.savedUndos;
+            delete doc.savedFolds;
             delete doc.contentSize;
         },
         canRecover: function(id) {
@@ -360,7 +370,7 @@
                 };
             }).filter(function(e) {
                 if (e.start.row > e.end.row) {
-                    console.error('Bad fold data ', JSON.stringify(e));
+                    //no longer needed
                     return false;
                 }
                 return true;
@@ -644,7 +654,7 @@
 
         }
     };
-    Doc.saveAs = function(id, newpath, fileServer,callback) {
+    Doc.saveAs = function(id, newpath, fileServer, callback) {
         var doc = docs[id];
         fileServer = fileServer || FileUtils.defaultServer;
         if (doc.isTemp()) {
@@ -800,7 +810,7 @@
         var doc = Doc.forSession(session);
         if (session == doc.session) {
             if (doc.clones && doc.clones.length > 0) {
-                temp = doc.clones[0];
+                var temp = doc.clones[0];
                 doc.clones[0] = session;
                 doc.session = temp;
                 if (doc.bound) {
@@ -1243,7 +1253,7 @@
     Doc.swapDoc = function(id) {
         if (Tabs.active != id)
             Tabs.setActive(id, true, true);
-        
+
     };
 
     Doc.openDoc = function(path, server, cb) {

@@ -20,7 +20,7 @@
     var Text = require('ace/layer/text').Text;
     var Gutter = require('ace/layer/gutter').Gutter;
     var oop = require("ace/lib/oop");
-    var dom = require("ace/lib/dom")
+    var dom = require("ace/lib/dom");
     var FoldLine = require('ace/edit_session/fold_line').FoldLine;
     var Marker = require('ace/layer/marker').Marker;
 
@@ -41,7 +41,7 @@
     };
 
     function AceInlineDiff(options) {
-        this.options = {}
+        this.options = {};
         extend(true, this.options, {
             mode: null,
             diffGranularity: C.DIFF_GRANULARITY_BROAD,
@@ -105,7 +105,7 @@
         this.foldModes = {
             left: new DiffFoldMode(2,2),
             right: new DiffFoldMode(2,2)
-        }
+        };
         if (this.options.left.session) {
             this.editor.setSession(this.options.left.session);
         }
@@ -123,7 +123,7 @@
         this.lineWidgets = [];
 
         //array of equal line segments
-        this.lines = []
+        this.lines = [];
         this.$decorate = this.decorate.bind(this);
         this.gutter = new GutterLineVirus(this.editor.renderer);
         this.gutter.setSession(this.other);
@@ -291,7 +291,7 @@
         },
         decorate: function() {
             var diffs = this.diffs;
-            this.clear()
+            this.clear();
             var putFragmentsAbove = (this.swapped == this.options.removedFragmentsBelow);
             var currentClass = this.swapped ? this.options.classes.removed : this.options.classes.added;
             var otherClass = this.swapped ? this.options.classes.added : this.options.classes.removed;
@@ -303,13 +303,13 @@
                     start: s,
                     mapStart: m
                 };
-            }
+            };
             var eq_end = function(e) {
                 //if (e != equal.start) {
                 equal.end = e;
                 align.push(equal);
                 //}
-            }
+            };
             diffs.forEach(function(item) {
                 eq_end(item.rightStartLine);
                 eq_start(item.rightEndLine, item.leftEndLine);
@@ -336,7 +336,7 @@
         },
         clear: function() {
             this.foldModes.left.aligns = this.foldModes.right.aligns = this.lines = this.gutter.alignables = this.renderer.alignables = [];
-            clearLineWidgets(this)
+            clearLineWidgets(this);
             this.markers.forEach(function(marker) {
                 this.current.removeMarker(marker);
             }, this);
@@ -468,7 +468,7 @@
             }
             else last = null;
             return last;
-        }
+        };
     }
     var CellVirusProps = (function() {
         this.computeLineTop = function(row, config, session, column) {
@@ -557,7 +557,7 @@
                 last = this.alignables[mapped];
                 return row - last.start + last.mapStart;
             }
-        }
+        };
         this.mapLine = function(row) {
             var last;
             //*
@@ -659,7 +659,7 @@
                 charCount = this.$textLayer.MAX_LINE_LENGTH + 30;
 
             return Math.max(this.$size.scrollerWidth - 2 * this.$padding, Math.round(charCount * this.characterWidth));
-        }
+        };
         this.$updateMarkers = this.updateMarkers.bind(this);
         this.$updateWrapMode = this.updateWrapMode.bind(this);
         this.$changeWrapLimit = this.changeWrapLimit.bind(this);
@@ -687,7 +687,7 @@
             if (data.action == "add") {
                 var start = data.data.range.start.row;
                 var end = data.data.range.end.row;
-                var mapRange = new Range(this.mapLine(start), data.data.range.start.column, this.mapLine(end), data.data.range.end.column)
+                var mapRange = new Range(this.mapLine(start), data.data.range.start.column, this.mapLine(end), data.data.range.end.column);
                 this.layer.session.addFold("...", mapRange);
             }
             else if (data.action == "remove") {
@@ -696,7 +696,7 @@
                 if (fold)
                     this.layer.session.removeFold(fold);
             }
-        }
+        };
         this.attach = function(temp) {
             if (!temp) {
                 this.hook(this.renderer.$textLayer);
@@ -935,12 +935,12 @@
                         acediff.setSession(right,false);
                     },
                 }
-            }
+            };
         var commands = acediff.$commands;
 
         var options = getOption(acediff, side, 'options');
         if (options) {
-            acediff.editors[side].ace.setOptions(options)
+            acediff.editors[side].ace.setOptions(options);
         }
         /*var mode = getOption(acediff, side, 'mode');
         if(mode)
@@ -957,7 +957,7 @@
             acediff.editors[side].ace.setValue(acediff.options[side].content, -1);
         }
         for (var i in commands)
-            acediff.editors[side].ace.commands.addCommand(commands[i])
+            acediff.editors[side].ace.commands.addCommand(commands[i]);
     }
 
     function getOption(acediff, side, option) {
@@ -982,10 +982,10 @@
 
     function addLineWidget(editor, session, line, start, end, other) {
         if (!editor.lineWidgets) {
-            editor.lineWidgets = [] //editor.ace.session.widgetManager
+            editor.lineWidgets = []; //editor.ace.session.widgetManager
         }
         if (!session.widgetManager) {
-            session.widgetManager = new LineWidgets(session)
+            session.widgetManager = new LineWidgets(session);
             session.widgetManager.editor = editor.ace;
         }
         var no;
@@ -996,9 +996,9 @@
         }
         else no = end - start;
 
-        if (!no) return
+        if (!no) return;
         if (!line) {
-            editor.scrollOffset += no
+            editor.scrollOffset += no;
             //setting scroll margin triggers scroll if there is a session
             var renderer = editor.ace.renderer;
             renderer.session = null;
@@ -1023,8 +1023,8 @@
             start: start,
             end: end
         };
-        editor.lineWidgets.push(w)
-        session.widgetManager.addLineWidget(w)
+        editor.lineWidgets.push(w);
+        session.widgetManager.addLineWidget(w);
         return w;
     }
 
@@ -1088,7 +1088,7 @@
                     ch: ch,
                     toLine: pos[side].line,
                     toCh: pos[side].ch
-                }
+                };
             };
         }
     }
@@ -1100,7 +1100,7 @@
         var line = editor.getCursorPosition().row;
         for (var i = 0; i < pairs.length; i++) {
             var diff = pairs[i].diffs,
-                isOrig = editor == editors[pairs[i].left].ace
+                isOrig = editor == editors[pairs[i].left].ace;
             if (!isOrig && editor != editors[pairs[i].right].ace) {
                 continue;
             }
@@ -1144,9 +1144,9 @@
         if (!dmp)
             dmp = new diff_match_patch();
         // if (!/\n$/.test(text1)) 
-        text1 += "\n"
+        text1 += "\n";
         // if (!/\n$/.test(text2)) 
-        text2 += "\n"
+        text2 += "\n";
         var a = dmp.diff_linesToChars_(text1, text2);
         var lineText1 = a.chars1;
         var lineText2 = a.chars2;
@@ -1158,10 +1158,10 @@
             left: 0,
             right: 0,
             trailinglines: null
-        }
-        var last = null
+        };
+        var last = null;
         diff.forEach(function(chunk, i) {
-            var obj = transformDiff(chunk, offset, last)
+            var obj = transformDiff(chunk, offset, last);
             if (obj) {
                 if (last && automerge) {
                     mergeDiff(last, obj);
@@ -1176,10 +1176,10 @@
     }
 
     function mergeDiff(dest, src) {
-        dest.leftStartLine = Math.min(dest.leftStartLine, src.leftStartLine)
-        dest.rightStartLine = Math.min(dest.rightStartLine, src.rightStartLine)
-        dest.leftEndLine = Math.max(dest.leftEndLine, src.leftEndLine)
-        dest.rightEndLine = Math.max(dest.rightEndLine, src.rightEndLine)
+        dest.leftStartLine = Math.min(dest.leftStartLine, src.leftStartLine);
+        dest.rightStartLine = Math.min(dest.rightStartLine, src.rightStartLine);
+        dest.leftEndLine = Math.max(dest.leftEndLine, src.leftEndLine);
+        dest.rightEndLine = Math.max(dest.rightEndLine, src.rightEndLine);
     }
 
     function transformDiff(chunk, offset, last) {
@@ -1193,7 +1193,7 @@
             trailinglines: number
         }
         */
-        var trailinglines = offset.trailinglines
+        var trailinglines = offset.trailinglines;
         var chunkType = chunk[0];
         var text = chunk[1];
         // oddly, occasionally the algorithm returns a diff with no changes made
@@ -1208,8 +1208,8 @@
         }
         var obj = null;
         if (chunkType == C.DIFF_EQUAL) {
-            offset.left += numlines
-            offset.right += numlines
+            offset.left += numlines;
+            offset.right += numlines;
             if (trailinglines) {
                 //trailinglines are pushed down(prepended to next line)
                 //a better implementation might
@@ -1235,14 +1235,14 @@
                     offset.trailinglines = null;
                 }
             }
-            return
+            return;
             //pass
         }
         if (endsWithNewline) {
             var countNewlines = /\n+$/.exec(text)[0].length;
             if (countNewlines > 1) {
                 if (trailinglines)
-                    console.warn('Unexpected trailing empty lines')
+                    console.warn('Unexpected trailing empty lines');
                 trailinglines = [chunkType, countNewlines - 1];
             }
         }
@@ -1253,11 +1253,11 @@
             rightStartLine: offset.right,
             rightEndLine: offset.right,
             chunks: text.split("\n")
-        }
+        };
         obj[types[chunkType] + "EndLine"] += numlines;
-        offset[types[chunkType]] += numlines
-        offset.trailinglines = trailinglines
-        return obj
+        offset[types[chunkType]] += numlines;
+        offset.trailinglines = trailinglines;
+        return obj;
     }
 
     //getDiff,getChunk: copied from codemirror merge.js
@@ -1285,9 +1285,9 @@
     }
 
     function Pos(line, ch) {
-        if (!this) return new Pos(line, ch)
-        this.line = line || 0
-        this.ch = ch || 0
+        if (!this) return new Pos(line, ch);
+        this.line = line || 0;
+        this.ch = ch || 0;
     };
 
     function moveOver(pos, str, copy, other) {
@@ -1483,23 +1483,23 @@
             timeout;
         var context, args;
         var later = function() {
-            timeout = null
-            last = new Date().getTime()
-            func.apply(context, args)
-        }
+            timeout = null;
+            last = new Date().getTime();
+            func.apply(context, args);
+        };
         return function() {
-            context = this
+            context = this;
             args = arguments;
             if (timeout)
                 return;
-            var now = new Date().getTime()
+            var now = new Date().getTime();
             if (now - last > wait) {
-                later()
+                later();
             }
             else {
-                timeout = setTimeout(later, wait - (now - last))
+                timeout = setTimeout(later, wait - (now - last));
             }
-        }
+        };
     }
 
     //binary search through an array of start end objects
@@ -1571,7 +1571,7 @@
             var result = func.apply(this, arguments);
             var error = after.apply(this, spread(arguments, result));
             return (error !== undefined) ? error : result;
-        }
+        };
     }
 
     //used to check if elements in an array are unique
@@ -1586,7 +1586,7 @@
 
     //python func(*a,b)
     function spread(args, arg) {
-        var arg2 = []
+        var arg2 = [];
         arg2.push.apply(arg2, args);
         arg2.push(arg);
         return arg2;

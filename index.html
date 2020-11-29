@@ -8,9 +8,10 @@
     <link rel="stylesheet" href="./libs/css/materialize.min.css">
     <link rel="stylesheet" href="./main.css">
     <script type="text/javascript" src="./libs/js/eruda.min.js"></script>
+    <script src="./tests/snippets.js" type="text/javascript" charset="utf-8"></script>
     <script>
-         eruda.init([]);
-            
+        //Snippets.detectGlobals.exec(window);
+        eruda.init([]);
     </script>
 </head>
 
@@ -19,7 +20,7 @@
     <div id="side-menu" class="clipboard-empty container sidenav">
 
         <ul id="selector" class="ui tabs" data-nav-behaviour="tabs">
-            
+
             <li class="tab">
                 <a href="#hierarchy_tab">
                     <i class="material-icons" style="width:100%">work</i>
@@ -81,7 +82,7 @@
                 <button id="toggleWholeWord" class="right ace_button checked">[Abc]</button>
             </div>
             <h6 id="searchInfo"></h6>
-            <div id="loading"><span>Searching...</span><br/><button id= "searchStop" class='btn red center'>Stop</button></div>
+            <div id="loading"><span>Searching...</span><br/><button id="searchStop" class='btn red center'>Stop</button></div>
             <div id="searchResults">
 
             </div>
@@ -134,6 +135,7 @@
     <script type="text/javascript" src="./libs/js/polyfill.js"></script>
     <script type="text/javascript" src="./libs/js/materialize.js"></script>
     <script type="text/javascript" src="./libs/js/base64.js"></script>
+    <script type="text/javascript" src="./libs/js/markdown-it.js"></script>
 
 
     <script type="text/javascript" src="./src-min-noconflict/ace.js"></script>
@@ -156,9 +158,8 @@
     <script type="text/javascript" src="./core/focusmanager.js" charset="utf-8"></script>
     <script type="text/javascript" src="./ui/notification.js" charset="utf-8"></script>
     <script type="text/javascript" src="./core/navigation.js"></script>
-    <!--<script type="text/javascript" src="./libs/js/lightning-fs.js" charset="utf-8"></script>-->
-    <script type="text/javascript" src="./core/fileserver.js"></script>
-    <script type="text/javascript" src="./core/databasestorage.js"></script>
+    <script type="text/javascript" src="./core/fileservers.js"></script>
+    <script type="text/javascript" src="./core/storage/databasestorage.js"></script>
     <!--Implemented in application-->
     <!--<script type="text/javascript" src="./core/delayedstorage.js"></script>-->
     <script type="text/javascript" src="./core/document.js"></script>
@@ -166,6 +167,7 @@
 
     <script type="text/javascript" src="./ui/linearlayout.js" charset="utf-8"></script>
     <script type="text/javascript" src="./ui/overflow.js"></script>
+    <script type="text/javascript" src="./ui/form.js"></script>
     <script type="text/javascript" src="./ui/itemlist.js"></script>
     <script type="text/javascript" src="./views/tabs.js"></script>
     <script type="text/javascript" src="./views/charbar.js" charset="utf-8"></script>
@@ -181,13 +183,16 @@
     <script type="text/javascript" src="./prefs/key_binding.js" charset="utf-8"></script>
     <script type="text/javascript" src="./prefs/load_settings.js" charset="utf-8"></script>
 
+    <script src="core/bootlist.js" type="text/javascript" charset="utf-8"></script>
     <script src="main.js" type="text/javascript" charset="utf-8"></script>
     <script type="text/javascript" src="./tests/test_fs.js"></script>
     <script type="text/javascript" src="./core/cachefileserver.js" charset="utf-8"></script>
     <script type="text/javascript" src="./libs/js/isomorphic-git.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./libs/js/isomorphic-http.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./libs/js/isomorphic-git.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./tools/libs/diff-lib.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./tools/interactive_merge.js"></script>
     <script type="text/javascript" src="./tools/git.js"></script>
-    
+
 </body>
 
 </html>

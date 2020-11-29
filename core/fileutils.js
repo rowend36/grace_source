@@ -17,7 +17,6 @@
         "projectName": "",
         "projectRoot": "",
         'bookmarks': "/sdcard/, /data/data/io.tempage.dorynode/",
-        '_server': "http://localhost:3000",
         'code_files': [".js", ".css", ".html", ".sass", ".less", ".json", ".py"].join(", "),
         'binaryFiles': [
             "zip", "mp4", "mp3", "rar",
@@ -109,6 +108,7 @@
             return this.type == "file";
         },
         dev: 2114,
+        ino: 0,
         uid: 0,
         gid: 0,
         rdev: 0,
@@ -146,17 +146,21 @@
             } while (newpath != path);
             return path;
         },
-        dirname: function(path){
-            if(!path || path=="/")return null;
+        dirname: function(path) {
+            if (!path || path == "/") return null;
             path = FileUtils.cleanFileList(path);
-            return path.split('/').slice(0,-1).join('/')||'/';
+            return path.split('/').slice(0, -1).join('/') || '/';
         },
         join: function(base, path) {
             return base.replace(/\/+$/, "") + "/" + path.replace(/^\/+/, "");
         },
         createStats: function(stat) {
-            return Object.assign(Object.create(StatProps), stat, {
-                mode: parseInt(bits[stat.type] + 644, 8),
+            return Object.assign(Object.create(StatProps), {
+                mtimeMs: stat.mtimeMs,
+                type: stat.type,
+                size: stat.size,
+                ino: stat.ino || 0,
+                mode: stat.mode || parseInt(bits[stat.type] + 644, 8),
                 atimeMs: stat.atimeMs || stat.mtimeMs,
                 ctimeMs: stat.ctimeMs || stat.mtimeMs,
                 mtime: new Date(stat.mtimeMs),
@@ -196,12 +200,7 @@
                 params.type = browserModal.find('select').val();
                 var e = browserModal.find('.config-' + params.type)[0];
                 if (e) {
-                    for (var i = 0; i < e.children.length; i++) {
-                        var conf = e.children[i];
-                        if (conf.tagName == "INPUT") {
-                            params[conf.name] = conf.value;
-                        }
-                    }
+                    Object.assign(params, global.Form.parse(serverFactories[params.type].config, e));
                 }
                 var browser = FileUtils.initBrowser(params);
                 if (!browser) {
@@ -236,20 +235,9 @@
                     option.innerText = factory.caption || id.toUpperCase();
                     select.appendChild(option);
                     if (factory.config) {
-                        var el = document.createElement('form');
-                        el.className = "config config-" + id;
-                        for (var i in factory.config) {
-                            var t = factory.config[i];
-                            var caption = document.createElement('label');
-                            caption.innerText = t.caption;
-                            var input = document.createElement('input');
-                            input.setAttribute("type", t.type);
-                            input.setAttribute("name", t.name);
-                            input.setAttribute("value", t.value || "");
-                            el.appendChild(caption);
-                            el.appendChild(input);
-                        }
-                        e.appendChild(el);
+                        var form = global.Form.create(factory.config);
+                        form.className = "config config-" + id;
+                        e.appendChild(form);
                     }
                 }
                 needsRecreate = false;
@@ -310,7 +298,7 @@
                 server = factory.create(params, id);
             }
             else {
-                return unimplemented();
+                throw new Error('Unknown server type ' + type);
             }
             if (!server.id)
                 server.id = id;
@@ -512,9 +500,21 @@
             if (prop) {
                 for (var i in types) {
                     var menuId = prop[types[i] + "Dropdown"];
+                    if (caption.extension) {
+                        var hasExt = menuId + "-" + caption.extension;
+                        if (!prop.menuItems[hasExt]) {
+                            prop.menuItems[hasExt] = Object.create(prop.menuItems[menuId]);
+                            menuId = hasExt;
+                        }
+                    }
+                    if (caption.filename) {
+                        var hasName = menuId + "_" + filename.replace(/\./g, "_");
+                        if (!prop.menuItems[hasName]) {
+                            prop.menuItems[hasName] = Object.create(prop.menuItems[menuId]);
+                            menuId = hasName;
+                        }
+                    }
                     prop.menuItems[menuId][id] = caption;
-                    //var overflow = prop.overflows[menuId];
-                    //if (overflow) overflow.setHierarchy(prop.menuItems[menuId]);
                     for (var j in prop.overflows) {
                         prop.overflows[j].setHierarchy();
                     }
@@ -627,8 +627,11 @@
         },
         fileBookmarks: bookmarks,
         extname: function(name) {
-            var ext = /.*\.(.*)/.exec(name);
-            return ext ? ext[0] : "";
+            var ext = name.lastIndexOf(".");
+            if (ext > 0) {
+                return name.substring(ext + 1);
+            }
+            else return "";
         },
         extnames: function(name) {
             var exts = [];

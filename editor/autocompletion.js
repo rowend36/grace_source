@@ -51,7 +51,7 @@
                 if (res) {
                     each(path, err, res);
                 }
-                if (--done) {
+                if (--done === 0) {
                     cb();
                 }
             };
@@ -83,6 +83,7 @@
             });
         }
         this.loadFile = loadFile;
+
         function loadFolder(path, server, each, finished, depth, parallel) {
             server.getFiles(path, function(e, list) {
                 if (e) return finished(e);
@@ -170,19 +171,19 @@
         "ternPlugins": "doc_comment",
         "useWebWorkerForTern": false,
         "autoLoadProjectFiles": false,
-        "filesToLoad": "list:main.js",
         "maxAutoFileLoadSize": "1mb",
         "maxAutoLoadSize": "5mb",
         "customDefs": "",
+        "loadFileList": "",
         "autoLoadOpenDocs": true
     }, "autocompletion");
     global.registerValues({
         'ternDefs': "browser ecmascript jquery react underscore",
         'ternPlugins': "modules requirejs angular modules node node_resolve es_modules commonjs complete_strings",
-        'filesToLoad': "specify either \nall:<load all js,html && php files in project>,\nfile:<ternConfig>,\nlist:<comma separated list of files>",
         'maxAutoFileLoadSize': 'The maximum total size of files to load on start\nIf a ternConfig file is specified, it overrides this value.',
         'customDefs': "Either an absolute path or a filename to be searched for in <project folder>/defs"
     });
+    var configure = global.configure;
     var ternPlugins, ternDefs;
     var Doc = global.Doc;
     var Functions = global.Functions;
@@ -230,6 +231,10 @@
                 //once tern is enabled, it can be accessed via editor.ternServer
                 if (!ternServer) {
                     ternServer = server;
+                    loadedFiles = Utils.parseList(appConfig.loadFileList) || [];
+                    fileLoader.loadList(loadedFiles, FileUtils.getProject().fileServer, function(p, err, res) {
+                        if (!err) ternServer.addDoc(p, res);
+                    }, function() {});
                     for (var doc in docs)
                         if (ternModes.hasOwnProperty(docs[doc].session.getMode().$id)) {
                             ternServer.addDoc(docs[doc].getPath(), docs[doc].session);
@@ -268,10 +273,10 @@
 
 
     FileUtils.registerOption("project", ["project"], "load-comp", "Load Completions", function(ev) {
-        if (!ternServer) {
+        /*if (!ternServer) {
             ev.preventDefault();
             return;
-        }
+        }*/
         var e = ev.filepath;
         var server = ev.browser.fileServer;
         var count = 0;
@@ -280,12 +285,14 @@
             if (!err && res) {
                 count++;
                 loadedFiles.push(path);
-                ternServer.addDoc(path, res);
+                if(ternServer)
+                    ternServer.addDoc(path, res);
             }
 
         }
         var finished = function(err) {
             console.log(err);
+            configure("loadFileList", loadedFiles.join(","), "autocompletion");
             Notify.info("Loaded " + count + " files" + " in " + (Math.round((new Date().getTime() - startTime) / 10) / 100.0) + " seconds");
         }
         if (FileUtils.isDirectory(e)) {
@@ -310,9 +317,9 @@
             if (ternServer) {
                 ternServer.docChanged(a);
             }
-            fileLoader.loadList(loadedFiles,FileUtils.getProject().fileServer,function(p,err,res){
-                ternServer.addDoc(p,res);
-            },function(){
+            fileLoader.loadList(loadedFiles, FileUtils.getProject().fileServer, function(p, err, res) {
+                ternServer.addDoc(p, res);
+            }, function() {
                 Notify.info('Reloaded');
             })
         }

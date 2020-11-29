@@ -253,7 +253,6 @@
         "wrapBehavioursEnabled": BOOL
     };
     
-    opt = null;
     for (var i in optionsValidator) {
         var s = appStorage.getItem(i);
         if (s !== null && s !== undefined && s != "undefined" && s !== "null") {

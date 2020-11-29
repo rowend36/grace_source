@@ -198,7 +198,7 @@
     };
     FastCache.prototype.push = function(el) {
         this.els.push(el);
-        if (this.autosync && !this.timeout) this.timeout = setTimeout(this.sync.bind(this), 1000);
+        if (this.autosync && !this.timeout) this.timeout = setTimeout(this.sync.bind(this), 400);
     };
     FastCache.prototype.clone = function(el) {
         return new FastCache(this.back.clone(el), this.autosync);
@@ -326,10 +326,8 @@
                     //all increments in viewport.y must be done in scrollTop
                     //to get correct values
                     this.changes ^= INVALIDATE;
-                    if (a < viewport.y + viewport.height) {
-                        //force rendering
-                        this.changes |= SCROLL_UP;
-                    }
+                    //force rendering
+                    this.changes |= SCROLL_UP;
                 }
                 else this.changes |= MODIFY_NOT_BELOW;
             }
@@ -509,7 +507,7 @@
     };
     RecyclerRenderer.prototype.schedule = function(viewport) {
         if (this.renderTimeout) return;
-        this.renderTimeout = (window.requestAnimationFrame || setTimeout)((function() {
+        this.renderTimeout = (/*window.requestAnimationFrame || */setTimeout)((function() {
             this.renderTimeout = null;
             this.compute();
             if (this.changes)

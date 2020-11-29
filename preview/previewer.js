@@ -3,6 +3,7 @@
     var Doc = global.Doc;
     var SplitManager = global.SplitManager;
     var watchTheme = global.watchTheme;
+    var AutoCloseable = global.AutoCloseable;
 
     function createIcon(id, name) {
         return "<span style='width:35px' id='" + id + "' class='material-icons'>" + name + "</span>";
@@ -132,6 +133,9 @@
                 case "forward":
                     win.history.forward();
                     break;
+                case "console":
+                    win.eruda._devTools.toggle();
+                    break;
                 case "reload":
                     win.location.reload();
                     break;
@@ -175,28 +179,14 @@
             if (reloader) {
                 reloader.reload(preview, path, live);
             }
-            else if (live) {
-                var a = Doc.forSession(editor.session);
-                if (a) {
-                    Doc.saveDocs(a.id, function() {
-                        preview.contentWindow.location.reload();
-                    });
-                }
-                else {
-                    preview.contentWindow.location.reload();
-                }
-                // preview.contentWindow.location.href = path;
-                // preview.contentDocument.write(editor.getValue());
-            }
             else {
                 preview.src = path;
-                //preview.contentWindow.location.reload()
             }
+            
         }
 
         function setEditor(edit) {
             if (editor == edit) {
-                updatePreview();
                 return;
             }
             else {
@@ -229,6 +219,7 @@
                 if (isFull == true)
                     previewContainer.className = "preview";
                 previewContainer.parentNode.removeChild(previewContainer);
+                AutoCloseable.remove("preview");
             }
             else {
                 container = null;
@@ -267,10 +258,16 @@
                 full = false;
                 container = SplitManager.add($(editor.container), splitMode || getSplitMode(editor.container));
             }
+            if(full){
+                AutoCloseable.add("preview",{
+                    close: hide
+                });
+            }
             hidden = false;
             container.appendChild(previewContainer);
             isFull = full;
         }
+        
         var API = {
             isHidden: function() {
                 return hidden;
@@ -294,8 +291,8 @@
             setPath: function(p, reload) {
                 path = p;
                 addressBar.innerHTML = p;
-                updatePreview(false);
                 reloader = reload;
+                updatePreview(false);
             }
         };
         return API;

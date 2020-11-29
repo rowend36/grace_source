@@ -1,4 +1,5 @@
 /* jshint esversion: 6 */
+
 (function(global) {
     var http = global.http;
     var git = window.git;
@@ -11,17 +12,36 @@
     var configEvents = global.configEvents;
     var appConfig = global.registerAll({
         "gitdir": ".grace-git",
-        "gitUsername": "",
         "gitName": "",
         "gitEmail": "",
         "gitPassword": "*******",
-        "gitCorsProxy": Env._server + "/git"
+        "gitCorsProxy": Env.isWebView ? undefined : Env._server + "/git",
+        "defaultRemote": undefined,
+        "defaultRemoteBranch": undefined,
+        "useDiskConfig": false,
+        "forceShowStagedDeletes": true
     }, "git");
     var configure = global.configure;
+
+    function mergeList(original, update, copy) {
+        var list = copy ? original.slice(0) : original;
+        var last = 0;
+        var changed;
+        for (var i = 0; i < update.length; i++) {
+            var pos = list.indexOf(update[i], last);
+            if (pos < 0) {
+                list.splice(last, 0, update[i]);
+                last = last + 1;
+            }
+            else last = pos + 1;
+        }
+    }
     global.registerValues({
         "gitCorsProxy": "Possible value: https://cors.isomorphic-git.org/ \nSee isomorphic-git.com/issues",
         "gitName": "The name that will be used in commits",
-        "gitdir": "The name of the git dir. Grace git support(branching,pulling) is still experimental.\n Using '.git' might corrupt your data."
+        "gitdir": "The name of the git dir. Grace git support(branching,pulling) is still experimental.\n Using '.git' might corrupt your data.",
+        "useDiskConfig": "Load/Save email and password from/to hard drive",
+        "forceShowStagedDeletes": "Set to 'false' if viewStage operation seems too slow"
     });
     var pleaseCache = global.createCacheFs;
     var clean = FileUtils.cleanFileList;
@@ -30,17 +50,19 @@
     var isDirectory = FileUtils.isDirectory;
     var join = FileUtils.join;
     var dirname = FileUtils.dirname;
+    var checkBox = global.styleCheckbox;
     var cache = {},
         fileCache;
+    /*caching*/
+    var clearCache = Utils.debounce(function() {
+        cache = {};
+        fileCache = null;
+    }, 10000);
 
     function getCache() {
         clearCache();
         return cache;
     }
-    var clearCache = Utils.debounce(function() {
-        cache = {};
-        fileCache = null;
-    }, 10000);
 
     function findRoot(rootDir, fs) {
         return new Promise(function(resolve, reject) {
@@ -93,10 +115,11 @@
         password: ""
     };
 
-
+    /*basic tasks*/
     function initRepo(ev, root, fs) {
         git.init({
             fs: fs,
+            cache: cache,
             dir: root,
             gitdir: join(root, appConfig.gitdir)
         }).then(function(a) {
@@ -107,31 +130,75 @@
         });
     }
 
+    function cloneRepo(ev, root, fs) {
+        var html = ["<form>",
+            "<label>Enter repository url</label>",
+            "<input style='margin-bottom:10px' id=inputName name=inputName type=text value='https://github.com/'/>",
+            "<input type='checkbox' name='cloneShallow' id='cloneShallow'/>",
+            "<span style='margin-right:30px'>Shallow clone</span>",
+            "<input type='checkbox' name='singleBranch' id='singleBranch'/>",
+            "<span>Single branch</span></br>",
+            "<input style='margin:10px' class='red btn right modal-close' type='button' value='Cancel' />",
+            "<input style='margin:10px' class='btn right' name=doSubmit type='submit'/>",
+            "</form>",
+        ].join("");
+        var el = $(Notify.modal({
+            header: "Clone Repository",
+            body: html,
+            dismissible: false
+        }));
+        checkBox(el);
+        el.find("form").on("submit", function(e) {
+            e.preventDefault();
+            var url = el.find("#inputName").val();
+            if (!testUrl(url)) {
+                return Notify.error("Invalid Url");
+            }
+            el.modal("close");
+            var p = git.clone({
+                fs: fs,
+                cache: cache,
+                http: http,
+                gitdir: join(root, appConfig.gitdir),
+                dir: root,
+                onAuth: function() {
+                    return new Promise(function(resolve) {
+                        resolve({
+                            username: appConfig.gitEmail,
+                            password: appConfig.gitPassword
+                        });
+                    });
+                },
+                corsProxy: appConfig.gitCorsProxy,
+                url: url,
+                singleBranch: el.find("#singleBranch")[0].checked,
+                depth: el.find("#cloneShallow")[0].checked ? 1 : undefined
+            }).then(function() {
+                Notify.info("Clone complete");
+                ev.browser.reload();
+            }, function(e) {
+                failure(e);
+                ev.browser.reload();
+            });
+
+        });
+    }
+
     function doRevert(ev, root, fs) {
-        Notify.prompt("This will revert all changes to working directory.\nTo confirm operation, type 'REVERT'", function(ans) {
+        Notify.prompt("This will revert all changes in working directory to last commit.\nTo confirm operation, type 'REVERT'", function(ans) {
             if (ans == 'REVERT') {
-                git.revert({
+                git.checkout({
                     fs: fs,
+                    cache: cache,
                     dir: root,
                     gitdir: join(root, appConfig.gitdir),
-                    author: {
-                        name: appConfig.gitName,
-                        email: appConfig.gitEmail,
-                    },
-                    message: ans
+                    ref: 'HEAD'
                 }).then(function() {
-                    Notify.info("Commit Successful");
-                }, function(e) {
-                    if ((e + "").indexOf("No name was provided") > -1) {
-                        Notify.prompt("Enter Author name", function(name) {
-                            if (name) {
-                                configure("gitName", name, "git");
-                                doCommit(ev, root, fs, message);
-                            }
-                        });
-                    }
-                    else Notify.error(e);
-                });
+                    Notify.info("Revert Successful");
+                }, failure);
+            }
+            else if (ans) {
+                return false;
             }
         });
     }
@@ -141,6 +208,7 @@
             if (!ans) return;
             git.commit({
                 fs: fs,
+                cache: cache,
                 dir: root,
                 gitdir: join(root, appConfig.gitdir),
                 author: {
@@ -166,34 +234,357 @@
 
     }
 
-    function cloneRepo(ev, root, fs) {
-        Notify.prompt("Enter Repository Url", function(url) {
-            if (url) {
-                var p = git.clone({
-                    fs: fs,
-                    http: http,
-                    gitdir: join(root, appConfig.gitdir),
-                    dir: root,
-                    onAuth: function() {
-                        return new Promise(function(resolve) {
-                            resolve({
-                                username: appConfig.gitUsername,
-                                password: appConfig.gitPassword
-                            });
-                        });
-                    },
-                    corsProxy: appConfig.gitCorsProxy,
-                    url: url,
-                    singleBranch: true,
-                    depth: 1
-                }).then(function() {
-                    Notify.info("Clone complete");
-                });
+    function createProgress(status) {
+        var el = $(Notify.modal({
+            header: status || 'starting....',
+            body: "<span class='progress indeterminate' >Done</span><button class='modal-close btn'>Hide</button>",
+            dismissible: true
+        }, function() { el = null }));
+        return {
+            update: function(event) {
+                if (el) {
+                    el.find('.modal-header').text(event.phase);
+                    if (event.total) {
+                        el.find('.progress').removeClass('indeterminate').css("right", ((1 - (event.loaded / event.total)) * 100) + "%");
+                    }
+                    else {
+                        el.find('.progress').addClass('indeterminate');
+                    }
+                }
+            },
+            dismiss: function() {
+                if (el) {
+                    el.modal('close');
+                    el = null;
+                }
+            }
+        };
+    }
+
+    function doConfig(ev, root, fs, done) {
+        var html = ["<form>",
+            "<label>Author Name(used in commits)</label>",
+            "<input name=userName' id='userName' placeholder='Leave empty'></input>",
+            "<label>Email</label>",
+            "<input name=userEmail' id='userEmail'></input>",
+            "<label>Password</label>",
+            "<span class='material-icons'>visibility_on</span>",
+            "<input name=userPass' id='userPass' type='text'/>",
+            "<input type='checkbox' name='saveToDisk' id='saveToDisk'/>",
+            "<span style='margin-right:30px'>Save To Disk</span></br>",
+            "<input style='margin:10px' class='red btn right modal-close' type='button' value='Cancel' />",
+            "<input style='margin:10px' class='btn right' name=doSubmit type='submit' value='Done'/>",
+            "</form>",
+        ].join("");
+        var el = $(Notify.modal({
+            header: "Configure",
+            body: html,
+            dismissible: true
+        }, function() {
+            el.find('form').off('submit');
+        }));
+        el.find("#userPass").val(appConfig.gitPassword);
+        el.find("#userName").val(appConfig.gitName);
+        el.find("#userEmail").val(appConfig.gitEmail);
+        el.find('form').on('submit', function(e) {
+            e.preventDefault();
+            el.modal('close');
+            if (done && done({
+                    email: el.find("#userEmail").val(),
+                    username: el.find("#userName").val(),
+                    password: el.find("#userPass").val()
+                }) == false) {
+                return;
+            }
+            configure("gitEmail", el.find("#userEmail").val(), "git");
+            configure("gitPassword", el.find("#userPass").val(), "git");
+            configure("gitName", el.find("#userName").val(), "git");
+            if (el.find("#saveToDisk")[0].checked) {
+                var dict = {
+                    "user.email": "gitEmail",
+                    "user.password": "gitPassword",
+                    "user.name": "gitName"
+                };
+                for (var i in dict) {
+                    git.setConfig({
+                        fs: fs,
+                        cache: cache,
+                        dir: root,
+                        gitdir: join(root, appConfig.gitdir),
+                        path: i,
+                        value: appConfig[dict[i]]
+                    });
+                }
             }
         });
     }
 
-    //File Ops
+    function doPull(ev, root, fs, isPush) {
+        //todo find changed files efficiently
+        var allStaged = true;
+        var method = isPush ? "push" : "pull";
+        var html = ["<form>",
+            "<label>Select Remote</label>",
+            "<select></select></br>",
+            "<label>Remote Branch Name</label>",
+            "<input name=branchName' id='branchName' placeholder='default'></input>",
+            "<input type='checkbox' name='fastForward' id='fastForward'/>",
+            "<span style='margin-right:30px'>Fast Forward Only</span>",
+            "<input style='margin:10px' class='red btn right modal-close' type='button' value='Cancel' />",
+            "<input style='margin:10px' class='btn right' name=doSubmit type='submit' value='" + method.replace("p", "P") + "'/>",
+            "</form>",
+        ].join("");
+        git.listRemotes({ fs, dir: root, gitdir: join(root, appConfig.gitdir) }).then(function(b) {
+            if (b.length == 0) {
+                addRemote(ev, root, fs, function() {
+                    git.listRemotes({ fs, dir: root, gitdir: join(root, appConfig.gitdir) }).then(function(b) {
+                        b.forEach(function(remote) {
+                            el.find('select').append("<option value='" + remote.remote + "'>" + remote.remote + ": " + remote.url.split("/").slice(-2).join("/") + "</option>");
+                        });
+                        el.find('select').val(appConfig.defaultRemote || b[0].remote);
+                    });
+                });
+            }
+            b.forEach(function(remote) {
+                el.find('select').append("<option value='" + remote.remote + "'>" + remote.remote + ": " + remote.url.split("/").slice(-2).join("/") + "</option>");
+            });
+            el.find('select').val(appConfig.defaultRemote || b[0].remote);
+        });
+        var defaultBranch;
+        git.currentBranch({ fs, dir: root, gitdir: join(root, appConfig.gitdir) }).then(function(a) {
+            defaultBranch = a;
+            el.find("#branchName").attr('placeholder', a);
+        });
+        if (appConfig.defaultRemoteBranch) {
+            el.find("#branchName").val(defaultRemoteBranch);
+        }
+        var el = $(Notify.modal({
+            header: "Pull Changes",
+            body: html,
+            dismissible: false
+        }, function() {
+            el.find('select').off();
+            el.find('form').off();
+        }));
+
+        el.find('select').on('change', function(e) {
+            configure('defaultRemote', el.find('select').val(), "git");
+        });
+        checkBox(el);
+        el.find("form").on("submit", function(e) {
+            el.modal("close");
+            var t = el.find("#branchName").val()
+            if (t) configure("defaultRemoteBranch", t, "git");
+            if (isPush || allStaged) {
+                retry(config);
+            }
+            return false;
+        });
+        var config;
+        if (appConfig.useDiskConfig) {
+            config = { 'username': appConfig.gitName, 'default': true };
+            ["user.email", "user.password"].forEach(function(i) {
+                git.getConfig({
+                    fs: fs,
+                    cache: cache,
+                    dir: root,
+                    gitdir: join(root, appConfig.gitdir),
+                    path: i
+                }).then(function(a) {
+                    switch (i) {
+                        case "user.email":
+                            config.email = a;
+                            break;
+                        case "user.password":
+                            config.password = a;
+                            break;
+                    }
+                })
+            });
+        }
+
+        function retry(config) {
+            var progress = createProgress(method);
+            var p = git[method]({
+                fs: fs,
+                cache: cache,
+                http: http,
+                gitdir: join(root, appConfig.gitdir),
+                dir: root,
+                remote: el.find('select').val(),
+                remoteRef: el.find("#branchName").val() || defaultBranch,
+                author: {
+                    name: appConfig.gitName,
+                    email: appConfig.gitEmail,
+                },
+                fastForwardOnly: el.find('#fastForward')[0].checked,
+                onAuth: function() {
+                    return new Promise(function(resolve) {
+                        resolve({
+                            username: config ? config.email : appConfig.gitEmail,
+                            password: config ? config.password : appConfig.gitPassword
+                        });
+                    });
+                },
+                onAuthSuccess: function() {
+                    if (!config || config.default) return;
+                    Notify.ask('Save password', function() {
+                        configure("gitEmail", config.email, "git");
+                        configure("gitPassword", config.password, "git");
+                        if (config.username) configure("gitName", config.username, "git");
+                        if (appConfig.useDiskConfig) {
+                            var dict = {
+                                "user.email": "gitEmail",
+                                "user.password": "gitPassword"
+                            };
+                            for (var i in dict) {
+                                git.setConfig({
+                                    fs: fs,
+                                    cache: cache,
+                                    dir: root,
+                                    gitdir: join(root, appConfig.gitdir),
+                                    path: i,
+                                    value: appConfig[dict[i]]
+                                });
+                            }
+                        }
+                    });
+
+                },
+                onProgress: progress.update,
+                onAuthFailure: function() {
+                    doConfig(ev, root, fs, retry);
+                },
+                corsProxy: appConfig.gitCorsProxy,
+            }).then(function() {
+                progress.dismiss();
+                Notify.info(method.replace("p", "P") + " Successful");
+                ev.browser.reload();
+            }, function(e) {
+                progress.dismiss();
+                if ((e + "").indexOf("No name was provided") > -1) {
+                    Notify.prompt("Enter Author name", function(name) {
+                        if (name) {
+                            configure("gitName", name, "git");
+                            retry(config);
+                        }
+                    });
+                }
+                else {
+                    failure(e);
+                    ev.browser.reload();
+                }
+            });
+            return false;
+        }
+    }
+
+    function doPush(ev, root, fs) {
+        doPull(ev, root, fs, true);
+    }
+
+    function doMergeInteractive(ev, root, fs) {
+        doMerge(ev, root, fs, true);
+    }
+
+    function ensureWorkTreeClean(opts, cb) {
+
+    }
+
+    function startMerge(opts) {
+
+    }
+
+    function doMerge(ev, root, fs, interactive) {
+        var html = ["<form>",
+            "<label>Select Remote</label>",
+            "<select value='$local' style='margin-left:50px'><option value='local'>No remote</option></select></br>",
+            "<label>Select Branch </label>",
+            "<select></select></br>",
+            "<input type='checkbox' name='fastForward' id='fastForward'/>",
+            "<span style='margin-right:30px'>Fast Forward Only</span>",
+            "<input style='margin:10px' class='red btn right modal-close' type='button' value='Cancel' />",
+            "<input style='margin:10px' class='btn right' name=doSubmit type='submit' value='" + method.replace("p", "P") + "'/>",
+            "</form>"
+        ].join("");
+        git.listRemotes({ fs, dir: root, gitdir: join(root, appConfig.gitdir) }).then(function(b) {
+            b.forEach(function(remote) {
+                el.find('select').append("<option value='" + remote.remote + "'>" + remote.remote + ": " + remote.url.split("/").slice(-2).join("/") + "</option>");
+            });
+            if (appConfig.defaultRemote)
+                el.find('select').val(appConfig.defaultRemote || b[0].remote);
+        });
+        var remoteSelect = el.find('select').eq(0);
+        var branchSelect = el.find('select').eq(1);
+        var remote;
+
+        function updateBranches() {
+            remote = remoteSelect.val();
+            branchSelect.html("");
+            if (remote == '$local') {
+                remote = undefined;
+            }
+            git.listBranches({
+                fs: fs,
+                cache: cache,
+                dir: root,
+                gitdir: join(root, appConfig.gitdir),
+                ref: remote
+            }).then(function(list) {
+                b.forEach(function(remote) {
+                    branchSelect.append("<option value='" + remote + "'>" + remote + ": " + remote + "</option>");
+                })
+            });
+        }
+
+
+        remoteSelect.on('change', updateBranches);
+        var el = $(Notify.modal({
+            header: "Merge Changes",
+            body: html,
+            dismissible: false
+        }, function() {
+            el.find('select').off();
+            el.find('form').off();
+        }));
+        el.find('form').on('submit', function(e) {
+            e.preventDefault();
+            var ref = branchSelect.val();
+            if (!remote) {
+                if (currentBranch == ref) {
+                    return Notify.error('Cannot merge branch to itself');
+                }
+            }
+            var fastForwardOnly = el.find('#fastForward')[0].checked;
+            var opts = {
+                fs: fs,
+                cache: cache,
+                http: http,
+                gitdir: join(root, appConfig.gitdir),
+                dir: root,
+                remote: remote,
+                theirs: remoteRef,
+                author: {
+                    name: appConfig.gitName,
+                    email: appConfig.gitEmail,
+                },
+                fastForwardOnly: fastForwardOnly,
+                onProgress: progress.update,
+                dryRun: true
+            }
+            if (!fastForwardOnly || interactive) {
+                var startMerge = global.requireMerge().merge;
+                merge(opts).then(success, failure);
+            }
+            else {
+                git.merge(opts).then(success, failure);
+            }
+            el.modal("close");
+        });
+    }
+
+
+    /*File Ops*/
     function update(view) {
         return function(status) {
             var name = clean(view.attr("filename"));
@@ -297,7 +688,7 @@
             });
         }
         Notify.ask('Delete ' + r.join("\n") + ' permanently and stage?', function() {
-            Utils.asyncforEach(r, function(p) {
+            Utils.asyncForEach(r, function(p) {
                 var a = {
                     fs: fs,
                     dir: root,
@@ -323,7 +714,7 @@
         var r = stub.hier.slice(stub.pageStart, stub.pageEnd).map(function(t) {
             return stub.rootDir + t;
         });
-        Utils.asyncForEach(r.filter(function(e){
+        Utils.asyncForEach(r.filter(function(e) {
             return !FileUtils.isDirectory(e);
         }), function(p, i, next, cancel) {
             var a = {
@@ -346,19 +737,19 @@
         }, nested, 15, false, true);
 
         function nested(e) {
-            if (e && e !== true)return failure(e);
+            if (e && e !== true) return failure(e);
             var stubs = stub.childStubs;
-            if (!stubs){
-                return (next||success)()
+            if (!stubs) {
+                return (next || success)()
             }
             var folders = Object.keys(stubs)
-            Utils.asyncForEach(folders,function(a,i,next){
-                if(stubs[a].stub.css('display')=='none')next();
+            Utils.asyncForEach(folders, function(a, i, next) {
+                if (stubs[a].stub.css('display') == 'none') next();
                 else showStatusAll({
-                    browser:stubs[a],
-                    rootDir:stubs[a].rootDir
-                },root,fs,next)
-            },next||success);
+                    browser: stubs[a],
+                    rootDir: stubs[a].rootDir
+                }, root, fs, next)
+            }, next || success);
         }
 
     }
@@ -396,10 +787,32 @@
         }, 15, false, true);
     }
 
-    //Status
+    /*Status*/
     var unmodified;
     //had to come up with something faster than statusMatrix
-    function loadCachedStatus(dir, fs, files, cb, error, progress) {
+    /*The steps for status from bottom to top
+    //1 Compare shasums
+    //2 To get shasum, you must parse index, parse a tree, get file shasum
+    //3 To get file shasum, you must stat the file to check if it has changed, if it has, readFile and then compute 
+    //4 else use parse index and use value if present else do above
+    //Advantage of statusMatrix: 
+        1 Files in the same tree can get shasum together
+        2 Less error prone
+    //Disadvantage: 
+        1 It parses deep trees unnecessarily
+    //Finally stats can slightly differ in different fs
+    //RESTFileServer makes stats small for speed increase
+    //while APPFileServer does not have inodes
+    //Both fs invalidate step 3
+    //On the other side cached status
+    //fails when files are moved ie their
+    //content changes but date is less than last check
+    //A final solution might be to just put a preference for unmodified
+    //files, but that will be pending when we can cache stats
+    //as the result will be two stat calls
+    */
+
+    function loadCachedStatus(dir, commit, fs, files, cb, error, progress) {
         if (!progress) {
             progress = function() {};
         }
@@ -426,13 +839,14 @@
         var time, newlist, t, a;
         var each = function(name, i, next) {
             fs.stat(join(dir, name), function(e, s) {
-                if (s && (time > s.mtime)) {
+                if (!e && (time > s.mtime)) {
                     //pass
                 }
                 else {
                     var t = unmodified.indexOf(name);
                     if (t > -1) {
                         unmodified.splice(t, 1);
+                        if (unmodified.clean) unmodified.clean = false;
                     }
                     cb([name], false);
                 }
@@ -442,7 +856,7 @@
         }
 
 
-        if (unmodified && (unmodified.fs != fs || unmodified.dir != dir)) {
+        if (unmodified && (unmodified.commit != commit || unmodified.fs != fs || unmodified.dir != dir)) {
             saveStatusToCache();
             unmodified = null;
         }
@@ -451,8 +865,10 @@
                 if (s) {
                     unmodified = s.split("\n");
                     unmodified.time = new Date(parseInt(unmodified.shift()));
+                    unmodified.commit = unmodified.shift();
                     unmodified.fs = fs;
                     unmodified.dir = dir;
+                    unmodified.clean = true;
                     genList();
                 }
                 else {
@@ -464,14 +880,14 @@
     }
 
     function saveStatusToCache() {
-        if (unmodified) {
-            var a = unmodified.time.getTime() + "\n" + unmodified.join("\n");
-            unmodified.fs.writeFile(join(unmodified.dir, appConfig.gitdir + "-status"), a, "utf8");
+        if (unmodified && !unmodified.clean) {
+            var a = unmodified.time.getTime() + "\n" + unmodified.commit + "\n" + unmodified.join("\n");
+            unmodified.fs.writeFile(join(unmodified.dir, appConfig.gitdir + "-status"), a, "utf8", function() {});
         }
     }
 
-    function pushUnmodified(dir, fs, name) {
-        if (unmodified && (unmodified.fs != fs || unmodified.dir != dir)) {
+    function pushUnmodified(dir, fs, name, commit) {
+        if (unmodified && (unmodified.commit != commit || unmodified.fs != fs || unmodified.dir != dir)) {
             saveStatusToCache();
             unmodified = null;
         }
@@ -479,6 +895,10 @@
             unmodified = [];
             unmodified.fs = fs;
             unmodified.dir = dir;
+            unmodified.commit = commit;
+        }
+        else if (unmodified.clean) {
+            unmodified.clean = false;
         }
         unmodified.time = new Date();
         unmodified.push(name)
@@ -577,6 +997,7 @@
                         git.status({
                             dir: root,
                             fs: fs,
+                            cache: cache,
                             filepath: name,
                             gitdir: join(root, appConfig.gitdir)
                         }).then(function(s) {
@@ -597,7 +1018,7 @@
                     else method = 'resetIndex';
                 }
                 else {
-                    if (s == "deleted") {
+                    if (s == "deleted" || s == "absent") {
                         method = "remove";
                     }
                     else method = 'add';
@@ -614,6 +1035,7 @@
                                 git.add({
                                     dir: root,
                                     fs: fs,
+                                    cache: cache,
                                     filepath: name,
                                     gitdir: join(root, appConfig.gitdir),
                                 }).then(next, function(e) {
@@ -633,6 +1055,7 @@
                 else git[method]({
                     dir: root,
                     fs: fs,
+                    cache: cache,
                     filepath: name,
                     gitdir: join(root, appConfig.gitdir)
                 }).then(end, failure);
@@ -644,6 +1067,28 @@
         var percent = function(text) {
             modal.find('.progress').css('width', text + "%");
         }
+        var multiple = 100;
+        var each = function(name, i, next) {
+            percent(Math.floor((i / files.length) * multiple));
+            git.status({
+                dir: root,
+                fs: fs,
+                filepath: name,
+                gitdir: join(root, appConfig.gitdir),
+                cache: cache
+            }).then(function(s) {
+                addName(name, s);
+                if (!stopped) {
+                    next();
+                }
+            }, function(e) {
+                console.error(e);
+                if (!stopped) {
+                    next()
+                }
+            });
+        };
+
         fs = pleaseCache(fs);
         var fulllist;
         var files;
@@ -657,6 +1102,25 @@
             gitdir: join(root, appConfig.gitdir),
             cache: cache
         }).then(function(list) {
+            if (appConfig.forceShowStagedDeletes) {
+                git.listFiles({
+                    dir: root,
+                    fs: fs,
+                    gitdir: join(root, appConfig.gitdir),
+                    ref: 'HEAD',
+                    cache: cache
+                }).then(function(headList) {
+                    var pos = list;
+                    mergeList(list, headList);
+                    startList(list);
+                }, failure);
+            }
+            else {
+                startList(list);
+            }
+        }, failure);
+
+        function startList(list) {
             if (list.length > 15) {
                 Notify.info('This might take some time');
             }
@@ -665,46 +1129,47 @@
                 names.forEach(addUntracked);
                 return !stopped;
             });
-            var multiple = 100;
-            loadCachedStatus(root, fs, list, function(s, finished) {
-                if (iter) {
-                    files.push.apply(files, s);
-                    return iter(finished)
-                }
-                files = s;
-                var each = function(name, i, next) {
-                    percent(Math.floor((i / files.length) * multiple));
-                    git.status({
-                        dir: root,
-                        fs: fs,
-                        filepath: name,
-                        gitdir: join(root, appConfig.gitdir),
-                        cache: cache
-                    }).then(function(s) {
-                        addName(name, s);
-                        if (!stopped) {
-                            next();
-                        }
-                    }, function(e) {
-                        console.error(e);
-                        if (!stopped) {
-                            next()
-                        }
-                    });
-                };
+            var go = function() {
+                files = list;
                 iter = Utils.asyncForEach(files, each, function() {
                     modal.find('.progress').addClass('white');
                     percent(100);
-                }, 3, !finished);
-            }, failure, function(t) {
-                multiple = t;
-            });
-        }, failure);
+                }, 3);
+            }
+            if (true) {
+                go();
+            }
+            else {
+                git.currentBranch({
+                    dir: root,
+                    fs: fs,
+                    gitdir: join(root, appConfig.gitdir),
+                    cache: cache
+                }).then(function(branch) {
+                        console.log(branch);
+                        loadCachedStatus(root, branch, fs, list, function(s, finished) {
+                            if (iter) {
+                                files.push.apply(files, s);
+                                return iter(finished)
+                            }
+                            files = s;
+                            iter = Utils.asyncForEach(files, each, function() {
+                                modal.find('.progress').addClass('white');
+                                percent(100);
+                            }, 3, !finished);
+                        }, failure, function(t) {
+                            if (files.length < 5)
+                                percent(multiple);
+                            multiple = t;
+                        });
+                    },
+                    go);
+            }
+        }
     }
 
-
-    //refs
-    function addRemote(ev, root, fs) {
+    /*refs and remotes*/
+    function addRemote(ev, root, fs, done) {
         var html = ["<form>",
             "<label>Enter remote name</label>",
             "<input style='margin-bottom:10px' id=inputName name=inputName type=text></input>",
@@ -717,22 +1182,29 @@
         var el = Notify.modal({
             header: "Add Remote",
             body: html
+        }, function() {
+            $(el).find('form').off();
         });
         $(el).find('form').on('submit', function(e) {
             e.preventDefault();
             var name = $(this).find('#inputName')[0].value;
             var url = $(this).find('#inputUrl')[0].value;
-            if (name && url) {
+            if (!testPlain(name)) {
+                Notify.error('Invalid remote name');
+            }
+            else if (!testUrl(url)) {
+                Notify.error('Invalid remote url');
+            }
+            else {
+                $(el).modal('close');
                 git.addRemote({
-                    fs,
+                    fs: fs,
+                    cache: cache,
                     dir: root,
                     remote: name,
                     url: url,
                     gitdir: join(root, appConfig.gitdir)
-                }).then(success, failure);
-            }
-            else {
-                Notify.error((name ? "Name " : "Url ") + 'cannot be empty');
+                }).then(done || success, failure);
             }
         }).find('button').click(function(e) {
             e.preventDefault();
@@ -748,6 +1220,7 @@
             fs: fs,
             dir: root,
             ref: ref,
+            cache: cache,
             gitdir: join(root, appConfig.gitdir),
             noCheckout: noCheckout
         }).then(function() {
@@ -792,21 +1265,13 @@
             });
     }
 
-    function success() {
-        Notify.info('Done');
-    }
-
-    function failure(e) {
-        console.error(e);
-        Notify.error("Error: " + e.toString());
-    }
-
     function createBranch(ev, root, fs) {
         Notify.prompt('Enter Branch Name', function(name) {
             if (name) {
                 git.branch({
                     dir: root,
                     fs: fs,
+                    cache: cache,
                     ref: name,
                     gitdir: join(root, appConfig.gitdir)
                 }).then(success, failure);
@@ -816,6 +1281,25 @@
 
     function switchBranchNoCheckout(ev, root, fs) {
         switchBranch(ev, root, fs, true);
+    }
+
+    function testPlain(str) {
+        if (!str) return false;
+        return /^[A-Za-z][-A-Za-z_0-9]+$/.test(str);
+    }
+
+    function testUrl(str) {
+        if (!str) return false;
+        return /^([A-Za-z]+\:\/+)?([0-9\.]+(\:[0-9]+)?|[A-Za-z][-\.A-Za-z_0-9]+)(\/+[A-Za-z][A-Za-z_0-9]*)*(\.([a-zA-Z]+))?\/?$/.test(str);
+    }
+
+    function success() {
+        Notify.info('Done');
+    }
+
+    function failure(e) {
+        console.error(e);
+        Notify.error("Error: " + e.toString());
     }
 
     //FileUtils guarantees only one browser will
@@ -876,7 +1360,7 @@
             onclick: showStatusAll
         },
         "branches": {
-            icon: "git",
+            icon: "usb",
             caption: "Branches",
             childHier: {
                 "create-branch": {
@@ -893,7 +1377,20 @@
                     icon: "swap_horiz",
                     caption: "Set HEAD branch",
                     onclick: switchBranchNoCheckout
-                }
+                },
+                "close-branch": "Close Branch"
+            }
+        },
+        "remotes": {
+            icon: "cloud",
+            caption: "Remote",
+            childHier: {
+                "add-remote": {
+                    icon: "add",
+                    caption: "Add Remote",
+                    onclick: addRemote
+                },
+                "delete-remote": "Remove Remote"
             }
         },
         "do-commit": {
@@ -901,11 +1398,25 @@
             caption: "Commit",
             onclick: doCommit
         },
-        "do-revert": {
+        "do-pull": {
+            icon: 'vertical_align_bottom',
+            caption: "Pull Changes",
+            onclick: doPull
+        },
+        "do-push": {
+            icon: 'vertical_align_top',
+            caption: "Push Changes",
+            onclick: doPush
+        },
+        "configure": {
+            caption: "..Authentication",
+            onclick: doConfig
+        }
+        /*"do-revert": {
             icon: 'undo',
             caption: "Revert",
             onclick: doRevert
-        }
+        }*/
     };
     var NoGitMenu = {
         "init-repo": {
@@ -974,4 +1485,225 @@
     FileUtils.registerOption("files", ["file", "folder"], "git-file-opts", GitFileOption);
     FileUtils.registerOption("project", ["project"], "git-opts", GitProjectOption);
     FileUtils.registerOption("project", ["project"], "git-file-opts", "");
+})(Modules);
+(function(global) {
+    var relative = global.FileUtils.relative;
+    var normalize = global.FileUtils.normalize;
+    var clean = global.FileUtils.cleanFileList;
+    var dirname = global.FileUtils.dirname;
+
+    function GitFileServer(opts) {
+        this.opts = {
+            fs: opts.fs,
+            dir: opts.dir,
+            gitdir: opts.gitdir,
+            cache: opts.cache
+        };
+        this.ref = this.opts.ref;
+    }
+    (function() {
+        this.getOpts = function(d) {
+            return Object.assign({
+                fs: this.opts.fs,
+                dir: this.opts.dir,
+                gitdir: this.opts.gitdir,
+                cache: this.opts.cache,
+            }, d);
+        };
+        this.resolve = function(cb) {
+            git.resolveRef(this.getOpts({ ref: this.ref })).then(function(sha) {
+                git.readCommit(this.getOpts({ oid: sha })).then(function(obj) {
+                    if (!this.trees) {
+                        this.trees = {};
+                        this.trees["!oid"] = obj.commit.tree;
+                        this.trees["!isDir"] = true
+                    }
+                    cb();
+                }, cb);
+            }, cb);
+        };
+        this.readFile = function(path, opts, cb) {
+            if (typeof opts == "function") {
+                cb = opts;
+                opts = null;
+            }
+            var enc = !opts || typeof opts == 'string' ? opts : opts.encoding;
+            this.readdir(dirname(path), function(e) {
+                if (e) cb(e);
+                else {
+                    var cache = this.trees;
+                    var segments = relative(this.opts.dir, clean(normalize(path))).split("/");
+                    while (segments.length) {
+                        cache = cache[segments.shift()];
+                    }
+                    if (!cache) {
+                        cb({ code: 'ENOENT' });
+                    }
+                    else if (cache["!isDir"]) {
+                        cb({ code: 'EISDIR' });
+                    }
+                    git.readBlob(this.getOpts({ oid: cache["!oid"] })).then(function(t) {
+                        var res = t.blob;
+                        if (!enc) {
+                            cb(null, res);
+                        }
+                        else {
+                            var error;
+                            try {
+                                res = new TextDecoder(enc).decode(res);
+                            }
+                            catch (e) {
+                                error = e;
+                            }
+                            cb(error, error ? undefined : res);
+                        }
+                    }, cb);
+                }
+            });
+        };
+        this.writeFile = function(path, content, opts, cb) {
+            setTimeout(function() {
+                cb({ code: 'EUNSUPPORTED' });
+            });
+        };
+        this.readdir = function(path, opts, cb) {
+            if (typeof opts == "function") {
+                cb = opts;
+                opts = null;
+            }
+
+            // Read a commit object
+            var segments = relative(this.opts.dir, clean(normalize(path))).split("/");
+            var treeOid = null;
+            console.log(segments);
+            var cache = this.trees;
+            if (!cache) {
+                this.resolve(function(e) {
+                    if (e) cb(e);
+                    else {
+                        cache = this.trees;
+                        dip();
+                    }
+                });
+            }
+            else {
+                while (segments.length) {
+                    if ((cache[segments[0]])) {
+                        cache = cache[segments.shift()];
+                    }
+                    else break;
+                }
+                console.log(cache, segments);
+                if (!segments.length) {
+                    if (cache["!loaded"]) {
+                        cb(null, Object.keys(cache).filter(function(i) {
+                            return i != "!oid" && i != "!isDir" && i != "!loaded";
+                        }));
+                    }
+                }
+                dip();
+            }
+
+            function dip() {
+                git.readTree(this.getOpts({ oid: cache["!oid"] })).then(function(res) {
+                    for (var i = 0; i < res.tree.length; i++) {
+                        cache[res.tree[i].path] = {
+                            "!oid": res.tree[i].oid,
+                            "!isDir": res.tree[i].type == 'tree'
+                        };
+                    }
+                    cache["!loaded"] = true;
+                    if (segments.length === 0) {
+                        cb(null, res.tree.map(function(e) { return e.path }));
+                    }
+                    else {
+                        var name = segments.shift();
+                        var tree = res.tree[name];
+                        if (!tree) {
+                            return cb({ code: 'ENOENT' });
+                        }
+                        else if (!tree["!isDir"]) {
+                            return cb({ code: 'ENOTDIR' });
+                        }
+                        else {
+                            cache = tree;
+                            dip();
+                        }
+                    }
+                }, cb);
+            }
+        };
+        this.getFiles = function(path, cb) {
+            var segments = relative(this.opts.dir, clean(normalize(path))).split("/");
+            this.readdir(path, function(e, res) {
+                if (e) cb(e);
+                var cache = this.trees;
+                while (segments.length) {
+                    cache = cache[segments.shift()];
+                }
+                cb(null, res.map(function(e) {
+                    if (cache[e]["!isDir"]) {
+                        return e + "/";
+                    }
+                    return e;
+                }));
+            });
+        };
+        this.stat = function() {
+            this.opts.fs.stat.apply(fs, arguments);
+        };
+        this.lstat = function() {
+            this.opts.fs.lstat.apply(fs, arguments);
+        };
+        this.href = null;
+        this.isEncoding = function() {
+            this.opts.fs.isEncoding.apply(fs, arguments);
+        };
+        this.getEncodings = function() {
+            this.opts.fs.getEncodings.apply(fs, arguments);
+        };
+        this.getDisk = function() {
+            this.opts.fs.getDisk.apply(fs, arguments);
+        };
+        this.getRoot = function() {
+            return this.opts.dir; //.apply(fs, arguments);
+        };
+        this.copyFile = function() {
+            var cb = this.arguments[this.arguments.length - 1];
+            cb({ code: 'UNSUPORTED' })
+        };
+        this.moveFile = function() {
+            var cb = this.arguments[this.arguments.length - 1];
+            cb({ code: 'UNSUPORTED' })
+        };
+        this.mkdir = function() {
+            var cb = this.arguments[this.arguments.length - 1];
+            cb({ code: 'UNSUPORTED' })
+        };
+        this.rename = function() {
+            var cb = this.arguments[this.arguments.length - 1];
+            cb({ code: 'UNSUPORTED' })
+        };
+        this.delete = function() {
+            var cb = this.arguments[this.arguments.length - 1];
+            cb({ code: 'UNSUPORTED' })
+        };
+        this.rmdir = function() {
+            var cb = this.arguments[this.arguments.length - 1];
+            cb({ code: 'UNSUPORTED' })
+        };
+        this.unlink = function() {
+            var cb = this.arguments[this.arguments.length - 1];
+            cb({ code: 'UNSUPORTED' })
+        };
+        this.symlink = function() {
+            var cb = this.arguments[this.arguments.length - 1];
+            cb({ code: 'UNSUPORTED' })
+        };
+        this.readlink = function() {
+            var cb = this.arguments[this.arguments.length - 1];
+            cb({ code: 'UNSUPORTED' })
+        };
+    }).apply(GitFileServer.prototype);
+    global.GitFileServer = GitFileServer;
 })(Modules);
