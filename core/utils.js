@@ -111,12 +111,19 @@
     }
     var trackFunc = function(start, end, name, func) {
         return function() {
-            start && start(this, arguments, name);
+            var preResult;
+            if(start){
+                preResult = start(name,this, arguments);
+                if(preResult && preResult.override)return preResult.result;
+            }
             var result = func.apply(this, arguments);
-            end && end(this, result, name, arguments);
+            if(end){
+                preResult = end(name,this, arguments,result, preResult);
+                if (preResult) return preResult;
+            }
             return result;
         };
-    }
+    };
 
     function track(obj, include, exclude, start, end) {
         include = include || obj;

@@ -7,6 +7,7 @@
     global.createCacheFs = function(fs,cacheSize) {
         if(fs.cachedFs)
             return fs.cachedFs;
+        else if(fs.isCached)return fs;
         var cached = {};
         var enoents = {};
         var max_size = cacheSize || 1000000;
@@ -260,6 +261,7 @@
                     enoents[path] = true;
                 }
                 else if (list) {
+                    slimCache();
                     cached[path] = {
                         fileList: list,
                         count: 100 + list.length,
@@ -311,6 +313,7 @@
             fs.stat(path, opts || end, opts && end);
 
         }
+        cacheFs.isCached = true;
         return cacheFs;
     };
 })(Modules);

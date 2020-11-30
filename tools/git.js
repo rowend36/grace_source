@@ -182,24 +182,63 @@
 
         });
     }
+    //force checkout
+    const padStart =
+        typeof String.prototype.padStart === 'undefined' ?
+        function(str, len, pad) {
+            var t = Utils.repeat(Math.floor((len - str.length)/pad.length), pad);
+            return t+pad.substring(0,(len-str.length-t.length)) + str;
+        } :
+        (str, len, pad) => str.padStart(len, pad);
 
     function doRevert(ev, root, fs) {
-        Notify.prompt("This will revert all changes in working directory to last commit.\nTo confirm operation, type 'REVERT'", function(ans) {
-            if (ans == 'REVERT') {
-                git.checkout({
-                    fs: fs,
-                    cache: cache,
-                    dir: root,
-                    gitdir: join(root, appConfig.gitdir),
-                    ref: 'HEAD',
-                    force: true
-                }).then(function() {
-                    Notify.info("Revert Successful");
-                }, failure);
-            }
-            else if (ans) {
-                return false;
-            }
+        fs_ = pleaseCache(fs);
+        var progress = createProgress('Analyzing directory');
+        var cache = getCache();
+        var opts = {
+            fs: fs_,
+            cache: cache,
+            dir: root,
+            onProgress: progress.update,
+            ref: 'HEAD',
+            force: true,
+            gitdir: join(root, appConfig.gitdir),
+        };
+        analyze(opts).then(function(ops) {
+            progress.dismiss();
+            var safeString = padStart("" + Math.floor((Math.random() * 999999)) + "", 6, "0");
+            Notify.prompt("This will revert all changes in working directory to last commit.\n It will:\n" + ops.map(
+                function(e) {
+                    return e[0] + " " + e[1] + "\n";
+                }).join("") + " To confirm operation, type '" + safeString + "'", function(ans) {
+                if (ans == safeString) {
+                    progress = createProgress('Reverting...');
+                    git.checkout({
+                        fs: fs_,
+                        cache: cache,
+                        dir: root,
+                        onProgress: progress.update,
+                        filepaths: ops.map(function(e) {
+                            return e[1];
+                        }),
+                        ref: 'HEAD',
+                        force: true,
+                        gitdir: join(root, appConfig.gitdir),
+                    }).then(function() {
+                        progress.dismiss();
+                        success();
+                    }, function(e) {
+                        progress.dismiss();
+                        failure(e);
+                    });
+                }
+                else if (ans) {
+                    return false;
+                }
+            });
+        }, function(e) {
+            progress.dismiss();
+            failure(e);
         });
     }
 
@@ -237,7 +276,7 @@
     function createProgress(status) {
         var el = $(Notify.modal({
             header: status || 'starting....',
-            body: "<span class='progress indeterminate' >Done</span><button class='modal-close btn'>Hide</button>",
+            body: "<span class='progress'></span><div class='modal-footer'><button class='modal-close btn right'>Hide</button></div>",
             dismissible: true
         }, function() { el = null }));
         return {
@@ -245,10 +284,13 @@
                 if (el) {
                     el.find('.modal-header').text(event.phase);
                     if (event.total) {
-                        el.find('.progress').removeClass('indeterminate').css("right", ((1 - (event.loaded / event.total)) * 100) + "%");
+                        el.find('.progress').css("right", ((1 - (event.loaded / event.total)) * 100) + "%").children().remove();
                     }
                     else {
-                        el.find('.progress').addClass('indeterminate');
+                        console.log(event);
+                        if (el.find('.progress').children('.indeterminate').length < 1) {
+                            el.find('.progress').html("<span class='indeterminate'></span>");
+                        }
                     }
                 }
             },
@@ -858,11 +900,12 @@
                     function() {
                         cb([], true);
                         cb = null;
-                    }, 5);
+                    }, 5, false, true);
             }
         };
         var time, newlist, t, a;
-        var each = function(name, i, next) {
+        var each = function(name, i, next, cancel) {
+            //to do cancel
             fs.stat(join(dir, name), function(e, s) {
                 if (!e && (time > s.mtime)) {
                     //pass
@@ -1259,7 +1302,7 @@
             Notify.info((noCheckout ? 'Updated HEAD to point at ' : 'Checked out files from ') + ref);
         }, function(e) {
             progress.dismiss();
-            if (!handleError(e.code)) {
+            if (!handleError(e)) {
                 Notify.error('Error while switching branch');
             }
         });
@@ -1332,8 +1375,8 @@
         Notify.info('Done');
     }
 
-    function handleError(code, data) {
-        switch (code) {
+    function handleError(e, data) {
+        switch (e.code) {
             case 'CheckoutConflictError':
                 Notify.modal({
                     header: 'Unable To Checkout ' + (data ? data.ref : ""),
@@ -1377,7 +1420,343 @@
             }), ev.browser.getElement(ev.filename)[0], yes, no)
         });
     }
+    var TREE = git.TREE;
+    var WORKDIR = git.WORKDIR;
+    var STAGE = git.STAGE;
+    const flat =
+        typeof Array.prototype.flat === 'undefined' ?
+        entries => entries.reduce((acc, x) => acc.concat(x), []) :
+        entries => entries.flat()
 
+    async function analyze({
+        fs,
+        cache,
+        onProgress,
+        dir,
+        gitdir,
+        ref,
+        force,
+        filepaths,
+    }) {
+        let count = 0
+        return git.walk({
+            fs,
+            cache,
+            dir,
+            gitdir,
+            trees: [TREE({ ref }), WORKDIR(), STAGE()],
+            map: async function(fullpath, [commit, workdir, stage]) {
+                if (fullpath === '.') return
+                // match against base paths
+                if (filepaths && !filepaths.some(base => worthWalking(fullpath, base))) {
+                    return null
+                }
+                // Emit progress event
+                if (onProgress) {
+                    await onProgress({ phase: 'Analyzing workdir', loaded: ++count })
+                }
+
+                // This is a kind of silly pattern but it worked so well for me in the past
+                // and it makes intuitively demonstrating exhaustiveness so *easy*.
+                // This checks for the presense and/or absense of each of the 3 entries,
+                // converts that to a 3-bit binary representation, and then handles
+                // every possible combination (2^3 or 8 cases) with a lookup table.
+                const key = [!!stage, !!commit, !!workdir].map(Number).join('')
+                if (fullpath.indexOf("tools/git.js") > -1) {
+                    console.log(key);
+                }
+
+                switch (key) {
+                    // Impossible case.
+                    case '000':
+                        return
+                        // Ignore workdir files that are not tracked and not part of the new commit.
+                    case '001':
+                        // OK, make an exception for explicitly named files.
+                        if (force && filepaths && filepaths.includes(fullpath)) {
+                            return ['delete', fullpath]
+                        }
+                        return null;
+                        // New entries
+                    case '010':
+                        {
+                            switch (await commit.type()) {
+                                case 'tree':
+                                    {
+                                        return ['mkdir', fullpath]
+                                    }
+                                case 'blob':
+                                    {
+                                        return [
+                                            'create',
+                                            fullpath,
+                                            await commit.oid(),
+                                            await commit.mode(),
+                                        ]
+                                    }
+                                case 'commit':
+                                    {
+                                        return [
+                                            'mkdir-index',
+                                            fullpath,
+                                            await commit.oid(),
+                                            await commit.mode(),
+                                        ]
+                                    }
+                                default:
+                                    {
+                                        return [
+                                            'error',
+                                            `new entry Unhandled type ${await commit.type()}`,
+                                        ]
+                                    }
+                            }
+                        }
+                        // New entries but there is already something in the workdir there.
+                    case '011':
+                        {
+                            switch (`${await commit.type()}-${await workdir.type()}`) {
+                                case 'tree-tree':
+                                    {
+                                        return // noop
+                                    }
+                                case 'tree-blob':
+                                case 'blob-tree':
+                                    {
+                                        return ['conflict', fullpath]
+                                    }
+                                case 'blob-blob':
+                                    {
+                                        // Is the incoming file different?
+                                        if ((await commit.oid()) !== (await workdir.oid())) {
+                                            if (force) {
+                                                return [
+                                                    'update',
+                                                    fullpath,
+                                                    await commit.oid(),
+                                                    await commit.mode(),
+                                                    (await commit.mode()) !== (await workdir.mode()),
+                                                ]
+                                            }
+                                            else {
+                                                return ['conflict', fullpath]
+                                            }
+                                        }
+                                        else {
+                                            // Is the incoming file a different mode?
+                                            if ((await commit.mode()) !== (await workdir.mode())) {
+                                                if (force) {
+                                                    return [
+                                                        'update',
+                                                        fullpath,
+                                                        await commit.oid(),
+                                                        await commit.mode(),
+                                                        true,
+                                                    ]
+                                                }
+                                                else {
+                                                    return ['conflict', fullpath]
+                                                }
+                                            }
+                                            else {
+                                                return [
+                                                    'create-index',
+                                                    fullpath,
+                                                    await commit.oid(),
+                                                    await commit.mode(),
+                                                ]
+                                            }
+                                        }
+                                    }
+                                case 'commit-tree':
+                                    {
+                                        // TODO: submodule
+                                        // We'll ignore submodule directories for now.
+                                        // Users prefer we not throw an error for lack of submodule support.
+                                        // gitlinks
+                                        return
+                                    }
+                                case 'commit-blob':
+                                    {
+                                        // TODO: submodule
+                                        // But... we'll complain if there is a *file* where we would
+                                        // put a submodule if we had submodule support.
+                                        return ['conflict', fullpath]
+                                    }
+                                default:
+                                    {
+                                        return ['error', `new entry Unhandled type ${commit.type}`]
+                                    }
+                            }
+                        }
+                        // Something in stage but not in the commit OR the workdir.
+                        // Note: I verified this behavior against canonical git.
+                    case '100':
+                        {
+                            return ['delete-index', fullpath]
+                        }
+                        // Deleted entries
+                        // TODO: How to handle if stage type and workdir type mismatch?
+                    case '101':
+                        {
+                            switch (await stage.type()) {
+                                case 'tree':
+                                    {
+                                        return ['rmdir', fullpath]
+                                    }
+                                case 'blob':
+                                    {
+                                        // Git checks that the workdir.oid === stage.oid before deleting file
+                                        if ((await stage.oid()) !== (await workdir.oid())) {
+                                            if (force) {
+                                                return ['delete', fullpath]
+                                            }
+                                            else {
+                                                return ['conflict', fullpath]
+                                            }
+                                        }
+                                        else {
+                                            return ['delete', fullpath]
+                                        }
+                                    }
+                                case 'commit':
+                                    {
+                                        return ['rmdir-index', fullpath]
+                                    }
+                                default:
+                                    {
+                                        return [
+                                            'error',
+                                            `delete entry Unhandled type ${await stage.type()}`,
+                                        ]
+                                    }
+                            }
+                        }
+                        /* eslint-disable no-fallthrough */
+                        // File missing from workdir
+                    case '110':
+                        // Possibly modified entries
+                    case '111':
+                        {
+                            /* eslint-enable no-fallthrough */
+                            switch (`${await stage.type()}-${await commit.type()}`) {
+                                case 'tree-tree':
+                                    {
+                                        return
+                                    }
+                                case 'blob-blob':
+                                    {
+                                        // If the file hasn't changed, there is no need to do anything.
+                                        // Existing file modifications in the workdir can be be left as is.
+                                        // Check for local changes that would be lost
+                                        if (workdir) {
+                                            // Note: canonical git only compares with the stage. But we're smart enough
+                                            // to compare to the stage AND the incoming commit.
+                                            if (
+                                                (await workdir.oid()) !== (await stage.oid()) &&
+                                                (await workdir.oid()) !== (await commit.oid())
+                                            ) {
+                                                if (force) {
+                                                    return [
+                                                        'update',
+                                                        fullpath,
+                                                        await commit.oid(),
+                                                        await commit.mode(),
+                                                        (await commit.mode()) !== (await workdir.mode()),
+                                                    ]
+                                                }
+                                                else {
+                                                    return ['conflict', fullpath]
+                                                }
+                                            }
+                                        }
+                                        else {
+                                            if (force) {
+                                                return [
+                                                    'update',
+                                                    fullpath,
+                                                    await commit.oid(),
+                                                    await commit.mode(),
+                                                    (await commit.mode()) !== (await stage.mode()),
+                                                ]
+                                            }
+                                            else if (
+                                                (await stage.oid()) === (await commit.oid()) &&
+                                                (await stage.mode()) === (await commit.mode())
+                                            ) {
+                                                return
+                                            }
+                                        }
+                                        // Has file mode changed?
+                                        if ((await commit.mode()) !== (await stage.mode())) {
+                                            return [
+                                                'update',
+                                                fullpath,
+                                                await commit.oid(),
+                                                await commit.mode(),
+                                                true,
+                                            ]
+                                        }
+                                        // TODO: HANDLE SYMLINKS
+                                        // Has the file content changed?
+                                        if ((await commit.oid()) !== (await stage.oid())) {
+                                            return [
+                                                'update',
+                                                fullpath,
+                                                await commit.oid(),
+                                                await commit.mode(),
+                                                false,
+                                            ]
+                                        }
+                                        else {
+                                            return
+                                        }
+                                    }
+                                case 'tree-blob':
+                                    {
+                                        return ['update-dir-to-blob', fullpath, await commit.oid()]
+                                    }
+                                case 'blob-tree':
+                                    {
+                                        return ['update-blob-to-tree', fullpath]
+                                    }
+                                case 'commit-commit':
+                                    {
+                                        return [
+                                            'mkdir-index',
+                                            fullpath,
+                                            await commit.oid(),
+                                            await commit.mode(),
+                                        ]
+                                    }
+                                default:
+                                    {
+                                        return [
+                                            'error',
+                                            `update entry Unhandled type ${await stage.type()}-${await commit.type()}`,
+                                        ]
+                                    }
+                            }
+                        }
+                }
+            },
+            // Modify the default flat mapping
+            reduce: async function(parent, children) {
+                children = flat(children)
+                if (!parent) {
+                    return children
+                }
+                else if (parent && parent[0] === 'rmdir') {
+                    children.push(parent)
+                    return children
+                }
+                else {
+                    children.unshift(parent)
+                    return children
+                }
+            },
+        })
+    }
     var GitFileMenu = {
         "show-file-status": {
             caption: "Show file status",

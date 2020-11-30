@@ -188,6 +188,7 @@
                 return e.toLowerCase();
             }).sort()
         }
+        text = text.split("\n").join("</br>")
         var dialog = createInputDialog(text, func, function() {
             return defText;
         }, func, values && {
