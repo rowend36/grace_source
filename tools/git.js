@@ -35,6 +35,7 @@
             }
             else last = pos + 1;
         }
+        return list;
     }
     global.registerValues({
         "gitCorsProxy": "Possible value: https://cors.isomorphic-git.org/ \nSee isomorphic-git.com/issues",
@@ -125,9 +126,7 @@
         }).then(function(a) {
             Notify.info("New repository created");
             ev.browser.reload(true);
-        }, function(e) {
-            Notify.error("Failed to create repository");
-        });
+        }, failure);
     }
 
     function cloneRepo(ev, root, fs) {
@@ -228,7 +227,7 @@
                         }
                     });
                 }
-                else Notify.error(e);
+                else failure(e);
             });
         };
         Notify.prompt("Enter Commit Message", commit);
@@ -503,17 +502,37 @@
             "<label>Select Branch </label>",
             "<select></select></br>",
             "<input type='checkbox' name='fastForward' id='fastForward'/>",
-            "<span style='margin-right:30px'>Fast Forward Only</span>",
+            "<span style='margin-right:30px'>Fast Forward Only</span></br>",
+            "<span style='margin-right:30px'>Current Branch: </span><i id='currentBranch'></i></br>",
             "<input style='margin:10px' class='red btn right modal-close' type='button' value='Cancel' />",
-            "<input style='margin:10px' class='btn right' name=doSubmit type='submit' value='" + method.replace("p", "P") + "'/>",
+            "<input style='margin:10px' class='btn right' name=doSubmit type='submit' value='Merge'/>",
             "</form>"
         ].join("");
+        var el = $(Notify.modal({
+            header: "Merge Changes",
+            body: html,
+            dismissible: false
+        }, function() {
+            el.find('select').off();
+            el.find('form').off();
+        }));
+        checkBox(el);
+        var currentBranch;
+        git.currentBranch({
+            fs: fs,
+            cache: cache,
+            dir: root,
+            gitdir: join(root, appConfig.gitdir)
+        }).then(function(b) {
+            currentBranch = b;
+            el.find('#currentBranch').html(currentBranch);
+        })
         git.listRemotes({ fs, dir: root, gitdir: join(root, appConfig.gitdir) }).then(function(b) {
             b.forEach(function(remote) {
-                el.find('select').append("<option value='" + remote.remote + "'>" + remote.remote + ": " + remote.url.split("/").slice(-2).join("/") + "</option>");
+                branchSelect.append("<option value='" + remote.remote + "'>" + remote.remote + ": " + remote.url.split("/").slice(-2).join("/") + "</option>");
             });
             if (appConfig.defaultRemote)
-                el.find('select').val(appConfig.defaultRemote || b[0].remote);
+                branchSelect.val(appConfig.defaultRemote || b[0].remote);
         });
         var remoteSelect = el.find('select').eq(0);
         var branchSelect = el.find('select').eq(1);
@@ -532,25 +551,19 @@
                 gitdir: join(root, appConfig.gitdir),
                 ref: remote
             }).then(function(list) {
-                b.forEach(function(remote) {
+                list.forEach(function(remote) {
                     branchSelect.append("<option value='" + remote + "'>" + remote + ": " + remote + "</option>");
                 })
             });
         }
-
+        updateBranches()
 
         remoteSelect.on('change', updateBranches);
-        var el = $(Notify.modal({
-            header: "Merge Changes",
-            body: html,
-            dismissible: false
-        }, function() {
-            el.find('select').off();
-            el.find('form').off();
-        }));
+
         el.find('form').on('submit', function(e) {
             e.preventDefault();
             var ref = branchSelect.val();
+            var progress = createProgress("Merging " + currentBranch + " with " + ref);
             if (!remote) {
                 if (currentBranch == ref) {
                     return Notify.error('Cannot merge branch to itself');
@@ -564,7 +577,7 @@
                 gitdir: join(root, appConfig.gitdir),
                 dir: root,
                 remote: remote,
-                theirs: remoteRef,
+                theirs: branchSelect.val(),
                 author: {
                     name: appConfig.gitName,
                     email: appConfig.gitEmail,
@@ -574,11 +587,11 @@
                 dryRun: true
             }
             if (!fastForwardOnly || interactive) {
-                var startMerge = global.requireMerge().merge;
-                merge(opts).then(success, failure);
+                var merge = global.requireMerge().merge;
+                merge(opts).then(finish, failure);
             }
             else {
-                git.merge(opts).then(success, failure);
+                git.merge(opts).then(finish, failure);
             }
             el.modal("close");
         });
@@ -820,12 +833,13 @@
             progress = function() {};
         }
         var genList = function() {
-            time = unmodified.time;
+            var cache = unmodified;
+            time = cache.time;
             newlist = [];
             modified = [];
             t = files.length;
             files.forEach(function(name) {
-                if (unmodified.indexOf(name) < 0) {
+                if (cache.indexOf(name) < 0) {
                     modified.push(name);
                 }
                 else newlist.push(name);
@@ -833,11 +847,19 @@
             a = modified.length;
             cb(modified, false);
             progress(100 * a / files.length);
-            Utils.asyncForEach(newlist, each,
-                function() {
-                    cb([], true);
-                    cb = null;
-                }, 5);
+            if (cache.commit != commit) {
+                //the cache will not be invalidated until
+                //the first call to pushUnmodified
+                cb(newlist, true);
+                progress(100);
+            }
+            else {
+                Utils.asyncForEach(newlist, each,
+                    function() {
+                        cb([], true);
+                        cb = null;
+                    }, 5);
+            }
         };
         var time, newlist, t, a;
         var each = function(name, i, next) {
@@ -859,14 +881,10 @@
         }
 
 
-        if (unmodified){
+        if (unmodified) {
             if (unmodified.fs != fs || unmodified.dir != dir) {
                 saveStatusToCache();
                 unmodified = null;
-            }
-            else if (unmodified.commit != commit) {
-                unmodified = null;
-                return cb(files,true);
             }
         }
         if (!unmodified) {
@@ -875,16 +893,10 @@
                     unmodified = s.split("\n");
                     unmodified.time = new Date(parseInt(unmodified.shift()));
                     unmodified.commit = unmodified.shift();
-                    if(unmodified.commit!=commit){
-                        unmodified = null;
-                        cb(files, true);
-                    }
-                    else{
-                        unmodified.fs = fs;
-                        unmodified.dir = dir;
-                        unmodified.clean = true;
-                        genList();
-                    }
+                    unmodified.fs = fs;
+                    unmodified.dir = dir;
+                    unmodified.clean = true;
+                    genList();
                 }
                 else {
                     cb(files, true);
@@ -902,11 +914,11 @@
     }
 
     function pushUnmodified(dir, fs, name, commit) {
-        if (unmodified && (unmodified.commit != commit || unmodified.fs != fs || unmodified.dir != dir)) {
+        if (unmodified && (unmodified.fs != fs || unmodified.dir != dir)) {
             saveStatusToCache();
             unmodified = null;
         }
-        if (!unmodified) {
+        if (!unmodified || unmodified.commit != commit) {
             unmodified = [];
             unmodified.fs = fs;
             unmodified.dir = dir;
@@ -987,7 +999,7 @@
         var branchName;
         var addName = function(name, status) {
             if (status == 'unmodified') {
-                pushUnmodified(root, fs, name,branchName);
+                pushUnmodified(root, fs, name, branchName);
                 return;
             }
             var staged = true;
@@ -1232,7 +1244,7 @@
     }
 
     function gotoRef(ev, root, fs, ref, noCheckout) {
-        var progress = createProgress("Checking out "+ref);
+        var progress = createProgress("Checking out " + ref);
         fs = pleaseCache(fs);
         git.checkout({
             fs: fs,
@@ -1247,15 +1259,7 @@
             Notify.info((noCheckout ? 'Updated HEAD to point at ' : 'Checked out files from ') + ref);
         }, function(e) {
             progress.dismiss();
-            if(e.code = 'CheckoutConflictError'){
-                Notify.modal({
-                    header: 'Unable To Checkout '+ref,
-                    body: e.message,
-                    dismissible: false
-                });
-            }
-            else {
-                console.error(e);
+            if (!handleError(e.code)) {
                 Notify.error('Error while switching branch');
             }
         });
@@ -1328,8 +1332,21 @@
         Notify.info('Done');
     }
 
+    function handleError(code, data) {
+        switch (code) {
+            case 'CheckoutConflictError':
+                Notify.modal({
+                    header: 'Unable To Checkout ' + (data ? data.ref : ""),
+                    body: e.message + "</br><span><i class='material-icons'>info</i></span>Commit your unsaved changes or revert the changes to continue",
+                });
+                return true;
+            default:
+                console.error(e);
+        }
+    }
+
     function failure(e) {
-        console.error(e);
+        handleError(e);
         Notify.error("Error: " + e.toString());
     }
 
@@ -1438,6 +1455,11 @@
             icon: 'vertical_align_top',
             caption: "Push Changes",
             onclick: doPush
+        },
+        "do-merge": {
+            icon: 'swap_vert',
+            caption: "Merge Branches",
+            onclick: doMerge
         },
         "do-revert": {
             icon: 'warning',
