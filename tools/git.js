@@ -186,8 +186,8 @@
     const padStart =
         typeof String.prototype.padStart === 'undefined' ?
         function(str, len, pad) {
-            var t = Utils.repeat(Math.floor((len - str.length)/pad.length), pad);
-            return t+pad.substring(0,(len-str.length-t.length)) + str;
+            var t = Utils.repeat(Math.floor((len - str.length) / pad.length), pad);
+            return t + pad.substring(0, (len - str.length - t.length)) + str;
         } :
         (str, len, pad) => str.padStart(len, pad);
 
@@ -626,11 +626,17 @@
                 },
                 fastForwardOnly: fastForwardOnly,
                 onProgress: progress.update,
-                dryRun: true
             }
-            if (!fastForwardOnly || interactive) {
+
+            function finish() {
+                progress.dismiss();
+                success();
+            }
+            if ((!fastForwardOnly || interactive)) {
                 var merge = global.requireMerge().merge;
-                merge(opts).then(finish, failure);
+                merge(opts).then(function(tree) {
+                    console.log(tree);
+                }, failure);
             }
             else {
                 git.merge(opts).then(finish, failure);
@@ -1310,19 +1316,12 @@
 
     var branchList;
 
-    function switchBranch(ev, root, fs, noCheckout) {
+    function pickBranch(ev, root, fs, onSelect) {
         var branches;
 
         function showModal(currentBranch) {
             if (!branchList) {
                 branchList = new ItemList('git-branches', branches);
-                branchList.on('select', function(item) {
-                    if (item == branchList.current) {
-                        return;
-                    }
-                    gotoRef(ev, root, fs, item, noCheckout);
-                    branchList.$el.modal('close');
-                });
                 branchList.footer = ["Cancel"];
                 branchList.$cancel = function() {
                     branchList.$el.modal('close');
@@ -1330,6 +1329,7 @@
                 branchList.createElement();
                 branchList.$el.modal(AutoCloseable);
             }
+            branchList._eventRegistry.select = onSelect;
             branchList.current = currentBranch;
             branchList.items = branches;
             branchList.render();
@@ -1341,6 +1341,90 @@
                 branches = b;
                 git.currentBranch({ fs, dir: root, gitdir: join(root, appConfig.gitdir) }).then(showModal);
             });
+    }
+
+    function switchBranch(ev, root, fs) {
+        pickBranch(ev, root, fs, function(item) {
+            if (item == branchList.current) {
+                return;
+            }
+            gotoRef(ev, root, fs, item, false);
+            branchList.$el.modal('close');
+        });
+    }
+
+    function showLog(ev, root, fs) {
+        git.log({
+            fs: fs,
+            dir: root,
+            cache: cache,
+            gitdir: join(root, appConfig.gitdir),
+        }).then(function(logs) {
+            var el = $(Notify.modal({
+                header: 'History',
+                body: logs.map(print).join("")
+            }));
+            //to do goto specific commits
+            function entry(arr, key, value) {
+                arr.push("<tr><td>" + key + "</td><td>" + value + "</td></tr>");
+            }
+
+            function print(item) {
+                var log = item.commit;
+                var a = ["<table style='margin-bottom:20px'>"];
+                var date;
+                entry(a,"commit","<span class='commit grey darken yellow-text'>"+item.oid+"</span>");
+                if (log.committer) {
+                    date = log.committer.timestamp;
+                    if (date) {
+                        if (!isNaN(log.committer.timezoneOffset)) {
+                            date += (new Date().getTimezoneOffset()-log.committer.timezoneOffset)*60;
+                        }
+                    }
+                    entry(a, "committer", (log.committer.name || "") + (" (" + (log.committer.email||"no-email") + ")"));
+                }
+                if (log.author) {
+                    if (!date) {
+                        date = log.author.timestamp;
+                        if (date) {
+                            if (!isNaN(log.author.timezoneOffset)) {
+                                date += (new Date().getTimezoneOffset()-log.author.timezoneOffset)*60;
+                            }
+                        }
+                    }
+                    entry(a, "author", (log.author.name || "") + (" (" + (log.author.email||"no-email") + ")"));
+                }
+                if (date) {
+                    entry(a, "date", new Date(date*1000));
+                }
+                entry(a, "message", log.message);
+                a.push("</table>");
+                return a.join("");
+            }
+        });
+    }
+
+    function deleteBranch(ev, root, fs) {
+        pickBranch(ev, root, fs, function(item) {
+            if (item == branchList.current) {
+                return;
+            }
+            branchList.$el.modal('close');
+            var key = padStart("" + Math.floor((Math.random() * 99999999)) + "", 8, "0");
+            Notify.prompt('Delete branch ' + item + '?. This operation is irreversible. To proceed, enter ' + key, function(ans) {
+                if (ans == key) {
+                    git.deleteBranch({
+                        dir: root,
+                        fs: fs,
+                        ref: item,
+                        gitdir: join(root, appConfig.gitdir)
+                    }).then(success, failure);
+                }
+                else {
+                    return false;
+                }
+            })
+        });
     }
 
     function createBranch(ev, root, fs) {
@@ -1358,7 +1442,13 @@
     }
 
     function switchBranchNoCheckout(ev, root, fs) {
-        switchBranch(ev, root, fs, true);
+        pickBranch(ev, root, fs, function(item) {
+            if (item == branchList.current) {
+                return;
+            }
+            gotoRef(ev, root, fs, item, true);
+            branchList.$el.modal('close');
+        });
     }
 
     function testPlain(str) {
@@ -1406,6 +1496,9 @@
             .then(function(path) {
                 gitRoot = path;
                 yes.show(btn);
+                if (yes == GitOverflow) {
+                    git.currentBranch({ fs: ev.browser.fileServer, dir: gitRoot, gitdir: join(gitRoot, appConfig.gitdir) }).then(GitMenu.currentBranch.update, failure);
+                }
             }, function(e) {
                 gitRoot = ev.rootDir;
                 no.show(btn);
@@ -1776,6 +1869,20 @@
         }
     };
     var GitMenu = {
+        "currentBranch": {
+            isHeader: true,
+            icon: true,
+            close: false,
+            currentBranch: "",
+            caption: "",
+            update: function(branch) {
+                if (branch != GitMenu.currentBranch.currentBranch) {
+                    GitMenu.currentBranch.currentBranch = branch;
+                    GitMenu.currentBranch.caption = "<span class='dot green'></span><i class='grey-text'>" + branch + "</i>";
+                    GitOverflow.update(GitMenu);
+                }
+            }
+        },
         "view-stage": {
             icon: 'view_headline',
             caption: "View Stage",
@@ -1786,70 +1893,87 @@
             caption: "Show Changed Files",
             onclick: showStatusAll
         },
-        "branches": {
-            icon: "usb",
-            caption: "Branches",
-            childHier: {
-                "create-branch": {
-                    icon: "add",
-                    caption: "Create Branch",
-                    onclick: createBranch
-                },
-                "switch-branch": {
-                    icon: "swap_horiz",
-                    caption: "Checkout Branch",
-                    onclick: switchBranch
-                },
-                "switch-branch-nocheckout": {
-                    icon: "swap_horiz",
-                    caption: "Set HEAD branch",
-                    onclick: switchBranchNoCheckout
-                },
-                "close-branch": "Close Branch"
-            }
-        },
-        "remotes": {
-            icon: "cloud",
-            caption: "Remote",
-            childHier: {
-                "add-remote": {
-                    icon: "add",
-                    caption: "Add Remote",
-                    onclick: addRemote
-                },
-                "delete-remote": "Remove Remote"
-            }
-        },
         "do-commit": {
             icon: 'save',
             caption: "Commit",
             onclick: doCommit
         },
-        "do-pull": {
-            icon: 'vertical_align_bottom',
-            caption: "Pull Changes",
-            onclick: doPull
+        "show-logs": {
+            icon: 'history',
+            caption: "History",
+            onclick: showLog
         },
         "do-push": {
             icon: 'vertical_align_top',
             caption: "Push Changes",
             onclick: doPush
         },
-        "do-merge": {
-            icon: 'swap_vert',
-            caption: "Merge Branches",
-            onclick: doMerge
+        "do-pull": {
+            icon: 'vertical_align_bottom',
+            caption: "Pull Changes",
+            onclick: doPull
         },
-        "do-revert": {
-            icon: 'warning',
-            caption: "Revert",
-            className: "red-text",
-            onclick: doRevert
-        },
-        "configure": {
-            caption: "..Authentication",
-            onclick: doConfig
+
+        "repo-actions": {
+            icon: "more_vert",
+            caption: "More...",
+            childHier: {
+                "branches": {
+                    icon: "usb",
+                    caption: "Branches",
+                    childHier: {
+                        "create-branch": {
+                            icon: "add",
+                            caption: "Create Branch",
+                            onclick: createBranch
+                        },
+                        "switch-branch": {
+                            icon: "swap_horiz",
+                            caption: "Checkout Branch",
+                            onclick: switchBranch
+                        },
+                        "switch-branch-nocheckout": {
+                            icon: "home",
+                            caption: "Set HEAD branch",
+                            onclick: switchBranchNoCheckout
+                        },
+                        "close-branch": {
+                            icon: "delete",
+                            caption: "Delete Branch",
+                            onclick: deleteBranch
+                        }
+                    }
+                },
+                "remotes": {
+                    icon: "cloud",
+                    caption: "Remote",
+                    childHier: {
+                        "add-remote": {
+                            icon: "add",
+                            caption: "Add Remote",
+                            onclick: addRemote
+                        },
+                        "delete-remote": "Remove Remote"
+                    }
+                },
+                "do-merge": {
+                    icon: 'swap_vert',
+                    caption: "Merge Branches",
+                    onclick: doMerge
+                },
+                "do-revert": {
+                    icon: 'warning',
+                    caption: "Revert",
+                    className: "red-text",
+                    onclick: doRevert
+                },
+                "configure": {
+                    caption: "..Authentication",
+                    onclick: doConfig
+                }
+            }
         }
+
     };
     var NoGitMenu = {
         "init-repo": {
@@ -1919,19 +2043,32 @@
     FileUtils.registerOption("project", ["project"], "git-opts", GitProjectOption);
     FileUtils.registerOption("project", ["project"], "git-file-opts", "");
 })(Modules);
+//later on
+(function(global) {
+    function GitTreeBrowser() {
+        GitTreeBrowser.super(this, arguments);
+    }
+    //Utils.extend(GitTreeBrowser,Hierarchy);
+}); 
 (function(global) {
     var relative = global.FileUtils.relative;
     var normalize = global.FileUtils.normalize;
     var clean = global.FileUtils.cleanFileList;
     var dirname = global.FileUtils.dirname;
-
-    function GitFileServer(opts) {
+    
+    function GitFileServer(opts,commit) {
         this.opts = {
             fs: opts.fs,
             dir: opts.dir,
             gitdir: opts.gitdir,
             cache: opts.cache
         };
+        if(commit){
+            this.trees = {
+                "!oid": commit.tree,
+                "!isDir":true
+            }
+        }
         this.ref = this.opts.ref;
     }
     (function() {
