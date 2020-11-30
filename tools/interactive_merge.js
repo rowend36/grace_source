@@ -1,10 +1,46 @@
-(function(global){
+(function(global) {
     var exports;
+    //return a list of conflicts 
+    //instead of merge not supported error;
     global.requireMerge = function() {
         if (exports) {
             return exports;
         }
         else exports = {};
+        const abbreviateRx = new RegExp('^refs/(heads/|tags/|remotes/)?(.*)')
+        function abbreviateRef(ref) {
+            const match = abbreviateRx.exec(ref)
+            if (match) {
+                if (match[1] === 'remotes/' && ref.endsWith('/HEAD')) {
+                    return match[2].slice(0, -5)
+                }
+                else {
+                    return match[2]
+                }
+            }
+            return ref;
+        }
+        exports.completeMerge = async function({
+            fs,
+            cache,
+            gitdir,
+            merge,
+        }) {
+            var message = merge.message || `Merge branch '${abbreviateRef(merge.theirs)}' into ${abbreviateRef(merge.ours)}`;
+            const oid = await git.commit({
+                fs,
+                cache,
+                gitdir,
+                message: message,
+                ref: merge.ours,
+                tree: merge.tree,
+                parent: [merge.ourOid, merge.theirOid],
+                author: merge.author,
+                committer: merge.committer,
+                signingKey: merge.signingKey,
+            })
+            return oid
+        }
         exports.merge = async function({
             fs,
             cache,
@@ -86,39 +122,26 @@
                     theirName: theirs,
                     dryRun,
                 })
-                if (!message) {
-                    message = `Merge branch '${abbreviateRef(theirs)}' into ${abbreviateRef(
-            ours
-          )}`
-                }
-                const oid = await git.commit({
-                    fs,
-                    cache,
-                    gitdir,
-                    message,
-                    ref: ours,
+                return {
                     tree,
-                    parent: [ourOid, theirOid],
+                    ours,
+                    tree,
+                    ourOid,
+                    theirOid,
                     author,
                     committer,
                     signingKey,
-                    dryRun,
-                    noUpdateBranch,
-                })
-                return {
-                    oid,
-                    tree,
-                    mergeCommit: true,
                 }
+
             }
         }
         var TREE = git.TREE;
         var _walk = git.walk;
         var MergeNotSupportedError = git.Errors.MergeNotSupportedError;
-        
+
         var basename = global.FileUtils.basename;
-        var join  = global.FileUtils.join;
-        
+        var join = global.FileUtils.join;
+
         /**
          * Create a merged tree
          *

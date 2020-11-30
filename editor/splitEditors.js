@@ -4,14 +4,13 @@
     var Doc = global.Doc;
     var DocsTab = global.DocsTab;
     var app = global.AppEvents;
-    var nameTagIconStyle = "display:inline-block;margin-left:5px;margin-right:5px;width:10px;height:10px;border-radius:50%";
     var nameTagColors = ['red', 'blue', 'green', 'purple', 'yellow', 'pink'];
     var colorIndex = 0;
     var nameTagClass = "name-tag";
 
     function getIcon(color) {
         color = color || getColor();
-        return '<span style="' + nameTagIconStyle + '" class = "' + color + " " + color + '-text"></span>';
+        return "<span class='dot " + color + " " + color + "-text'></span>";
     }
 
     function getColor() {

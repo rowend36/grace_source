@@ -258,30 +258,35 @@
             var t = hier[a].sortIndex || 0;
             var l = hier[b].sortIndex || 0;
             return hier[a].icon && !hier[b].icon ? -1 : l > t ? -1 : l == t ? 0 : 1;
-        })
+        });
         for (var j in sorted) {
             var i = sorted[j]
             var item = document.createElement("li");
             item.className = hier[i].className || "";
-            var a = document.createElement("a");
-            if (hier[i].icon) {
-                var icon = document.createElement('span');
-                icon.className = 'material-icons dropdown-icon';
-                icon.innerHTML = hier[i].icon;
-                a.appendChild(icon);
+            if(hier[i].isHeader){
+                item.innerHTML = hier[i].caption;
             }
-            a.className = "dropdown-item"
-            a.setAttribute('href', '#');
-            a.setAttribute("id", i);
-            a.innerHTML += hier[i].caption || hier[i];
-            if (hier[i].childHier || hier[i].hasChild) {
-                var caret = document.createElement("span");
-                caret.className = "dropdown-caret";
-                caret.innerHTML = "<span class='material-icons'>play_arrow</span>";
-                a.style.paddingRight = "20px";
-                a.appendChild(caret);
+            else{
+                var a = document.createElement("a");
+                if (hier[i].icon) {
+                    var icon = document.createElement('span');
+                    icon.className = 'material-icons dropdown-icon';
+                    icon.innerHTML = hier[i].icon;
+                    a.appendChild(icon);
+                }
+                a.className = "dropdown-item";
+                a.setAttribute('href', '#');
+                a.setAttribute("id", i);
+                a.innerHTML += hier[i].caption || hier[i];
+                if (hier[i].childHier || hier[i].hasChild) {
+                    var caret = document.createElement("span");
+                    caret.className = "dropdown-caret";
+                    caret.innerHTML = "<span class='material-icons'>play_arrow</span>";
+                    a.style.paddingRight = "20px";
+                    a.appendChild(caret);
+                }
+                item.appendChild(a);
             }
-            item.appendChild(a);
             menu.appendChild(item);
         }
         return menu;
