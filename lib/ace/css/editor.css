@@ -269,7 +269,7 @@ styles.join("\n")
 }
 
 .ace_cursor-layer {
-    z-index: 4;
+    z-index: 4;;
 }
 
 .ace_cursor {
