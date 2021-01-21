@@ -29,6 +29,7 @@ styles.join("\n")
 .ace_editor {
     position: relative;
     overflow: hidden;
+    padding: 0;
     font: 12px/normal 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
     direction: ltr;
     text-align: left;
@@ -53,6 +54,7 @@ styles.join("\n")
     box-sizing: border-box;
     min-width: 100%;
     contain: style size layout;
+    font-variant-ligatures: no-common-ligatures;
 }
 
 .ace_dragging .ace_scroller:before{
@@ -201,7 +203,6 @@ styles.join("\n")
 [ace_nocontext=true] {
     transform: none!important;
     filter: none!important;
-    perspective: none!important;
     clip-path: none!important;
     mask : none!important;
     contain: none!important;
@@ -343,6 +344,12 @@ styles.join("\n")
 .ace_marker-layer .ace_bracket {
     position: absolute;
     z-index: 6;
+}
+
+.ace_marker-layer .ace_error_bracket {
+    position: absolute;
+    border-bottom: 1px solid #DE5555;
+    border-radius: 0;
 }
 
 .ace_marker-layer .ace_active-line {
@@ -569,7 +576,8 @@ styles.join("\n")
 .ace_placeholder {
     font-family: arial;
     transform: scale(0.9);
-    opacity: 0.7;
     transform-origin: left;
-    text-indent: 10px;
+    white-space: pre;
+    opacity: 0.7;
+    margin: 0 10px;
 }

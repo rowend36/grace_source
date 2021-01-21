@@ -119,14 +119,18 @@ function buildTypes() {
     fs.readdirSync(BUILD_DIR + '/src-noconflict/snippets').forEach(function(path) {
         paths.push("snippets/" + path);
     });
-    
-    var pathModules = paths.map(function(path) {
-        if (/^(mode|theme|ext|keybinding)-|^snippets\//.test(path)) {
+
+    var moduleNameRegex = /^(mode|theme|ext|keybinding)-|^snippets\//;
+
+    var pathModules = [
+        "declare module 'ace-builds/webpack-resolver';",
+        "declare module 'ace-builds/src-noconflict/ace';"
+    ].concat(paths.map(function(path) {
+        if (moduleNameRegex.test(path)) {
             var moduleName = path.split('.')[0];
             return "declare module 'ace-builds/src-noconflict/" + moduleName + "';";
         }
-    }).filter(Boolean).join('\n')
-        + "\ndeclare module 'ace-builds/webpack-resolver';\n";
+    }).filter(Boolean)).join("\n") + "\n";
 
     fs.writeFileSync(BUILD_DIR + '/ace.d.ts', moduleRef + '\n' + definitions);
     fs.writeFileSync(BUILD_DIR + '/ace-modules.d.ts', pathModules);
@@ -137,7 +141,7 @@ function buildTypes() {
             if (/^worker/.test(moduleName))
                 moduleName = "mode" + moduleName.slice(6) + "_worker";
             moduleName = moduleName.replace(/keybinding/, "keyboard");
-            return "ace.config.setModuleUrl('ace/" + moduleName + "', require('file-loader!./src-noconflict/" + path + "'))";
+            return "ace.config.setModuleUrl('ace/" + moduleName + "', require('file-loader?esModule=false!./src-noconflict/" + path + "'))";
         }
     }).join('\n');
     
@@ -382,9 +386,6 @@ function buildAce(options, callback) {
     });
     // snippets
     modeNames.forEach(function(name) {
-        if (snippetFiles.indexOf(name + ".js") == -1)
-            addSnippetFile(name);
-        
         buildSubmodule(options, {
             require: ["ace/snippets/" + name]
         }, "snippets/" + name, addCb());
@@ -397,7 +398,7 @@ function buildAce(options, callback) {
         }, "theme-" +  name, addCb());
     });
     // keybindings
-    ["vim", "emacs", "sublime"].forEach(function(name) {
+    ["vim", "emacs", "sublime", "vscode"].forEach(function(name) {
         buildSubmodule(options, {
             projectType: "keybinding",
             require: ["ace/keyboard/" + name ]
@@ -423,6 +424,17 @@ function buildAce(options, callback) {
             }]
         }, "worker-" + name, addCb());
     });
+    // worker base
+    buildSubmodule(options, {
+        projectType: "worker",
+        require: ["ace/worker/mirror"],
+        ignore: [],
+        additional: [{
+            id: "ace/worker/worker",
+            transforms: [],
+            order: -1000
+        }]
+    }, "worker-base", addCb());
     // 
     function addCb() {
         addCb.count = (addCb.count || 0) + 1; 
@@ -603,18 +615,6 @@ function generateThemesModule(themes) {
         ';\n\n});'
     ].join('');
     fs.writeFileSync(__dirname + '/lib/ace/ext/themelist_utils/themes.js', themelist, 'utf8');
-}
-
-function addSnippetFile(modeName) {
-    var snippetFilePath = ACE_HOME + "/lib/ace/snippets/" + modeName;
-    if (!fs.existsSync(snippetFilePath + ".js")) {
-        copy.file(ACE_HOME + "/tool/templates/snippets.js", snippetFilePath + ".js", function(t) {
-            return t.replace(/%modeName%/g, modeName);
-        });
-    }
-    if (!fs.existsSync(snippetFilePath + ".snippets")) {
-        fs.writeFileSync(snippetFilePath + ".snippets", "");
-    }
 }
 
 function compress(text) {
