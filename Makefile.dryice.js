@@ -59,7 +59,21 @@ function main(args) {
     if (args.indexOf("--h") != -1 || args.indexOf("-h") != -1 || args.indexOf("--help") != -1) {
         return showHelp();
     }
-    if (type == "minimal") {
+    if (type == "core"){
+        buildCore({}, {outputFile: "ace.js"});
+    }
+    else if(type == "ext"){
+        var name = args[3];
+        buildSubmodule({
+            compress: args.indexOf("--m") != -1,
+            noconflict: args.indexOf("--nc") != -1,
+            shrinkwrap: args.indexOf("--s") != -1
+        }, {
+            projectType: "ext",
+            require: ["ace/ext/" + name]
+        }, "ext-" + name, null);
+    }
+    else if (type == "minimal") {
         buildAce({
             compress: args.indexOf("--m") != -1,
             noconflict: args.indexOf("--nc") != -1,
@@ -85,6 +99,8 @@ function showHelp(type) {
     console.log("  normal       Runs four Ace builds--minimal, minimal-noconflict, minimal-min, and minimal-noconflict-min");
     console.log("  demo         Runs demo build of Ace");
     console.log("  full         all of above");
+    console.log("  core         Builds only ace.js");
+    console.log("  ext         Builds only specified extension");
     console.log("  highlighter  ");
     console.log("args:");
     console.log("  --target ./path   path to build folder");

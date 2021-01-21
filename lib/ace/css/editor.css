@@ -535,6 +535,7 @@ styles.join("\n")
 
 .ace_mobile-menu {
     position: absolute;
+    z-index: 2;
     line-height: 1.5;
     border-radius: 4px;
     -ms-user-select: none;
