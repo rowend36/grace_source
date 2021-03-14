@@ -1,4 +1,5 @@
-(function(global) {
+_Define(function(global) {
+    var extname = global.FileUtils.extname;
 
     function loadScript(script, cb) {
         var scr = document.createElement('script');
@@ -18,28 +19,62 @@
         };
         document.body.appendChild(styleEl);
     }
-    //Everything in bootlist
-    //needs to be run after boot
-    //either because they need getEditor
-    //or they are simply tasking
-    //Todo spread to other files
 
-    function BootList(onload,delay) {
+    function BootList(onload, delay) {
         this.onLoad = onload;
         this.delay = delay || 30;
         this.next = this.next.bind(this);
     }
     BootList.prototype = [];
+    BootList.define = function(paths, start, func) {
+        var cachedArgs = [];
+        var bootList = new BootList(function() {
+            bootList = null;
+            func = (start && start()) || func;
+            cachedArgs.forEach(function(i) {
+                try {
+                    func.apply(i[0], i[1]);
+                } catch (e) {
+                    console.error(e);
+                }
+            });
+            bootList = paths = cachedArgs = null;
+        });
+
+        paths.forEach(function(e){bootList.push(e)});
+        return function() {
+            if (cachedArgs) {
+                cachedArgs.push([this, arguments]);
+                if (!bootList.started)
+                    bootList.next();
+            } else return func.apply(this, arguments);
+        };
+    };
     BootList.prototype.next = function() {
         if (this.length < 1) {
-            return this.onLoad();
+            return this.onLoad && this.onLoad();
         }
-        if(!this.started){
+        if (!this.started) {
             this.started = true;
         }
         var nextItem = this.shift();
-        if(nextItem.id){
-            this[nextItem.id]=true;
+        if (typeof(nextItem) == 'string')
+            switch (extname(nextItem)) {
+                case 'css':
+                    nextItem = {
+                        style: nextItem
+                    };
+                    break;
+                case 'js':
+                    nextItem = {
+                        script: nextItem
+                    };
+                    break;
+                default:
+                    throw new Error('Unknown dependency ' + nextItem);
+            }
+        if (nextItem.id) {
+            this[nextItem.id] = true;
         }
         if (nextItem.ignoreIf)
             return this.next();
@@ -50,13 +85,11 @@
             setTimeout(function() {
                 try {
                     nextItem.func();
-                }
-                catch (e) {
+                } catch (e) {
                     try {
                         console.error(e);
                         nextItem.error && nextItem.error(e);
-                    }
-                    catch (i) {
+                    } catch (i) {
                         console.error(i);
                     }
                 }
@@ -64,11 +97,10 @@
             }.bind(this), this.delay);
         else if (nextItem.script) {
             loadScript(nextItem.script, this.next);
-        }
-        else if (nextItem.style) {
+        } else if (nextItem.style) {
             loadStyle(nextItem.style, this.next);
-        }
+        } else throw new Error('Unknown dependency '+ nextItem);
     };
     global.BootList = BootList;
 
-})(Modules);
+}) /*_EndDefine*/ ;

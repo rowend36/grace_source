@@ -1,4 +1,4 @@
-(function(global){
+_Define(function(global){
     let candidateSelectors = [
         'input',
         'select',
@@ -174,7 +174,7 @@
     }
 
     function isDetailsWithSummary(node) {
-        const r =
+        var r =
             node.tagName === 'DETAILS' &&
             Array.prototype.slice
             .apply(node.children)
@@ -202,7 +202,7 @@
         if (!node.name) {
             return true;
         }
-        const radioScope = node.form || node.ownerDocument;
+        var radioScope = node.form || node.ownerDocument;
         let radioSet = radioScope.querySelectorAll(
             'input[type="radio"][name="' + node.name + '"]'
         );
@@ -213,8 +213,8 @@
     function isHidden(node) {
         if (getComputedStyle(node).visibility === 'hidden') return true;
 
-        const isDirectSummary = node.matches('details>summary:first-of-type');
-        const nodeUnderDetails = isDirectSummary ? node.parentElement : node;
+        var isDirectSummary = node.matches('details>summary:first-of-type');
+        var nodeUnderDetails = isDirectSummary ? node.parentElement : node;
         if (nodeUnderDetails.matches('details:not([open]) *')) {
             return true;
         }
@@ -228,4 +228,4 @@
     }
 
     global.tabbable = { tabbable, focusable, isTabbable, isFocusable,isVisible:isNodeMatchingSelectorTabbable };
-})(Modules);
+});/*_EndDefine*/

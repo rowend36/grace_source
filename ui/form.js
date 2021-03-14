@@ -1,4 +1,4 @@
-(function(global) {
+_Define(function(global) {
     function createForm(form) {
         var el = document.createElement('form');
         for (var i in form) {
@@ -34,4 +34,4 @@
         parse: parseForm,
         validate: validateForm,
     };
-})(Modules);
+})/*_EndDefine*/

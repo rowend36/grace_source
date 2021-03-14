@@ -1,4 +1,4 @@
-(function(global) {
+_Define(function(global) {
     var Utils = global.Utils;
     var Doc = global.Doc;
     var SplitManager = global.SplitManager;
@@ -6,26 +6,47 @@
     var AutoCloseable = global.AutoCloseable;
 
     function createIcon(id, name) {
-        return "<span style='width:35px' id='" + id + "' class='material-icons'>" + name + "</span>";
+        return "<button style='width:35px' id='" + id + "' class='material-icons'>" + name + "</button>";
     }
-
+    function loadConsole(win,loadOnly){
+        if(win.eruda){
+            if(!loadOnly){
+                win.eruda._devTools.toggle();
+            }
+            win.eruda._entryBtn.hide();
+        }
+        else{
+            $.get({
+                url: "./libs/js/eruda.min.js",
+                success: function(res) {
+                    var script = res;
+                    win.eval(script);
+                    if (win.eruda){
+                        win.eruda.init(win.erudaPanes || []);
+                        loadConsole(win);
+                    }
+                }
+            });
+        }
+    }
     function createNavBar(navBar, icons, prefix) {
         navBar.className = "editor-primary";
         navBar.style.position = "absolute";
         navBar.style.top = '0px';
         navBar.style.width = '100%';
+        var iconLeft = Math.min(4,icons.length)*35+5;
         var addressBar = document.createElement("div");
         addressBar.setAttribute("readOnly", true);
         addressBar.style.position = "absolute";
         addressBar.style.left = "5px";
         addressBar.style.top = "5px";
         addressBar.style.width = "";
-        addressBar.style.minWidth = '70px';
+        addressBar.style.minWidth = '150px';
         addressBar.style.height = "30px";
         addressBar.style.background = "rgba(180,180,180,128)";
         addressBar.style.border = "2px solid #2196F3";
         addressBar.style.borderRadius = "15px";
-        addressBar.style.right = (icons.length * 35 + 5) + "px";
+        addressBar.style.right = iconLeft + "px";
         addressBar.style.overflow = "hidden";
         addressBar.style.overflowX = 'auto';
         addressBar.style.lineHeight = "30px";
@@ -39,9 +60,9 @@
         iconContainer.style.position = 'relative';
         iconContainer.style.float = 'right';
         iconContainer.style.height = '100%';
-        iconContainer.style.width = (icons.length * 35) + "px";
+        iconContainer.style.width = iconLeft + "px";
         iconContainer.style.overflow = 'auto';
-
+        iconContainer.style.whiteSpace = 'nowrap';
         iconContainer.style.maxWidth = "100%";
         for (var i in icons) {
             $(iconContainer).append(createIcon((prefix || "") + icons[i].id, icons[i].icon));
@@ -117,12 +138,16 @@
             }, {
                 id: "full",
                 icon: "fullscreen"
+            },{
+                id: "desktop",
+                icon: "computer"
+            },{
+                id: "zoom",
+                icon: "zoom_out"
             }], "preview-"
         );
         previewContainer.className = "preview";
         var preview = document.createElement('iframe');
-        preview.style.width = "100%";
-        preview.style.height = '100%';
         previewContainer.appendChild(preview);
         navBar.iconContainer.onclick = function(e) {
             var win = preview.contentWindow;
@@ -134,13 +159,21 @@
                     win.history.forward();
                     break;
                 case "console":
-                    win.eruda._devTools.toggle();
+                    loadConsole(win);
                     break;
                 case "reload":
                     win.location.reload();
                     break;
                 case "close":
                     hide();
+                    break;
+                case "zoom":
+                    $(previewContainer).toggleClass('preview-zoom');
+                    break;
+                case "desktop":
+                    if(!$(previewContainer).toggleClass('preview-desktop').hasClass('preview-container')){
+                        $(previewContainer).removeClass('preview-zoom');
+                    }
                     break;
                 case "full":
                     if (isFull) {
@@ -225,6 +258,7 @@
                 container = null;
                 SplitManager.remove($(previewContainer));
             }
+            stopLiveUpdate();
         }
         if (edit) {
             setEditor(edit);
@@ -297,4 +331,4 @@
         };
         return API;
     }
-})(Modules)
+});/*_EndDefine*/

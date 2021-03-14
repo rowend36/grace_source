@@ -1,4 +1,4 @@
-var asyncForEach = Modules.Utils.asyncForEach;
+var asyncForEach = GRACE.Utils.asyncForEach;
 var compare_props = function(e1, e2, props) {
     props.forEach(function(code) {
         if (e1[code] != e2[code]) {

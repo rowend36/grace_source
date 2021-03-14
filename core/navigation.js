@@ -1,13 +1,17 @@
-(function(global) {
+_Define(function(global) {
     var tabbable = global.tabbable;
     var FocusManager = global.FocusManager;
     var Utils = global.Utils;
+    var event = global.event;
+    var keys = global.keys;
+    var mods = keys.KEY_MODS;
+    var EventsEmitter = global.EventsEmitter;
 
     function leaveFocusable(ev) {
         var target = ev.target;
         var data = target._track;
         clearData.apply(target);
-        data.handler(data.lastEv, true);
+        data.onKey(data.lastEv, true);
     }
 
     function clearData() {
@@ -16,209 +20,308 @@
             this._track = null;
         }
     }
-
-    function trackBlur(el, ev, handler) {
+    //when on an element that can take input
+    //we want to be able focus the next element
+    //the moment the input is blurred but only if the 
+    //blurring is as a result of key input
+    function trackBlur(el, ev, onKey) {
+        el.addEventListener('blur', leaveFocusable);
         if (el._track) {
             el._track.lastEv = ev;
             el._track.clear();
-        }
-        else {
+        } else {
             var data = {
                 lastEv: ev,
-                handler: handler,
-                clear: Utils.debounce(clearData.bind(el), 500)
+                onKey: onKey,
+                clear: Utils.debounce(clearData.bind(el), 100)
             };
-            data.clear();
             el._track = data;
-            el.addEventListener('blur', leaveFocusable);
+            data.clear();
         }
 
     }
+    var InvisibleTextArea = function(el) {
+        var receiver = document.createElement('textarea');
+        receiver.className = 'keyboard-listener';
+        receiver.value = "-";
+        receiver.setAttribute('tabIndex', -1);
+        receiver.style.opacity = 1;
+        receiver.style.width = '2px';
+        receiver.style.height = '2px';
+        receiver.style.overflow = 'hidden';
+        el.appendChild(receiver);
+        return receiver;
+    };
+    var repeating = true;
+    var clearRepeating = Utils.debounce(function() {
+        repeating = false;
+    }, 100);
     var KeyListener = {
-        attach: function(el, handler, provider) {
-            var receiver;
-            if (!Env.isDesktop) {
-                var icon = document.createElement('span');
-                icon.onclick = function(e) {
-                    receiver.focus();
-                    e.stopPropagation();
-                };
-                icon.className = 'keyboard-listener material-icons';
-                receiver = document.createElement('textarea');
-                receiver.value = "-";
-                receiver.setAttribute('tabIndex', -1);
-                receiver.style.opacity = 0;
-                receiver.style.width = '2px';
-                receiver.style.height = '2px';
-                receiver.style.overflow = 'hidden';
-                icon.appendChild(receiver);
-                icon.appendChild(document.createTextNode('keyboard_shown'));
-                el.appendChild(icon);
+        attach: function(el, keyHandler) {
+            keyHandler.el = el || document.body;
+            if (el && FocusManager.canTakeInput(el)) {
+                keyHandler.$receiver = el;
+            } else {
+                keyHandler.$receiver = new InvisibleTextArea(keyHandler.el);
             }
-            else receiver = el;
-            if (provider) provider.handler = handler;
-            else provider = {
-                handler: handler,
-                getCurrentElement: this.getCurrentElement,
-                getNext: this.getNext,
-                getPrev: this.getPrev,
-                getElements: this.getElements,
-            };
-            handler.$listener = this.keyBoardHandler(el, receiver, handler, provider);
-            el.addEventListener('keydown', handler.$listener);
-            handler.$receiver = receiver;
-            return provider;
-        },
-        detach: function(handler) {
-            window.removeEventListener('keydown', handler.$listener);
-            if (handler.$receiver.parentElement.className.indexOf('keyboard-listener')) {
-                handler.$receiver.parentElement.remove();
+            el = el || document;
+            keyHandler.$toDestroy = [];
+            event.addCommandKeyListener(el, function(e, hash, key) {
+                if (key < 0 || hash < 0) return;
+                var keyString = mods[hash] + keys.keyCodeToString(key);
+                keyHandler.$onKey({
+                    event: e,
+                    value: keyString,
+                    repeating: repeating
+                });
+                repeating = true;
+                clearRepeating();
+            }, keyHandler);
+            event.addListener(keyHandler.$receiver, 'input', function(e) {
+                var key = this.value.charCodeAt(this.value.length - 1);
+                keyHandler.$onKey({
+                    event: e,
+                    value: keys.keyCodeToString(key)
+                });
+            }, keyHandler);
+            if (!keyHandler.$onKey) {
+                keyHandler.$onKey = handleKey.bind(keyHandler);
             }
-            handler.$listener = handler.$receiver = null;
+            if (!keyHandler.scrollIntoView)
+                keyHandler.scrollIntoView = scrollIntoView;
         },
-        getNext: function(current, root, direction) {
-            var elements = this.getElements(root);
-            return elements[this.lastEl < elements.length - 1 ? ++this.lastEl : this.lastEl];
+        detach: function(keyHandler) {
+            keyHandler.$toDestroy.forEach(function(e) {
+                e.destroy();
+            });
         },
-        getElements: function(root) {
-            return this.handler.elementCache || (this.handler.elementCache = root.getElementsByClassName('tabbable'));
-        },
-        getCurrentElement: function(root) {
-            if (this.handler.elementCache) {
-                return this.handler.elementCache[this.lastEl];
+    };
+    var scrollIntoView = function(el, /*an offset into the element*/ offsetX, offsetY, itemWidth, itemHeight) {
+        offsetX = offsetX || 0;
+        offsetY = offsetY || 0;
+        itemWidth = itemWidth || el.clientWidth;
+        itemHeight = itemHeight || el.clientHeight;
+        var a = el;
+        while ((a = a.parentElement)) {
+            var baseTop = a==el.offsetParent?0:a.offsetTop;
+            var top = el.offsetTop + offsetY-baseTop;
+            var bottom = top+itemHeight;
+            if (top < a.scrollTop) {
+                a.scrollTop=top;
+            } else if(bottom-a.clientHeight>a.scrollTop){
+                a.scrollTop = bottom-a.clientHeight;
             }
-            this.lastEl = -1;
-            return root;
-        },
-        getPrev: function(current, root, direction) {
-            var elements = this.getElements(root);
-            return elements[this.lastEl > 0 ? --this.lastEl : this.lastEl];
-        },
-        keyBoardHandler: function(el, receiver, handler, provider) {
-            var self = provider;
-            return function(e, force) {
-                e = e || window.event;
-                var isSelf = force || e.target == handler.$receiver || e.target == el ||
-                    !(FocusManager.canTakeInput(e.target) && e.keyCode != 27);
-                if (!isSelf) {
-                    return trackBlur(e.target, e, handler.$listener);
-                }
-                var index = self.getCurrentElement(el);
-                if (!index) return;
-                var top = true;
-                var next;
-                var key = Number(e.keyCode);
-                if (key >= 16 && key <= 18) return;
-                switch (key) {
-                    case 38:
-                        //up
-                        next = self.getPrev(index, el, "vertical");
-                        break;
-                    case 39:
-                        top = false;
-                        // right arrow
-                        next = self.getNext(index, el, "horizontal");
-                        break;
-                    case 40:
-                        top = false;
-                        //down
-                        next = self.getNext(index, el, "vertical");
-                        break;
-                    case 37:
-                        //left arrow
-                        next = self.getPrev(index, el, "horizontal");
-                        break;
-                    case 9:
-                        // tab
-                        if (e.shiftKey)
-                            next = self.getPrev(index, true, "tab");
-                        else {
-                            top = false;
-                            next = self.getNext(index, true, "tab");
-                        }
-                        break;
-                    case 27:
-                        //esc
-                        if (!handler.blur(index))
-                            return;
-                        break;
-                    default:
-                        if (key === 229 && e.target == handler.$receiver) {
-                            var char = handler.$receiver.value[1];
-                            handler.$receiver.value = "-";
-                            if (char) key = char.charCodeAt(0);
-                            else return;
-                        }
-                        if (key /*space*/ == 32 || key /*enter*/ == 13) {
-                            if (handler.onenter && handler.onenter(index, e))
-                                break;
-                            else {
-                                $(index).click();
-                            }
-                        }
-                        else {
-                            if ((key >= 65 && key <= 90) || (key >= 97 && key < 122)) {
-                                if (handler.on && handler.on(toString(String.fromCharCode(key), e), index))
-                                    break;
-                            }
-                            return;
-                        }
-                }
-                e.stopPropagation();
-                e.preventDefault();
-                if (next && next != index) {
-                    next.scrollIntoView(top);
-                    if (self.shifted)
-                        handler.shiftTo(next, index);
-                    else handler.moveTo(next, index);
-                }
+            offsetY = top-a.scrollTop;
 
-            };
+            var baseLeft = a==el.offsetParent?0:a.offsetLeft;
+            var left = el.offsetLeft + offsetX-baseLeft;
+            var right = left+itemWidth;
+            if (left < a.scrollLeft) {
+                a.scrollLeft=left;
+            } else if(right-a.clientWidth>a.scrollLeft){
+                a.scrollLeft = right-a.clientWidth;
+            }
+            offsetX = left-a.scrollLeft;
+            el = a;
         }
     };
-    var direction = null;
-    var skipped;
-    function doSkip(editor_textInput, dir) {
-        if(skipped)clearSkip();
-        skipped = editor_textInput;
-        $(editor_textInput.parentElement).addClass('nav-skipcontainer');
-        editor_textInput.addEventListener('keydown', skip, true);
-        direction = dir || 39;
+    var handleKey = function(ev, force) {
+        var e = ev.event;
+        if (e.defaultPrevented) return;
+        var hash = ev.value;
+        var el = this.el;
+        var self = this;
+        var ignore = !(force || e.target == this.$receiver || e.target == el || hash == 'esc');
+        if (ignore) {
+            trackBlur(e.target, ev, nav.$onKey);
+            return;
+        }
+        var index = self.getCurrentElement(el);
+        if (!index) return;
+        self.shifted = hash.startsWith('shift-');
+        if (self.shifted) {
+            hash = hash.replace('shift-', '');
+        }
+        var next;
+
+        switch (hash) {
+            case 'up':
+                next = self.getPrev(index, el, "vertical");
+                break;
+            case 'down':
+                next = self.getNext(index, el, 'vertical');
+                break;
+            case 'right':
+                next = self.getNext(index, el, 'horizontal');
+                break;
+            case 'left':
+                next = self.getPrev(index, el, 'horizontal');
+                break;
+            case 'tab':
+                next = self.getPrev(index, el, "tab");
+                break;
+            case 'shift-tab':
+                next = self.getNext(index, el, 'tab');
+                break;
+            case 'esc':
+                self.blur(e.target);
+                break;
+            case 'space':
+            case 'return':
+                if (!self.shifted) {
+                    self.onenter(index, e);
+                    break;
+                }
+                /*fallthrough*/
+                case 'f10':
+                case 'contextmenu':
+                    self.onRightClick && self.onRightClick(index, e);
+        }
+        e.preventDefault();
+        if (next && next != index) {
+            self.scrollIntoView(next);
+            if (self.shifted)
+                self.shiftTo(next, index);
+            else self.moveTo(next, index);
+        }
+    };
+
+    var inputToSkip;
+    var inputType;
+
+    function doSkip(inputEl, dir) {
+        if (inputToSkip) clearSkip();
+        inputToSkip = inputEl;
+        $(inputEl.parentElement).addClass('nav-skipcontainer');
+        inputEl.addEventListener('keydown', skip, true);
     }
-    function clearSkip(){
-        $(skipped.parentElement).removeClass('nav-skipcontainer');
-        skipped.removeEventListener('keydown', skip, true);
-        skipped = null;
+
+    function clearSkip() {
+        $(inputToSkip.parentElement).removeClass('nav-skipcontainer');
+        inputToSkip.removeEventListener('keydown', skip, true);
+        inputToSkip = null;
     }
     var skip = function(e) {
         var key = parseInt(e.keyCode);
-        if (key >= 16 && key <= 18) return;
+        if (keys.MODIFIER_KEYS[key]) return;
         clearSkip();
-        if (key == 9 || (key<41 && key>36)){//(key == direction + 1 || key == direction - 1)) {
-            e.target.blur()
-            nav.handler.$listener(e, true);
-            FocusManager.focusIfKeyboard(nav.handler.$receiver,false);
-        }
-        else if (key == 13 || key == 32) {
+        if (!(e.shiftKey || e.ctrlKey || e.altKey) && (key == keys.esc || (key < 41 && key > 36))) { //(key == direction + 1 || key == direction - 1)) {
+            var hash = keys.keyCodeToString(key);
+            e.target.blur();
+            nav.$onKey({
+                event: e,
+                value: hash
+            }, true);
+            FocusManager.focusIfKeyboard(nav.$receiver, true);
+        } else if (key == keys.enter || key == keys.space) {
             e.stopPropagation();
             e.preventDefault();
         }
     };
-    window.addEventListener('mousedown', function(e) {
-        nav.moveTo(e.target, 'mouse');
-    }, true);
-    window.addEventListener('focusin', function(e) {
-        nav.moveTo(e.target, 'focus');
-    }, true);
-
     var nav = {
-        moveTo: function(a, force) {
-            if(skipped)clearSkip();
+        moveTo: function(a, e, source) {
+            $(nav.lastEl).removeClass('nav-focused');
+            nav.lastEl = a;
+            var behaviour = a.parentElement.navBehaviour;
+            if (behaviour === false) {
+                nav.delegate = false;
+            } else {
+                var root;
+                if (!behaviour) {
+                    for (var i in behaviours) {
+                        if ((root = behaviours[i].detect(a))) {
+                            behaviour = behaviours[i];
+                            a.parentElement.navBehaviour = behaviour;
+                            break;
+                        }
+                    }
+                } else {
+                    root = behaviour.detect(a);
+                }
+                if (behaviour) {
+                    nav.delegate = behaviour;
+                    nav.delegate.root = root;
+                } else {
+                    nav.delegate = false;
+                    a.parentElement.navBehaviour = false;
+                }
+            }
+            if (FocusManager.canTakeInput(a)) {
+                FocusManager.focusIfKeyboard(a,true);
+                if (!source) {
+                    doSkip(a);
+                }
+            } else {
+                if (!source || Env.isDesktop || (source != 'mouse' && FocusManager.keyboardVisible)) {
+                    if (tabbable.isTabbable(a)) {
+                        $(a).addClass('nav-focused');
+                    }
+                    if($(a).hasClass('modal') || $(a).closest('.modal').length){
+                        //todo
+                        return FocusManager.hintChangeFocus();
+                    }
+                    else FocusManager.focusIfKeyboard(nav.$receiver, true);
+                }
+            }
+        },
+        blur: function(el) {
+            if (el.className.indexOf('ace_text-input') > -1) {
+                doSkip(el);
+            } else if (FocusManager.canTakeInput(el) && el != this.$receiver) {
+                FocusManager.focusIfKeyboard(this.$receiver, true);
+                el.blur();
+            } else {
+                FocusManager.focusIfKeyboard(this.$receiver, true);
+                nav.pop();
+            }
+        },
+        onenter: function(el, e) {
+            if (FocusManager.canTakeInput(el)) {} else if (el.tagName == 'SELECT') {
+                global.Overflow.openSelect(e, el);
+                return true;
+            } else if (FocusManager.activeElement == nav.$receiver) {
+                $(el).addClass('nav-focused');
+                FocusManager.focusIfKeyboard(nav.$receiver, true);
+                $(el).trigger({
+                    type: 'click',
+                    which: 1
+                });
+                return true;
+            }
+        },
+        onRightClick: function(el, e) {
+            if (FocusManager.canTakeInput(el)) {} else if (el.tagName == 'SELECT') {
+                global.Overflow.openSelect(e, el);
+                return true;
+            } else if (FocusManager.activeElement == nav.$receiver) {
+                $(el).addClass('nav-focused');
+                FocusManager.focusIfKeyboard(nav.$receiver, true);
+                $(el).trigger({
+                    type: 'contextmenu'
+                });
+                return true;
+            }
+        },
+        scrollIntoView: scrollIntoView,
+        attach: function() {
+            window.addEventListener('mousedown', function(e) {
+                nav.setFocused(e.target, 'mouse');
+            });
+            window.addEventListener('focusin', function(e) {
+                nav.setFocused(e.target, 'focus');
+            });
+            this.stack = [{
+                root: document.body
+            }];
+            KeyListener.attach(null, nav);
+        },
+        setFocused: function(a, force) {
+            if (inputToSkip) clearSkip();
             if (a == nav.lastEl) return;
-            if (a == nav.handler.$receiver) return;
+            if (a == nav.$receiver) return;
             do {
                 if (tabbable.isTabbable(a)) {
-                    nav.handler.moveTo(a, nav.getCurrentElement(document.body), force);
+                    nav.moveTo(a, nav.getCurrentElement(document.body), force);
                     break;
                 }
                 a = a.parentElement;
@@ -228,33 +331,47 @@
         addBehaviour: function(name, behaviour) {
             behaviours[name] = behaviour;
         },
-        stack: [{
-            root: document.body
-        }],
-        addRoot: function(el, close) {
-            this.stack.push({
-                close: close,
-                root: el,
-                base: nav.getCurrentElement(),
-            });
-            this.moveTo(nav.getElements()[0], "root");
+        stack: null,
+
+        addRoot: function(el, close, trap) {
+            if (this.stack) {
+                var stackObj = {
+                    close: close,
+                    root: el,
+                    base: nav.getCurrentElement(),
+                }
+                this.stack.push(stackObj);
+                var entrance = nav.getElements()[0];
+                if (!trap) {
+                    stackObj.escapes = [entrance];
+                }
+                this.setFocused(entrance, "root");
+                return stackObj;
+            }
         },
         getRoot: function() {
             return this.stack[this.stack.length - 1].root;
+        },
+        canEscape: function(el) {
+            var a;
+            return (a = this.stack[this.stack.length - 1]) &&
+                (a = a.escapes) &&
+                (a.indexOf(el) > -1);
         },
         hasStack: function() {
             return this.stack.length > 1;
         },
         removeRoot: function(el) {
-            for (var i = this.stack.length - 1; i > 0; i--) {
-                if (this.stack[i].root == el) {
-                    var last = this.stack[i].base;
-                    this.stack.splice(i);
-                    if (this.checkAttached(last))
-                        this.moveTo(last, "root");
-                    break;
+            if (this.stack)
+                for (var i = this.stack.length - 1; i > 0; i--) {
+                    if (this.stack[i].root == el) {
+                        var last = this.stack[i].base;
+                        this.stack.splice(i);
+                        if (this.checkAttached(last))
+                            this.setFocused(last, "root");
+                        break;
+                    }
                 }
-            }
         },
         outsideRoot: function(from) {
             var root = nav.getRoot();
@@ -269,7 +386,7 @@
         },
         checkAttached: function(el) {
             var a = el;
-            while (a.parentNode) {
+            while (a) {
                 a = a.parentNode;
             }
             return a == document;
@@ -278,10 +395,13 @@
             if (this.stack.length > 1) {
                 var last = this.stack.pop();
                 last.close();
-                if (nav.checkAttached(last.base))
-                    this.moveTo(last.base, "root");
+                if (nav.checkAttached(last.base)) {
+                    this.setFocused(last.base, "root");
+                }
+                return last;
             }
         },
+
         getElements: function(root) {
             return nav.getRoot().querySelectorAll(candidateSelector);
         },
@@ -297,7 +417,13 @@
                 result = a[++i];
             }
             while (result && !tabbable.isVisible(result));
-            return result || (current && (tabbable.isVisible(current) ? current : this.getNext(null, root)));
+            if (!result) {
+                if (!repeating && nav.canEscape(current)) {
+                    nav.pop();
+                    return;
+                } else return (tabbable.isVisible(current) ? current : this.getNext(null, root));
+            }
+            return result;
         },
         getPrev: function(current, root, dir) {
             var result;
@@ -311,15 +437,18 @@
                 result = a[--i];
             }
             while (result && !tabbable.isVisible(result));
-            if (!result && nav.hasStack()) {
-                nav.pop();
-                return;
+            if (!result) {
+                if (!repeating && nav.canEscape(current)) {
+                    nav.pop();
+                    return;
+                } else return (tabbable.isVisible(current) ? current : this.getNext(null, root));
             }
-            return result || (tabbable.isVisible(current) ? current : this.getNext(null, root));
+            return result;
         },
         getCurrentElement: function(root) {
             return this.lastEl || root;
-        }
+        },
+        shiftTo: Utils.noop
     };
     var behaviours = nav.defaults = {
         "tabs": {
@@ -327,13 +456,6 @@
             root: null,
             getPrev: function(current, root, dir, $default) {
                 return $default(current, root);
-                /*var a = this.root.getElementsByTagName('a');
-                var i = -1;
-                while (++i < a.length) {
-                    if (tabbable.isVisible(a[i])) {
-                        return $default(a[i], root);
-                    }
-                }*/
             },
             getNext: function(current, root, dir, $default) {
                 var a = this.root.getElementsByTagName('a');
@@ -345,7 +467,8 @@
                 }
             },
             detect: function(node) {
-                return node.parentElement.parentElement && (' ' + node.parentElement.parentElement.className + ' ').indexOf(" tabs ") > -1 && node.parentElement.parentElement;
+                var tabs = node.parentElement.parentElement;
+                if (tabs && (' ' + tabs.className + ' ').indexOf(" tabs ") > -1) return tabs;
             }
         },
         "fileview": {
@@ -378,7 +501,6 @@
             }
         }
     };
-
     var candidateSelectors = [
         'input',
         'select',
@@ -394,89 +516,8 @@
     ];
     var candidateSelector = /* #__PURE__ */ candidateSelectors.join(',');
     var indexOf = Array.prototype.indexOf.call.bind(Array.prototype.indexOf)
-    /*function(arr, i) {
-            var j = -1;
-            var k = arr.length - 1;
-            for (; j < k;)
-                if (arr[++j] == i) return j;
-            return -1;
-        };*/
-    KeyListener.attach(document.body, {
-        moveTo: function(a, e, source) {
-            $(nav.lastEl).removeClass('nav-focused');
-            nav.lastEl = a;
-            var behaviour = a.parentElement.navBehaviour;
-            if (behaviour === false) {
-                nav.delegate = false;
-            }
-            else {
-                var root;
-                if (!behaviour) {
-                    for (var i in behaviours) {
-                        if ((root = behaviours[i].detect(a))) {
-                            behaviour = behaviours[i];
-                            a.parentElement.navBehaviour = behaviour;
-                            break;
-                        }
-                    }
-                }
-                else {
-                    root = behaviour.detect(a);
-                }
-                if (behaviour) {
-                    nav.delegate = behaviour;
-                    nav.delegate.root = root;
-                }
-                else {
-                    nav.delegate = false;
-                    a.parentElement.navBehaviour = false;
-                }
-            }
-            if (FocusManager.canTakeInput(a)) {
-                a.focus();
-                if (!source && a.className.indexOf('ace_text-input') > -1) {
-                    doSkip(a);
-                }
-            }
-            else {
-                if (source == "focus" || !source || (source == "root" && FocusManager.activeElement == nav.handler.$receiver)) {
-                    $(a).addClass('nav-focused');
-                    if (source == "focus") { // || !FocusManager.activeElement || FocusManager.activeElement == nav.handler.$receiver)) {
-                        FocusManager.focusIfKeyboard(nav.handler.$receiver,false);
-                    }
-                }
-            }
-        },
-        blur: function(el) {
-            if (el.className.indexOf('ace_text-input') > -1) {
-                nav.handler.moveTo(el);
-            }
-            else if (FocusManager.canTakeInput(el)) {
-                el.blur();
-            }
-            else if (nav.hasStack()) {
-                FocusManager.focusIfKeyboard(this.$receiver);
-                nav.pop();
-                return true;
-            }
-        },
-        onenter: function(el, e) {
-            if (FocusManager.canTakeInput(el)) {}
-            else if (el.tagName == 'SELECT') {
-                global.Overflow.openSelect(e, el);
-                return true;
-            }
-            else if (FocusManager.activeElement == nav.handler.$receiver) {
-                $(el).addClass('nav-focused');
-                FocusManager.focusIfKeyboard(nav.handler.$receiver);
-                $(el).click()
-                return true;
-            }
-        },
-        on: function(key, element) {
-            //nothing yet
-        }
-    }, nav);
+
+
     global.Navigation = nav;
     global.KeyListener = KeyListener;
-})(Modules)
+}); /*_EndDefine*/

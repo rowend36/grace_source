@@ -122,32 +122,104 @@ module.exports.overlayPage = function overlayPage(editor, contentElement, callba
 define("ace/ext/menu_tools/get_editor_keyboard_shortcuts",["require","exports","module","ace/lib/keys"], function(require, exports, module) {
 "use strict";
 var keys = require("../../lib/keys");
-module.exports = function(editor) {
+var mods = {"C-": "Ctrl-", "S-": "Shift", "M-": "alt", "Cmd-": "command"};
+
+function upper(x) {
+    return x.toUpperCase(); }
+function toMod(key){
+    return mods[key]||key;
+}
+function normalize(k){
+    var a = k.toLowerCase();
+    a = a.replace(/(?:^|\-| )\w/g,upper);
+    a = a.replace(/(?:Cmd|[CSM])\-/g,toMod);
+    return a;
+}
+module.exports.getCommandsByName = function(editor,validate) {
     var KEY_MODS = keys.KEY_MODS;
-    var keybindings = [];
-    var commandMap = {};
+    var commandMap = Object.create(null);
+    var bindings;
+    if(validate){
+        bindings = module.exports.getCommandsByKey(editor);
+    }
     editor.keyBinding.$handlers.forEach(function(handler) {
         var ckb = handler.commandKeyBinding;
         for (var i in ckb) {
-            var key = i.replace(/(^|-)\w/g, function(x) { return x.toUpperCase(); });
+            var key = normalize(i);
             var commands = ckb[i];
             if (!Array.isArray(commands))
                 commands = [commands];
-            commands.forEach(function(command) {
-                if (typeof command != "string")
+            for(var k=0;k<commands.length;k++){
+                var command = commands[k];
+                var item,obj;
+                if (typeof command != "string"){
+                    item = command;
                     command  = command.name;
-                if (commandMap[command]) {
-                    commandMap[command].key += "|" + key;
-                } else {
-                    commandMap[command] = {key: key, command: command};
-                    keybindings.push(commandMap[command]);
-                }         
-            });
+                    obj = commandMap[command];
+                    if(obj && obj.item!=item){
+                        if(obj.item){
+                        }
+                        obj.item = item;
+                    }
+                }
+                else obj = commandMap[command];
+                var binding = key;
+                if(validate && bindings[key] && bindings[key][bindings[key].length-1]!=command){
+                    binding = "??"+key;
+                }
+                if(!obj){
+                    commandMap[command]={item:item,keys:binding};
+                }
+                else{
+                    var keys = obj.keys;
+                    if(!keys)obj.keys = binding;
+                    else if(keys!=binding){
+                        if(("|"+keys+"|").indexOf("|"+binding+"|")>0){
+                            keys = ("|"+keys+"|").replace("|"+binding+"|","|").substring(0,-1);
+                        }
+                        obj.keys = keys+"|"+binding;
+                    }
+                }
+            }
+        }
+        var unmapped = handler.commands;
+        for(var t in unmapped){
+            if(!commandMap[t]){
+                commandMap[t]={item:unmapped[t],keys:""};
+            }
         }
     });
-    return keybindings;
+    return commandMap;
 };
-
+module.exports.getCommandsByKey = function(editor) {
+    var KEY_MODS = keys.KEY_MODS;
+    var keyBindings = Object.create(null);
+    editor.keyBinding.$handlers.forEach(function(handler) {
+        var ckb = handler.commandKeyBinding;
+        for (var i in ckb) {
+            var key = normalize(i);
+            var commands = ckb[i];
+            if (!Array.isArray(commands))
+                commands = [commands];
+            var keys = keyBindings[key];
+            if(!keys){
+                keys = keyBindings[key]=[];
+            }
+            for(var k=0;k<commands.length;k++){
+                var command = commands[k];
+                if (typeof command != "string")
+                    command  = command.name;
+                var pos = keys.indexOf(command);
+                if(pos>-1){
+                    keys.splice(pos,1);
+                }
+                keys.push(command);
+            }
+        }
+    });
+    return keyBindings;
+};
+module.exports.normalizeKey = normalize;
 });
 
 define("ace/ext/keybinding_menu",["require","exports","module","ace/editor","ace/ext/menu_tools/overlay_page","ace/ext/menu_tools/get_editor_keyboard_shortcuts"], function(require, exports, module) {

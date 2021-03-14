@@ -1,4 +1,4 @@
-(function(global) {
+_Define(function(global) {
     function LinearLayout(root,size, orientation,config) {
         this.orientation = orientation;
         this.size = size;
@@ -22,6 +22,7 @@
             totalSize+=view['layout_'+size];
             totalWeight+=view.weight||0;
         }
+        if(this.size<totalSize)this.size = totalSize;
         var remSize = this.size-totalSize;
         var weight = remSize/(totalWeight||1);
         var lastPos=0;
@@ -48,6 +49,7 @@
             }
             lastPos=nextPos;
         }
+        this.onRender();
     };
     LinearLayout.prototype.addChild = function(el,size,weight,index){
         var size_ = this.orientation==LinearLayout.VERTICAL?'height':'width';
@@ -64,6 +66,7 @@
         else this.views.push(view);
         return view;
     };
+    LinearLayout.prototype.onRender = function(){};
     var ViewProps = {
         computeSize: function(size){
             var layout_size = this.$el.children()[size]();
@@ -71,7 +74,7 @@
         },
         hide: function(){
             this.hidden = true;
-            this.$el.fadeOut();
+            this.$el.fadeOut('fast');
             this.parent.render();
         },
         show: function(){
@@ -85,4 +88,4 @@
         }
     };
     global.LinearLayout = LinearLayout;
-})(Modules);
+})/*_EndDefine*/

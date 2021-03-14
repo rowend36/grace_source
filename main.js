@@ -1,11 +1,11 @@
-(function(global) {
+_Define(function(global) {
     "use strict";
     var Doc = global.Doc;
-    var EventsEmitter = global.EventsEmitter;
-    var State = global.manageState(window);
+    var setBreakpoint = global.Recovery.setBreakpoint;
+    var clearBreakpoint = global.Recovery.removeBreakpoint;
+    var State = global.State;
     var AutoCloseable = global.AutoCloseable;
     var LinearLayout = global.LinearLayout;
-    var CharBar = global.CharBar;
     var Functions = global.Functions;
     var docs = global.docs;
     var Editors = global.Editors;
@@ -17,40 +17,636 @@
     var getEditor = global.getEditor;
     var appConfig = global.appConfig;
     var configure = global.configure;
+    var setDoc = global.setDoc;
+    var getActiveDoc = global.getActiveDoc;
     var Notify = global.Notify;
     var FocusManager = global.FocusManager;
-
-    var DocsTab;
+    var MainMenu = global.MainMenu;
+    var CharBar = global.CharBar;
+    var DocumentTab = global.DocumentTab;
+    var appEvents = global.AppEvents;
+    var Navigation = global.Navigation;
     global.registerAll({
-        "currentDoc": null,
+        "currentTab": null,
         'disableOptimizedFileBrowser': false,
-        "applicationTheme": "editor",
-        "singleTabLayout": false,
         "disableBackButtonTabSwitch": false,
+        "backButtonDelay": "700ms",
+        "enableFloatingRunButton": 'auto',
+        "enableSplits": true,
+        'autoHideTabs': window.innerHeight<500,
+        "enableKeyboardNavigation": Env.isDesktop,
+        "enableGit": true,
+        "inactiveFileDelay": "10s",
     });
     global.registerValues({
-        "applicationTheme": "editor ,classic (needs reload)"
+        "currentTab": "no-user-config",
+        "enableFloatingRunButton": "Values: true,'small','center','auto',false"
     });
-    var appEvents = global.AppEvents;
-    Object.assign(appEvents, {
-        getCurrentTab: function() {
-            return DocsTab.active;
+    var DocsTab;
+    setBreakpoint("start-app", function(id, e) {
+        Notify.error("Error During Previous Load!!! Contact Developer");
+    });
+    appEvents.once('app-loaded', function() {
+        clearBreakpoint('start-app');
+    });
+
+    //stateManager
+    if (!Env.isWebView)
+        State.ensure("noexit", true);
+    State.addListener(function(doc, old, dir) {
+        if (DocsTab.getOwner(doc)) {
+            //can try to reopen previously closed docs
+            if (!appConfig.disableBackButtonTabSwitch && DocsTab.hasTab(doc)) {
+                if (doc != DocsTab.active)
+                    Doc.swapDoc(doc);
+                return true;
+            }
+            return false;
+        } else {
+
+        }
+        switch (doc) {
+            case "tabs":
+                return true;
+            case "noexit":
+                var delay = Utils.parseTime(appConfig.backButtonDelay);
+                Notify.info("<span>Press <b>BACK</b> again to exit.<span>", delay);
+                appEvents.trigger("app-paused");
+                var cancel = State.exit(false);
+                setTimeout(function() {
+                    appEvents.trigger("app-resumed");
+                    cancel();
+                    State.ensure("noexit", true);
+                    State.ensure(appConfig.disableBackButtonTabSwitch ? "tabs" : DocsTab.active);
+                }, delay * 0.7);
+                return true;
+        }
+    }, function(state) {
+        return (state in ["tabs", "noexit"]) || DocsTab.hasTab(state);
+    });
+
+    var lastTab;
+
+    function swapTab() {
+        if (lastTab < 0)
+            return;
+        Doc.swapDoc(lastTab);
+    }
+
+    var viewRoot, SidenavLeft, Menu;
+    global.LayoutCommands = [{
+            name: "toggleFullscreen",
+            bindKey: "F11",
+            exec: function(editor) {
+                Menu.toggle();
+                Menu.$forcedOpen = !Menu.hidden;
+            }
+        }, {
+            name: "swapTabs",
+            bindKey: {
+                win: "Alt-Tab",
+                mac: "Command-Alt-N"
+            },
+            exec: swapTab
         },
-        getCurrentDoc: function() {
-            return currentDoc;
-        },
-        getStorage: function() {
-            return appStorage;
+
+    ];
+    Editors.addCommands(global.LayoutCommands);
+
+    MainMenu.addOption("close", {
+        icon: "close",
+        caption: "Close",
+        childHier: {
+            "close-current": {
+                icon: "close",
+                caption: "Close current tab",
+                close: true,
+                onclick: function() {
+                    closeTab(global.DocsTab.active);
+                }
+            },
+            "close-others": {
+                icon: "close",
+                caption: "Close all other tabs",
+                close: true,
+                onclick: function() {
+                    var tab = global.DocsTab;
+                    for (var i = tab.tabs.length; i-- > 0;) {
+                        if (tab.tabs[i] != global.DocsTab.active) {
+                            closeTab(tab.tabs[i]);
+                        }
+                    }
+                }
+            },
+            "close-all": {
+                icon: "clear_all",
+                caption: "Close all tabs",
+                close: true,
+                onclick: function() {
+                    var tab = global.DocsTab;
+                    for (var i = tab.tabs.length; i-- > 0;) {
+                        closeTab(tab.tabs[i]);
+                    }
+                }
+            },
+            "close-inactive": {
+                icon: "timelapse",
+                caption: "Close inactive tabs",
+                close: true,
+                onclick: function() {
+                    var inactiveTime = new Date().getTime() - Utils.parseTime(appConfig.inactiveFileDelay);
+                    Utils.asyncForEach(global.DocsTab.tabs.slice(0), function(e, i, n) {
+                        n();
+                        if (e == global.DocsTab.active || !docs[e] || docs[e].dirty || docs[e].isTemp()) return;
+                        docs[e].getFileServer().stat(docs[e].getSavePath(), function(err, s) {
+                            if (s && s.mtimeMs < inactiveTime && s.size === docs[e].getSize()) {
+                                closeTab(e);
+                            }
+                        });
+                    });
+                }
+            }
         }
     });
 
+
+    //ClipBoard
+    var ClipBoard = global.Clipboard;
+    var clipboard = new ClipBoard();
+
+    (function() {
+        var appStorage = global.appStorage;
+        var savedClip = global.getObj('clipboard', []);
+        if (savedClip.length) {
+            clipboard._clip = savedClip;
+        }
+        var copyTextEl;
+        if (!Env.setClipboard) {
+            var setClipExec = function(text, callback) {
+                if (!copyTextEl) {
+                    copyTextEl = document.createElement('textarea');
+                    document.body.appendChild(copyTextEl);
+                } else copyTextEl.style.display = 'block';
+                copyTextEl.value = text;
+                copyTextEl.selectionStart = 0;
+                copyTextEl.selectionEnd = text.length;
+                copyTextEl.style.display = 'none';
+                var release = FocusManager.visit(copyTextEl, true);
+                var result = document.execCommand("copy") ? undefined : {
+                    code: 'EUNKNOWN',
+                    message: 'Failed to write clipboard'
+                };
+                release();
+                callback && callback(result);
+            };
+            var getClipExec = function(callback) {
+                if (!copyTextEl) {
+                    copyTextEl = document.createElement('textarea');
+                    document.body.appendChild(copyTextEl);
+                } else copyTextEl.style.display = 'block';
+                var prev = FocusManager.activeElement;
+                var release = FocusManager.visit(copyTextEl, true);
+                copyTextEl.focus();
+                copyTextEl.value = "";
+                copyTextEl.style.display = 'none';
+                var result = document.execCommand("paste") ? undefined : {
+                    code: 'EUNKNOWN',
+                    message: 'Failed to write clipboard'
+                };
+                release();
+                callback(result, copyTextEl.value);
+            };
+            if (window.navigator && navigator.clipboard) {
+                var readClip = function(callback) {
+                    navigator.clipboard.readText().then(function(text) {
+                        callback(undefined, text);
+                    }).catch(callback);
+                };
+                var writeClip = function(text, callback) {
+                    navigator.clipboard.writeText().then(function() {
+                        callback();
+                    }).catch(callback);
+                };
+                var failCount = 0;
+                Env.getClipboard = function(callback) {
+                    var passed;
+                    readClip(function(e, r) {
+                        if (e) {
+                            if (failCount++ > e.message.indexOf('denied') > 0) {
+                                Env.getClipboard = getClipExec;
+                            }
+                            if (passed === false) callback(e, r);
+                            else passed = false;
+                        } else {
+                            Env.getClipboard = readClip;
+                            if (!passed) {
+                                passed = true;
+                                callback(e, r);
+                            }
+                        }
+                    });
+                    getClipExec(function(e, r) {
+                        if (!e && r) {
+                            if (!passed) {
+                                passed = true;
+                                callback(e, r);
+                            }
+                        } else if (passed === false) callback(e, r);
+                        else passed = false;
+                    });
+                };
+                Env.setClipboard = function(text, callback) {
+                    var passed;
+                    callback = callback || Utils.noop;
+                    writeClip(text, function(e, r) {
+                        if (e) {
+                            if (failCount++ > 3 || e.message.indexOf('denied') > 0) {
+                                Env.setClipboard = setClipExec;
+                            }
+                            if (passed === false) callback(e, r);
+                            else passed = false;
+                        } else {
+                            Env.setClipboard = writeClip;
+                            if (!passed) {
+                                callback(e, r);
+                                passed = true;
+                            }
+                        }
+                    });
+                    setClipExec(text, function(e, r) {
+                        if (!e && r) {
+                            if (!passed) {
+                                passed = true;
+                                callback(e, r);
+                            }
+                        } else if (passed === false) callback(e, r);
+                        else passed = false;
+                    });
+                };
+            } else {
+                Env.setClipboard = setClipExec;
+                Env.getClipboard = getClipExec;
+            }
+        }
+        //todo expose clipboard directly
+        Object.assign(Functions, {
+            "copy": function(e, editor) {
+                clipboard.set(e.text, true);
+            }
+        });
+        clipboard.onchange = Utils.throttle(function(clip) {
+            while (clip.length > 20) {
+                clip.pop();
+            }
+            appStorage.setItem('clipboard', JSON.stringify(clip));
+        }, 40);
+        var BottomList = global.BottomList;
+        var clipboardList = new BottomList('clipboard-list', clipboard._clip);
+        Editors.addCommands([{
+            name: "openClipboard",
+            bindKey: {
+                win: "Ctrl-Shift-V",
+                mac: "Command-Shift-V"
+            },
+            exec: function() {
+                clipboardList.show();
+            }
+        }]);
+        clipboardList.on('select', function(ev) {
+            //remove pasted index
+            if (ev.index && clipboard.get(ev.index) == ev.item) {
+                clipboard.delete(ev.index);
+            }
+            Functions.copy({
+                text: ev.item
+            });
+            getEditor().execCommand("paste", ev.item);
+            clipboardList.hide();
+        });
+
+        var copyFilePath = {
+            caption: 'Copy File Path',
+            onclick: function(ev) {
+                if (ev.filepath && ev.browser.getParent) {
+                    var root = false;
+                    var a = ev.browser.getParent();
+                    while (a && a.rootDir) {
+                        root = a.rootDir;
+                        a = a.getParent();
+                    }
+                    clipboard.text = root ? "./" + FileUtils.relative(root, ev.filepath) : ev.filepath;
+                } else clipboard.text = ev.filepath || ev.rootDir;
+                ev.preventDefault();
+            }
+        };
+        FileUtils.registerOption("files", ["file", "folder"], "copy-file-path", copyFilePath);
+
+    })();
+    SettingsDoc.setEditor(Editors.getSettingsEditor());
+
+
+    function switchTab(id) {
+        if (DocsTab.active == id)
+            return false;
+        lastTab = DocsTab.active;
+        //apps can set active Doc
+        var handled = appEvents.trigger('changeTab', {
+            oldTab: lastTab,
+            tab: id
+        }).defaultPrevented;
+        if (!handled) {
+            if (!setDoc(id))
+                return false;
+        }
+        DocsTab.active = id;
+        State.ensure(appConfig.disableBackButtonTabSwitch ? "tabs" : id);
+        configure("currentTab", id);
+        return true;
+    }
+
+    function closeTab(id, force) {
+        var doc = docs[id];
+        if ((appEvents.trigger('beforeCloseTab', {
+                id: id,
+                doc: doc
+            })).defaultPrevented)
+            return false;
+        var e = appEvents.trigger('closeTab', {
+            id: id,
+            doc: doc
+        });
+
+        function close() {
+            var rebase = SidenavLeft.isOpen && SidenavLeft.isOverlay;
+            rebase && AutoCloseable.remove(SidenavLeft.id);
+            closeDoc(id);
+            rebase && AutoCloseable.add(SidenavLeft.id, SidenavLeft);
+        }
+        if (!doc) return false;
+        if (doc.dirty) {
+            Notify.ask(Doc.getName(doc.id) + " has unsaved changes. Close without saving?", function() {
+                close();
+            });
+            return false;
+        } else {
+            close();
+            return false;
+        }
+    }
+
+
+    Object.defineProperties(window, {
+        fs: {
+            get: function() {
+                return getActiveDoc().getFileServer();
+            }
+        },
+        doc: {
+            get: getActiveDoc
+        },
+        editor: {
+            get: getEditor
+        },
+        Clip: {
+            value: clipboard
+        },
+        gUtils: {
+            value: Utils
+        },
+        fUtils: {
+            value: FileUtils
+        }
+    });
+
+    function bootEditor() {
+        //viewroot
+        viewRoot = $("#viewroot")[0];
+        var Layout = new LinearLayout($(document.body), window.innerHeight, LinearLayout.VERTICAL);
+        Menu = Layout.addChild($("#action_bar"), 56);
+
+        var ViewRoot = Layout.addChild($("#viewroot"), 0, 1);
+        var margins = {
+            marginTop: 0,
+            marginBottom: 0
+        };
+        ace.Editor.prototype.getPopupMargins = function(isDoc) {
+            return isDoc ? {
+                marginTop: 0,
+                marginBottom: margins.marginBottom
+            } : margins;
+        }
+        Layout.onRender = function() {
+            appEvents.trigger("view-change");
+            margins.marginTop = parseInt(viewRoot.style.top);
+            margins.marginBottom = parseInt(viewRoot.style.bottom) + 50;
+        }
+        MainMenu.createTrigger($('#action_bar .dropdown-trigger')[0]);
+        if (window.innerHeight < 105) {
+            var update = function() {
+                if (update) {
+                    if (window.innerHeight > 105) {
+                        window.removeEventListener('resize', update);
+                    }
+                    update = null;
+                }
+                Layout.render();
+            };
+            window.addEventListener('resize', update);
+        }
+        CharBar.init(Layout);
+        CharBar.setClipboard(clipboard);
+        appEvents.on('changeEditor', function(e) {
+            CharBar.setEditor(e.editor);
+        });
+        Layout.render();
+        if (appConfig.enableKeyboardNavigation)
+            Navigation.attach();
+        var AutoComplete = global.Autocomplete;
+        var doBlur = AutoComplete.prototype.blurListener;
+        AutoComplete.prototype.blurListener = function() {
+            if (FocusManager.activeElement == editor.textInput.getElement())
+                return;
+            doBlur.apply(this, arguments);
+        };
+        appEvents.on("keyboard-change", function(ev) {
+            if (ev.isTrusted) {
+                if (!ev.visible) {
+                    var a = AutoComplete.for(getEditor());
+                    if (a.activated)
+                        a.detach();
+                } else {
+                    if(appConfig.autoHideTabs && !Menu.$forcedOpen)
+                        Menu.hide();
+                    document.body.classList.add('virtual-keyboard-visible');
+                }
+            }
+            if (!ev.visible) {
+                if(appConfig.autoHideTabs)
+                    Menu.show();
+                document.body.classList.remove('virtual-keyboard-visible');
+            }
+        });
+        DocsTab = new DocumentTab($("#menu"), $("#opendocs"), $("#status-filename"));
+        DocsTab.$hintActiveDoc = setDoc;
+
+        FocusManager.trap($("#menu"), true);
+        DocsTab.setSingleTabs(appConfig.singleTabLayout);
+        DocsTab.afterClick = switchTab;
+        DocsTab.onClose = closeTab;
+        var SidenavLeftTab = new PagerTab($("#selector"), $("#side-menu"));
+
+        $(".toggleBelow").click(function(e) {
+            e.stopPropagation();
+            if ($(this).next().css("display") == "none") {
+                $(this).next().show();
+                $(this).children(".material-icons").text("keyboard_arrow_up");
+            } else {
+                $(this).next().hide();
+                $(this).children(".material-icons").text("keyboard_arrow_down");
+            }
+        });
+        //uodate currently push on openstart or dragstart
+        var refocus = false;
+        SidenavLeft = new Sidenav($('#side-menu'), {
+            draggable: true,
+            edge: 'left',
+            minWidthPush: 400,
+            pushElements: true, //we'll need to scope things to view root first
+            onOpenStart: function() {
+                FocusManager.hintChangeFocus();
+                /*if (window.innerWidth < 992) {
+                    SidenavRight.close();
+                }*/
+            },
+            onOpenEnd: function() {
+                if (SidenavLeftTab.getActiveTab().attr('href') == "#settings")
+                    SidenavLeftTab.update("#settings");
+                if (SidenavLeft.isOverlay) {
+                    Navigation.addRoot(SidenavLeft.el, SidenavLeft.close.bind(SidenavLeft));
+                    if (!Env.isDesktop) {
+                        refocus = FocusManager.keyboardVisible && FocusManager.activeElement;
+                        if (refocus) refocus.blur();
+                    }
+                    AutoCloseable.add(this.id, SidenavLeft);
+                }
+                FileUtils.trigger('sidenav-open');
+            },
+            onCloseStart: function() {
+                if (FileUtils.activeFileBrowser) {
+                    FileUtils.activeFileBrowser.menu.hide();
+                }
+            },
+            onCloseEnd: function() {
+                if (SidenavLeft.isOverlay) {
+                    Navigation.removeRoot(SidenavLeft.el);
+                    AutoCloseable.close(this.id);
+                }
+                FileUtils.exitSaveMode();
+                refocus && FocusManager.focusIfKeyboard(refocus, false, true);
+            }
+        });
+        $(".sidenav-trigger").click(SidenavLeft.toggle.bind(SidenavLeft));
+        //Tabs
+        global.DocsTab = DocsTab;
+        global.SideView = SidenavLeft;
+        global.SideViewTabs = SidenavLeftTab;
+        global.viewRoot = viewRoot;
+        var currentTab = appConfig.currentTab;
+        var oldCurrentTab, href;
+        if ((href = window.location.href.indexOf("#m")) >= 0) {
+            currentTab = window.location.href.substring(href + 2);
+        }
+        //Docs
+        Doc.initialize(DocsTab, currentTab);
+        var newDoc;
+        if (Doc.numDocs() < 1) {
+            newDoc = new Doc('Welcome to Grace Editor');
+            addDoc(newDoc, "", "", "", null, false);
+        }
+        if (!docs[currentTab]) {
+            oldCurrentTab = currentTab;
+            currentTab = Object.keys(docs)[0];
+        }
+
+        //Editor
+        Editors.init();
+        var editor = Editors.createEditor(viewRoot);
+        Editors.setEditor(editor);
+
+        //Loaded
+        DocsTab.setActive(currentTab, true, true);
+
+        if (oldCurrentTab) {
+            configure("currentTab", oldCurrentTab);
+        }
+        appEvents.triggerForever('app-loaded');
+        appEvents.on("documents-loaded", function() {
+            FileUtils.loadServers();
+            if (newDoc && Doc.numDocs() > 1) {
+                if (newDoc.getValue() == 'Welcome to Grace Editor') {
+                    if (newDoc.getRevision() === 0) {
+                        closeDoc(newDoc.id);
+                    }
+                }
+            }
+            Doc.refreshDocs();
+        });
+    }
+    $(document).ready(bootEditor);
+}); /*_EndDefine*/
+_Define(function(global) {
+    /*Theming*/
+    "use strict";
+    var configEvents = global.configEvents;
+    var appEvents = global.AppEvents;
+    var appConfig = global.registerAll({
+        "applicationTheme": "editor",
+        "appFontSize": "medium",
+        "singleTabLayout": false,
+    });
+    global.registerValues({
+        "applicationTheme": "editor ,classic (needs reload)",
+        "appFontSize": "Font size for UI - small|medium|big",
+        "inactiveFileDelay": "How long after saving is necessary for a file\n to be considered inactive for 'Close inactive tabs' menu option"
+    });
+
+    function onChange(ev) {
+        switch (ev.config) {
+            case 'applicationTheme':
+                updateTheme($('.editor-primary'), true);
+                break;
+            case 'appFontSize':
+                switch (ev.newValue) {
+                    case 'small':
+                    case 'medium':
+                    case 'big':
+                        clearClass($(document.body.parentElement), /font$/);
+                        document.body.parentElement.className += " " + ev.newValue + "font";
+                        break;
+                    default:
+                        ev.preventDefault();
+                }
+                break;
+            case 'singleTabLayout':
+                global.DocsTab.setSingleTabs(ev.newValue);
+                break;
+        }
+    }
+    configEvents.on("application", onChange);
     //App Theming
-    appEvents._eventRegistry.themeChange = null;
-    const themeBlack = ["ace-tomorrow-night-bright", "ace-terminal-theme"];
+    appEvents.once('app-loaded', function() {
+        document.body.parentElement.className += " " + appConfig.appFontSize + "font";
+        $('.splash-screen').fadeOut();
+        setTimeout(function() {
+            $('.splash-screen').detach();
+        }, 700);
+    });
+    var themeBlack = ["ace-tomorrow-night-bright", "ace-terminal-theme"];
     var theme = {
         className: 'ace-tm',
         background: 'white'
     };
+
 
     function getStyle(_class) {
         var div = document.createElement('div');
@@ -77,581 +673,246 @@
             isBlack: themeBlack.indexOf(ace_theme.cssClass) > -1
         };
         var els = $('.editor-primary');
-        global.watchTheme(els, true);
+        updateTheme(els, true);
     };
-    global.clearTheme = function(els) {
+
+    function clearClass(els, regex) {
         els.each(function() {
             this.className = this.className.split(" ").filter(function(e) {
-                return e.indexOf("ace") < 0 && e.indexOf("theme") < 0;
+                return !regex.test(e);
             }).join(" ");
         });
-    };
-    global.watchTheme = function(els, added) {
+    }
+
+    function updateTheme(els, added) {
         if (!added)
             els.addClass('editor-primary');
         var ev = theme;
-        global.clearTheme(els);
-        if (appConfig.applicationTheme == "editor") {
-            els.addClass(ev.className);
-            if (ev.isDark) els.addClass("theme-dark");
-            if (ev.isBlack)
-                els.addClass("theme-black");
-        }
-        else {
-            if (ev.isDark) {
+        clearClass(els, /theme|^ace/);
+        if (ev.isDark) {
+            if (appConfig.applicationTheme == "editor") {
+                els.addClass(ev.className);
+                els.addClass("theme-dark");
+                if (ev.isBlack)
+                    els.addClass("theme-black");
+
+            } else {
                 els.addClass("app-theme-dark");
                 els.addClass("theme-dark");
             }
-            else {
-                els.addClass("app-theme-light");
-            }
+        } else {
+            els.addClass("app-theme-light");
         }
-    };
-
-    //stateManager
-    if (!Env.isWebView)
-        State.ensure("noexit", true);
-    State.addListener(function(doc, old, dir) {
-        if (DocsTab.getOwner(doc)) {
-            //can try to reopen previously closed docs
-            if (!appConfig.disableBackButtonTabSwitch && DocsTab.hasTab(doc)) {
-                if (doc != DocsTab.active)
-                    Doc.swapDoc(doc);
-                return true;
-            }
-            return false;
-        }
-        else {
-
-        }
-        switch (doc) {
-            case "tabs":
-                return true;
-            case "noexit":
-                Notify.info("<span>Press <b>BACK</b> again to exit.<span>", 1000);
-                Doc.tempSave();
-                Doc.saveDocs();
-                var cancel = State.exit(false);
-                setTimeout(function() {
-                    cancel();
-                    State.ensure("noexit", true);
-                    State.ensure(appConfig.disableBackButtonTabSwitch ? "tabs" : DocsTab.active);
-                }, 500);
-                return true;
-        }
-    }, function(state) {
-        return (state in ["tabs", "noexit"]) || DocsTab.hasTab(state);
-    });
-
-    //viewroot
-    var viewRoot = $("#viewroot")[0];
-    var Layout = new LinearLayout($(document.body), window.innerHeight, LinearLayout.VERTICAL);
-    var Menu = Layout.addChild($("#action_bar"), 50);
-    var ViewRoot = Layout.addChild($("#viewroot"), 50, 1);
-
-    Layout.render();
-    CharBar.init(Layout);
-    global.LayoutCommands = [{
-            name: "toggleFullscreen",
-            bindKey: "F11",
-            exec: function(editor) {
-                Menu.toggle();
-                global.SplitManager.notifyResize(ViewRoot.$el);
-            }
-        }, {
-            name: "swapTabs",
-            bindKey: { win: "Alt-Tab", mac: "Command-Alt-N" },
-            exec: swapTab
-        },
-
-    ];
-    Editors.addCommands(global.LayoutCommands);
-    //ClipBoard
-    var ClipBoard = global.Clipboard;
-    var clipboard = new ClipBoard();
-
-    function initClipBoard() {
-        var appStorage = global.appStorage;
-        var savedClip = global.getObj('clipboard', []);
-        if (savedClip.length) {
-            clipboard._clip = savedClip;
-        }
-        Object.assign(Functions, {
-            "copy": function(e) {
-                //Update internal clip
-                clipboard.set(e.text);
-            }
-        });
-        clipboard.onchange = function(clip) {
-            if (clip.length > 20) {
-                clip.pop();
-            }
-            appStorage.setItem('clipboard', JSON.stringify(clip));
-        };
-        var BottomList = global.BottomList;
-        var clipboardList = new BottomList('clipboard-list', clipboard._clip);
-        Editors.addCommands([{
-            name: "openClipboard",
-            bindKey: { win: "Ctrl-Shift-V", mac: "Command-Shift-V" },
-            exec: function() {
-                clipboardList.show();
-            }
-        }]);
-        clipboardList.on('select', function(text) {
-            Functions.copy({ text: text });
-            getEditor().insert(text);
-            getEditor().renderer.scrollCursorIntoView();
-            clipboardList.hide();
-        });
-
-        CharBar.setClipboard(clipboard);
-        var copyFilePath = {
-            caption: 'Copy File Path',
-            onclick: function(ev) {
-                if (ev.filepath && ev.browser.getParent) {
-                    var root = false;
-                    var a = ev.browser.getParent();
-                    while (a && a.rootDir) {
-                        root = a.rootDir;
-                        a = a.getParent();
-                    }
-                    clipboard.text = root ? "./" + FileUtils.relative(root, ev.filepath) : ev.filepath;
-                }
-                else clipboard.text = ev.filepath || ev.rootDir;
-                ev.preventDefault();
-            }
-        };
-        FileUtils.registerOption("files", ["file", "folder"], "copy-file-path", copyFilePath);
-
     }
-    var SidenavLeft, SidenavLeftTab;
-
-    //Default Commands save fullscreen swaptab
-    var save = function(e) {
-        Doc.tempSave(currentDoc);
-        if (docs[currentDoc].isTemp()) {
-            FocusManager.hintChangeFocus();
-            FileUtils.saveAs(currentDoc);
-        }
-        else {
-            Doc.saveDocs(currentDoc);
-        }
-    };
-    //Overflow menu
-    var menuItems = {
-        "save": {
-            icon: "save",
-            caption: "Save",
-            close: true,
-            onclick: function() {
-                save();
-            }
-        },
-        "close": {
-            icon: "close",
-            caption: "Close Current",
-            close: true,
-            onclick: function() {
-                closeTab(DocsTab.active);
-            }
-        },
-        "close-others": {
-            icon: "close",
-            caption: "Close Others",
-            close: true,
-            onclick: function() {
-                for (var i in docs) {
-                    if (i != DocsTab.active)
-                        closeTab(i);
-                }
-            }
-        },
-        "tooling": {
-            icon: "edit",
-            caption: "Edit",
-            childHier: {
-                "beautify": {
-                    caption: "Beautify",
-                    close: true,
-                    onclick: function() {
-                        getEditor().execCommand('beautify');
-                    }
-                },
-                "rename": {
-                    caption: "Rename Variable",
-                    close: true,
-                    onclick: function() {
-                        getEditor().execCommand("ternRename");
-                    }
-                }
-            }
-        },
-        "search": {
-            icon: "search",
-            caption: "Find",
-            childHier: {
-                "find-in-file": {
-                    caption: "Find in File",
-                    close: true,
-                    onclick: function() {
-                        getEditor().execCommand("find");
-                    }
-                },
-                "goto-file": {
-                    caption: "Goto Line",
-                    close: true,
-                    onclick: function() {
-                        getEditor().execCommand("gotoline");
-                    }
-                },
-                "find-refs": {
-                    caption: "Find References",
-                    close: true,
-                    onclick: function() {
-                        getEditor().execCommand("ternFindRefs");
-                    }
-                }
-
-            }
-        },
-        "refresh": {
-            icon: "refresh",
-            caption: "Refresh file",
-            close: true,
-            onclick: function() {
-                docs[currentDoc].refresh(function(doc) {
-                    if (doc && !doc.dirty)
-                        Notify.info('refreshed');
-                });
-            }
-        },
-        "load-settings": {
-            icon: "settings",
-            caption: "Edit Settings",
-            close: true,
-            onclick: function() {
-                addDoc(new SettingsDoc());
-            }
-        }
-    };
-    var menu = global.MainMenu;
-    for (var i in menuItems) {
-        menu.addOption(i, menuItems[i]);
-    }
-
-    var lastTab;
-
-    function swapTab() {
-        if (lastTab < 0)
-            return;
-        Doc.swapDoc(lastTab);
-    }
-
-    global.DocumentCommands = [{
-        name: "newFile",
-        bindKey: { win: "Ctrl-N", mac: "Command-Alt-N" },
-        exec: Functions.newFile
-    }, {
-        name: 'undoAllChanges',
-        exec: function() {
-            docs[currentDoc].saveCheckpoint('redo');
-            docs[currentDoc].abortChanges();
-        }
-    }, {
-        name: 'redoAllChanges',
-        exec: function() {
-            docs[currentDoc].redoChanges();
-        }
-    }, {
-        name: 'Save checkpoint',
-        exec: function() {
-            docs[currentDoc].saveCheckpoint();
-        },
-    }, {
-        name: 'Visit last checkpoint',
-        exec: function() {
-            docs[currentDoc].gotoCheckpoint();
-        }
-    }, {
-        name: 'Return to current state',
-        exec: function() {
-            docs[currentDoc].returnFromCheckpoint();
-        }
-    }, {
-        name: "save",
-        bindKey: { win: "Ctrl-S", mac: "Command-S" },
-        exec: save
-    }, {
-        name: "saveAs",
-        bindKey: { win: "Ctrl-Shift-S", mac: "Command-Shift-S" },
-        exec: function(editor) {
-            FileUtils.saveAs(currentDoc);
-        }
-    }];
-    Editors.addCommands(global.DocumentCommands);
-
-    //Settings Menu
-    var settingsMenu;
-    var SettingsPanel;
-    appEvents.on('changeEditor', function(ev) {
-        var e = ev.editor;
-        if (StatusBar) {
-            StatusBar.setEditor(e);
-            StatusBar.updateStatus(e);
-        }
-
-        if (SearchBox) {
-            if (SearchBox.active) {
-                SearchBox.hide();
-                SearchBox.setEditor(e);
-                if (SplitManager.hasSplit(e.container)) {
-                    viewRoot.appendChild(SearchBox.element);
-                }
-                SearchBox.show();
-            }
-            else SearchBox.setEditor(e);
-        }
-        CharBar.setEditor(e);
-        SettingsDoc.setEditor(Editors.getSettingsEditor());
-    });
-
-    function updateSettings() {
-        SettingsPanel.render();
-        //settingsMenu.find('select').formSelect({ dropdownOptions: { height: 300, autoFocus: false } });
-        settingsMenu.find('button').addClass('btn btn-group').parent().addClass("btn-group-container");
-        global.styleCheckbox(settingsMenu);
-    }
-    global.styleCheckbox = function(el){
+    global.styleCheckbox = function(el) {
         el = el.find('[type=checkbox]').addClass('checkbox');
-        for(var i =0;i<el.length;i++){
+        for (var i = 0; i < el.length; i++) {
             var a = el.eq(i);
             if (!a.next().is("span")) a.after("<span></span>");
         }
-        el.next().click(function(e) { $(this).prev().click() });
+        el.next().click(function(e) {
+            $(this).prev().click();
+            e.stopPropagation();
+            e.preventDefault();
+        });
     };
-    //tern
-    Functions.switchToDoc = function(name, pos, end, autoload, cb) {
-        var c = Doc.forPath(name) || Doc.forPath("/" + name);
-        if (!c) {
-            var servers = [FileUtils.getProject().fileServer];
-            if (docs[currentDoc] && docs[currentDoc].getFileServer() != servers[0]) {
-                servers.push(docs[currentDoc].getFileServer());
-            }
-            var getFile = function() {
-                var server = servers.pop();
-                if (!server) return;
-                Doc.openDoc("/" + name, server, open);
-            };
-            var open = function(err, doc) {
-                if (doc)
-                    Functions.switchToDoc(doc.getPath(), pos, end, null, cb);
-                else getFile();
-            };
-
-            if (autoload) getFile();
-            else Notify.ask("Open " + name, getFile);
-            return;
-        }
-        if (!(global.SplitEditors && global.SplitEditors.hasEditor(c))) {
-            Doc.swapDoc(c.id);
-        }
-        State.ensure(appConfig.disableBackButtonTabSwitch ? "tabs" : c.id);
-        var doc = getEditor();
-        if (pos) {
-            doc.gotoLine(pos.row, pos.column || 0); //this will make sure that the line is expanded
-            doc.getSession().unfold(pos); //gotoLine is supposed to unfold but its not working properly.. this ensures it gets unfolded
-            var sel = doc.getSelection();
-            sel.setSelectionRange({
-                start: pos,
-                end: end
-            });
-        }
-        cb && cb();
-    };
-
-
-    function setDoc(id) {
-        currentDoc = id;
-        if (docs[id]) {
-            currentDoc = id;
-            if (docs[id] != Doc.forSession(getEditor().session))
-                Editors.setSession(docs[id]);
-            return true;
-        }
-        return false;
-    }
-
-    function switchTab(id) {
-        if (DocsTab.active == id)
-            return false;
-        lastTab = DocsTab.active;
-        //apps can set currentDoc
-        //bad approach but it works
-        var handled = appEvents.trigger('changeTab', { oldTab: lastTab, tab: id }).defaultPrevented;
-        if (!handled) {
-            if (!setDoc(id))
-                return false;
-        }
-        DocsTab.active = id;
-        State.ensure(appConfig.disableBackButtonTabSwitch ? "tabs" : id);
-        configure("currentDoc", id);
-        return true;
-    }
-
-    function closeTab(id) {
-        var doc = docs[id];
-        if ((appEvents.trigger('beforeCloseTab', { id: id, doc: doc })).defaultPrevented)
-            return false;
-        var e = appEvents.trigger('closeTab', { id: id, doc: doc });
-        if (doc && (!(doc.dirty) || confirm(Doc.getName(doc.id) + " has unsaved changes. Close without saving?"))) {
-            var rebase = !SidenavLeft._isCurrentlyPush();
-            rebase && AutoCloseable.remove(SidenavLeft.id);
-            closeDoc(id);
-            rebase && AutoCloseable.add(SidenavLeft.id, SidenavLeft);
-            return true;
-        }
-        else return false;
-    }
-
-    var currentDoc = appConfig.currentDoc;
-
-
-    var Grace = {
-        get editor() {
-            return getEditor();
-        },
-        get session() {
-            return docs[currentDoc].session;
-        },
-        get fs() {
-            return docs[currentDoc].getFileServer();
-        },
-        get tab() {
-            return docs[currentDoc];
-        },
-        get time() {
-            return new Date().getTime();
-        },
-        get text() {
-            return getEditor().getValue();
-        },
-        insert: function(text) {
-            editor.insert(text);
-        },
-        clipboard: clipboard
-    };
-    window.Grace = window.G = Grace;
-    Object.defineProperties(window, {
-        fs: {
-            get: function() {
-                return docs[currentDoc].getFileServer();
-            }
-        },
-        doc: {
-            get: function() {
-                return docs[currentDoc];
-            }
-        },
-        editor: {
-            get: getEditor
-        },
-        clipboard: {
-            value: clipboard
-        }
-    });
+    global.watchTheme = updateTheme;
+});
+_Define(function(global) {
+    "use strict";
+    var appEvents = global.AppEvents;
+    var appConfig = global.appConfig;
+    var Functions = global.Functions;
+    var Utils = global.Utils;
+    var getEditor = global.getEditor;
     var BootList = new global.BootList(function() {
         BootList = null;
-        appEvents.trigger('fully-loaded');
+        appEvents.triggerForever('fully-loaded');
+    });
+    appEvents.on("documents-loaded", BootList.next);
+    //material colors
+    BootList.push({
+        name: "Material Colors",
+        style: "./libs/css/materialize-colors.css"
+    });
+    BootList.push({
+        name: "Inbuilt Fonts",
+        func: function() {
+            var fonts = [
+                "Courier Prime",
+                "Hack",
+                "JetBrains Mono",
+                "Roboto Mono",
+                "Source Code Pro",
+                "Ubuntu Mono",
+                {
+                    name: "Fira Code",
+                    types: ["Regular", "Bold"],
+                    formats: ["woff", "woff2", "ttf"]
+                },
+                {
+                    name: "Inconsolata",
+                    types: ["Regular", "Bold"]
+                },
+                {
+                    name: "Nova Mono",
+                    types: ["Regular"]
+                },
+                {
+                    name: "PT Mono",
+                    types: ["Regular"]
+                },
+            ];
+            /*var Default = {
+                types: ['Regular', 'Bold', 'Italic', 'BoldItalic'],
+                formats: ['ttf']
+            };
+            var template =
+                "@font-face {\
+font-family: $NAME;\
+src: $SRC\
+font-weight: $WEIGHT;\
+font-style: $STYLE;\
+}";
+            var weights = {
+                "Bold": 'bold',
+                "Regular": 'normal',
+                "Italic": 'normal',
+                "BoldItalic": 'bold'
+            };
+            var url = "url(\"$PATH.$EXT\") format(\"$FORMAT\")";
+            var cssText = fonts.map(function(e) {
+                if (typeof e == 'string') {
+                    Default.name = e;
+                    e = Default;
+                } else if (!e.formats) {
+                    e.formats = Default.formats;
+                }
+                var name = "\"" + e.name + "\"";
+                var condensed = "./libs/fonts/"+e.name.replace(/ /g,"_")+"/"+e.name.replace(/ /g,"");
+                return e.types.map(function(type) {
+                    var style = type.indexOf('Italic')<0?'normal':'italic';
+                    var weight = weights[type];
+                    var path = condensed+"-"+type;
+                    var src = e.formats.map(function(ext) {
+                        return url.replace("$EXT",ext).replace("$PATH",path).replace("$FORMAT",ext=='ttf'?'truetype':ext);
+                    }).join(", ")+";";
+                    return template.replace("$SRC",src)
+                        .replace("$WEIGHT",weight)
+                        .replace("$STYLE",style)
+                        .replace("$NAME",name);
+                }).join("\n");
+            }).join("\n");
+            var styleEl = document.createElement('style');
+            styleEl.innerHTML = cssText;
+            document.head.appendChild(styleEl);*/
+            global.registerValues({
+                "fontFamily": "Font used by the editor and search results\n" +
+                    "Inbuilt fonts include " + fonts.map(function(e) {
+                        return e.name || e
+                    }).join(", ") + " as well as any System fonts.\n" +
+                    "Warning: If using system fonts, ensure they are monospace fonts to avoid view artifacts"
+            });
+        }
     });
 
-    function bootEditor() {
-        initClipBoard();
-        DocsTab = new DocumentTab($("#menu"), $("#opendocs"), $("#status-filename"));
-        DocsTab.$hintActiveDoc = setDoc;
-
-        FocusManager.trap($("#menu"), true);
-        DocsTab.setSingleTabs(appConfig.singleTabLayout);
-        DocsTab.afterClick = switchTab;
-        DocsTab.onClose = closeTab;
-        global.DocsTab = DocsTab;
-        SidenavLeftTab = new PagerTab($("#selector"), $("#side-menu"));
-        SidenavLeftTab.beforeClick = function(newel, oldel) {
-            if (newel.attr("href") === "#settings")
-                updateSettings();
-        };
-        $(".toggleBelow").click(function(e) {
-            e.stopPropagation();
-            if ($(this).next().css("display") == "none") {
-                $(this).next().show();
-                $(this).children(".material-icons").text("keyboard_arrow_up");
-            }
-            else {
-                $(this).next().hide();
-                $(this).children(".material-icons").text("keyboard_arrow_down");
-            }
-        });
-        SidenavLeft = new Sidenav($('#side-menu'), {
-            draggable: true,
-            edge: 'left',
-            pushElements: true,
-            onOpenStart: function() {
-                this.el.style.visibility = 'visible';
-                if (window.innerWidth < 992) {
-                    //SidenavRight.close();
+    //runManager
+    BootList.push({
+        script: "./libs/js/splits.js"
+    }, {
+        script: "./ui/splits.js"
+    }, {
+        script: "./preview/previewer.js"
+    }, {
+        name: "Creating run manager",
+        script: "./preview/modes.js"
+    }, {
+        func: function() {
+            var button = $("#runButton");
+            var enable = appConfig.enableFloatingRunButton;
+            if (enable) {
+                button.click(Functions.run);
+                switch (enable) {
+                    case 'center':
+                        button.addClass('centerV');
+                        break;
+                    case 'small':
+                        button.removeClass('btn-large');
+                        break;
+                    case 'auto':
+                        var visible = true;
+                        var hide = Utils.delay(function() {
+                            button.hide();
+                        }, 400);
+                        var update = function(ev) {
+                            if (ev.visible) {
+                                if (visible && ev.isTrusted) {
+                                    button.stop().animate({
+                                        right: -20,
+                                        opacity: 0
+                                    }, 400, hide);
+                                    visible = false;
+                                }
+                            } else if (!visible) {
+                                hide.cancel();
+                                button.stop().show().animate({
+                                    right: 20,
+                                    opacity: 0.5
+                                }, 300);
+                                visible = true;
+                            }
+                        };
+                        appEvents.on("keyboard-change", update);
                 }
-            },
-            onOpenEnd: function() {
-                if (SidenavLeftTab.getActiveTab().attr('href') == "#settings")
-                    setTimeout(updateSettings, 1);
-                if (!SidenavLeft._isCurrentlyPush()) {
-                    AutoCloseable.add(this.id, SidenavLeft);
-                    this.options.draggable = false;
-                }
-            },
-            onCloseStart: function() {
-                if (FileUtils.activeFileBrowser) {
-                    FileUtils.activeFileBrowser.menu.hide();
-                }
-            },
-            onCloseEnd: function() {
-                this.el.style.visibility = 'hidden';
-                if (!SidenavLeft._isCurrentlyPush())
-                    AutoCloseable.close(this.id);
-                this.options.draggable = true;
-                FileUtils.exitSaveMode();
+            } else {
+                button.detach();
             }
-        });
+        }
+    });
 
-        //Tabs
-        Doc.initialize(DocsTab);
-        if (Doc.numDocs() < 1) {
-            var doc = new Doc('Welcome to Grace Editor');
-            addDoc(doc, "", "", "", null, false);
-        }
-        var oldCurrentDoc, href;
-        if ((href = window.location.href.indexOf("#m")) >= 0) {
-            currentDoc = window.location.href.substring(href + 2);
-        }
-        if (!docs[currentDoc]) {
-            oldCurrentDoc = currentDoc;
-            currentDoc = Object.keys(docs)[0];
-        }
+    BootList.push("./libs/css/completion.css", "./autocompletion/ui.js", "./autocompletion/base_server.js", {
+        name: "Tags",
+        script: "./autocompletion/tags/tags.js"
+    }, {
+        script: "./autocompletion/loader.js"
+    }, {
+        name: "AutoCompletion",
+        script: "./autocompletion/manager.js"
+    });
 
-        Editors.init();
-        var editor = Editors.createEditor(viewRoot);
-        Editors.setEditor(editor);
-        DocsTab.setActive(currentDoc, true, true);
-        //this will allow later calls to recreate
-        //get correct tab
-        if (oldCurrentDoc) {
-            configure("currentDoc", oldCurrentDoc);
+
+    //StatusBar SearchBox
+    BootList.push({
+        name: 'SearchBox and Status',
+        /*Isolated*/ //Looks awful on small splits
+        func: function() {
+            var getEditor = global.getEditor;
+            var viewRoot = global.viewRoot;
+            ace.config.loadModule("ace/ext/searchbox", function(e) {
+                var Searchbox = e.SearchBox;
+                var SearchBox = getEditor().searchBox || new Searchbox(getEditor());
+                // position(SearchBox.element);
+                ace.config.loadModule("ace/ext/statusbar", function(module) {
+                    var Statusbar = module.StatusBar;
+                    var StatusBar = StatusBar || new Statusbar(getEditor(), $("#status-text")[0]);
+                    if (SearchBox.editor != getEditor()) {
+                        SearchBox.setEditor(e);
+                        // position(SearchBox.element);
+                    }
+                    appEvents.on('changeEditor', (function(SearchBox, StatusBar) {
+                        return function(ev) {
+                            var e = ev.editor;
+                            StatusBar.setEditor(e);
+                            StatusBar.updateStatus(e);
+                            SearchBox.setEditor(e);
+                            // position(SearchBox.element);
+                        };
+                    })(SearchBox, StatusBar));
+                });
+            });
         }
-        window.Grace.loaded = true;
-        FileUtils.loadServers();
-        Doc.refreshDocs();
-        BootList.next();
-        appEvents.triggerForever('app-loaded');
-    }
+    });
+
 
     //FileBrowsers
     BootList.push({
@@ -668,15 +929,14 @@
     }, {
         name: "Creating File Browsers",
         func: function() {
+            var FileUtils = global.FileUtils;
             //FileBrowsers
             appEvents.triggerForever('filebrowsers');
             var FileBrowser = global.FileBrowser;
             if (!appConfig.disableOptimizedFileBrowser) {
                 global.FileBrowser = global.RFileBrowser;
             }
-
-            FileUtils.initialize(SidenavLeft, SidenavLeftTab);
-            //_fileBrowsers.push(new FileBrowser("file-browser", "/data/data/com.tmstudios.shunt/"))
+            FileUtils.initialize(global.SideView, global.SideViewTabs);
             var Hierarchy = global.RHierarchy || global.Hierarchy;
 
             var _hierarchy = new Hierarchy("hierarchy", "");
@@ -696,8 +956,7 @@
                 if ($("#find_file_cancel_btn").text() == 'stop') {
                     _hierarchy.stopFind();
                     $("#find_file_cancel_btn").text('refresh');
-                }
-                else {
+                } else {
                     _hierarchy.cancelFind();
                 }
             }
@@ -714,28 +973,8 @@
         }
     });
 
-    BootList.push({
-        name: "Custom Keybindings",
-        func: function() {
-            global.restoreBindings(getEditor());
-        }
-    });
 
-    //runManager
-    BootList.push({
-        script: "./libs/js/splits.js"
-    }, {
-        script: "./ui/splits.js"
-    }, {
-        script: "./preview/previewer.js"
-    }, {
-        name: "Creating run manager",
-        script: "./preview/modes.js"
-    }, {
-        func: function() {
-            $("#runButton").click(Functions.run);
-        }
-    });
+    //swiping
     BootList.push({
         name: "Swipe And Drag",
         script: "./libs/js/mobile-drag.js"
@@ -748,28 +987,58 @@
         script: "./libs/js/scroll-behaviour.js"
     }, {
         func: function() {
+            var SidenavTabs = global.SideViewTabs;
+            var DocsTab = global.DocsTab;
             var swipeDetector = new Hammer($("#side-menu")[0], {
                 inputClass: Hammer.TouchMouseInput,
                 recognizers: [
-                    [Hammer.Swipe, { threshold: 3.0, direction: Hammer.DIRECTION_HORIZONTAL }]
+                    [Hammer.Swipe, {
+                        threshold: 3.0,
+                        direction: Hammer.DIRECTION_HORIZONTAL
+                    }]
                 ]
             });
+            var unChecked = false;
             swipeDetector.on('hammer.input', function(ev) {
-                if (ev.isFirst) {
-                    var fileview = $(ev.target).closest('.fileview');
-                    if (fileview[0] && (" " + fileview[0].parentElement.className + " ").indexOf(" fileview ") > -1) {
-                        swipeDetector.stop();
+                if (ev.isFirst) unChecked = true;
+                if (unChecked) {
+                    var el = ev.target;
+                    var style;
+                    if (ev.velocityX < -0.5) {
+                        do {
+                            style = window.getComputedStyle(el);
+                            if ((style.overflow == 'scroll' ||
+                                    style.overflow == 'auto' ||
+                                    style.overflowX == 'scroll' ||
+                                    style.overflowX == 'auto') && el.scrollWidth - el.scrollLeft > el.offsetWidth) {
+                                return swipeDetector.stop();
+                            }
+                            el = el.parentElement;
+                        } while (el);
+                        unChecked = false;
+                    } else if (ev.velocityX > 0.5) {
+                        do {
+                            style = window.getComputedStyle(el);
+                            if ((style.overflow == 'scroll' ||
+                                    style.overflow == 'auto' ||
+                                    style.overflowX == 'scroll' ||
+                                    style.overflowX == 'auto') && el.scrollLeft > 0) {
+                                return swipeDetector.stop();
+                            }
+                            el = el.parentElement;
+                        } while (el);
+                        unChecked = false;
                     }
                 }
             });
             swipeDetector.on('swipeleft', function(ev) {
-                SidenavLeftTab.goleft();
+                SidenavTabs.goleft();
             });
             swipeDetector.on('swiperight', function(ev) {
-                SidenavLeftTab.goright();
+                SidenavTabs.goright();
             });
             window.MobileDragDrop.polyfill({
-                holdToDrag: 700,
+                holdToDrag: 650,
                 noDebug: true,
                 tryFindDraggableTarget: function(event) {
                     var el = event.target;
@@ -808,34 +1077,15 @@
             });
         }
     });
-    var SearchBox;
-    var StatusBar;
-    //StatusBar SearchBox
-    BootList.push({
-        name: 'SearchBox and Status',
-        func: function() {
-            var getEditor = global.getEditor;
-            ace.config.loadModule("ace/ext/statusbar", function(module) {
-                var Statusbar = module.StatusBar;
-                StatusBar = StatusBar || new Statusbar(getEditor(), $("#status-text")[0]);
-            });
-
-            ace.config.loadModule("ace/ext/searchbox", function(e) {
-                if (SearchBox) return;
-                var Searchbox = e.SearchBox;
-                SearchBox = new Searchbox(getEditor());
-                SearchBox.element.style.display = 'none';
-            });
-        }
-    });
 
     //Split Editors
     BootList.push({
         script: "./editor/splitEditors.js",
+        ignoreIf: !appConfig.enableSplits
     }, {
         name: "Split Editors",
         func: function() {
-            global.SplitEditors.init();
+            global.SplitEditors && global.SplitEditors.init();
         }
     });
 
@@ -847,17 +1097,53 @@
     }, {
         name: "Create Settings Menu",
         func: function() {
-            settingsMenu = $("#settings");
-            SettingsPanel = global.createSettingsMenu(settingsMenu);
+            var settingsMenu = $("#settings");
+            var SettingsPanel = global.createSettingsMenu(settingsMenu);
+
+            function updateSettings() {
+                SettingsPanel.render();
+                //settingsMenu.find('select').formSelect({ dropdownOptions: { height: 300, autoFocus: false } });
+                settingsMenu.find('button').addClass('btn btn-group').parent().addClass("btn-group-container");
+                global.styleCheckbox(settingsMenu);
+            }
+            global.SideViewTabs["owner-#settings"] = {
+                update: updateSettings
+            };
         }
     });
+
+    //git
+    BootList.push({
+        name: "Git Integration",
+        script: "./tools/git/git.js",
+        ignoreIf: !appConfig.enableGit
+    });
+    //show diff
+    BootList.push("./core/storage/databasestorage.js", {
+        name: "Diff Tooling",
+        script: "./tools/diff/diff.js"
+    });
+    //tools fxmising
+    BootList.push({
+        name: "Missing colons",
+        script: "./tools/fix_colons.js"
+    });
+    //keybindings
+    BootList.push({
+        name: "Custom Keybindings",
+        func: function() {
+            global.restoreBindings(getEditor());
+        }
+    });
+
+
     var searchConfig = global.registerAll({
         "useRecyclerViewForSearchResults": true
     }, "search");
     //SearchPanel
     BootList.push({
         script: "./ui/recycler.js",
-        ignoreIf: !(appConfig.disableOptimizedFileBrowser && searchConfig.useRecyclerViewForSearchResults)
+        ignoreIf: searchConfig.useRecyclerViewForSearchResults && !global.RecyclerRenderer
     }, {
         script: "./libs/js/brace-expansion.js"
     }, {
@@ -865,7 +1151,11 @@
     }, {
         script: "./search/rangeRenderer.js"
     }, {
-        script: "./search/searchTree.js"
+        script: "./search/searchList.js"
+    }, {
+        script: "./search/searchResults.js"
+    }, {
+        script: "./search/searchReplace.js"
     }, {
         script: "./views/searchTab.js"
     }, {
@@ -873,21 +1163,7 @@
         func: function() {
             var getEditor = global.getEditor;
             var SearchPanel = new global.SearchTab($("#search_container"), $("#searchModal"));
-            SearchPanel.init(SidenavLeft);
+            SearchPanel.init(Sidenav);
         }
     });
-    BootList.push({
-        name: "Material Colors",
-        style: "./libs/css/material-colors.css"
-    });
-    //DiffTooling
-    BootList.push({
-        name: "Diff Tooling",
-        script: "./tools/diff.js"
-    });
-    BootList.push({
-        name: "Missing colons",
-        script: "./tools/fix_colons.js"
-    });
-    $(document).ready(bootEditor);
-})(Modules);
+});

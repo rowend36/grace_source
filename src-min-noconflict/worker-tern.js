@@ -86,8 +86,10 @@ if (isWorker || isChromeApp) {
             var c = pending[data.id];
             delete pending[data.id];
             return c(data.err, data.text);
-        case "setDefs":
-            return setDefs(data.defs);
+        case "addDefs":
+            return addDefs(data.defs,true);
+        case "delDefs":
+            return delDefs(data.defs);
         case "debug":
             debug(data.body);
             break;
@@ -95,23 +97,21 @@ if (isWorker || isChromeApp) {
             throw new Error("Unknown message type: " + data.type);
         }
 
-        //Added for ace- sets defs as setting them on load is not ideal due to structure and the defs are stored in the worker file
-        function setDefs(defs) {
-            console.log('set defs in worker-tern.js does not work yet... it gets the file but setting the servers defs property is not enough to load the defs- this needs to be updated in tern to allow setting defs after load');
-            try {
-                server.defs = [];
-                if (!defs || defs.length == 0) {
-                    return;
-                }
-                for (var i = 0; i < defs.length; i++) {
-                    server.defs.push(getDefFromName(defs[i]));
-                    console.log(server.defs);
-                }
-
+        function addDefs(defs,infront){
+            if(Array.isArray(defs)){
+                defs.forEach(function(def){
+                    server.addDefs(def,infront);
+                });
             }
-            catch (ex) {
-                console.log('error setting tern defs (should be passed array) error: ' + ex);
+            else server.addDefs(defs,infront);
+        }
+        function delDefs(defs){
+            if(Array.isArray(defs)){
+                defs.forEach(function(def){
+                    server.deleteDefs(def);
+                });
             }
+            else server.deleteDefs(defs);
         }
 
         //(hack)- gets def from name at the bottom of this file (jquery,ecma5,browser,underscore)
@@ -7369,7 +7369,7 @@ if (isWorker || isChromeApp) {
     });
     return file;
   }
-
+  
   function ensureFile(srv, name, parent, text) {
     var known = srv.findFile(name);
     if (known) {
@@ -8125,7 +8125,7 @@ if (isWorker || isChromeApp) {
       var spanFile = span.node.sourceFile || srv.fileMap[span.origin];
       var start = outputPos(query, spanFile, span.node.start), end = outputPos(query, spanFile, span.node.end);
       result.start = start; result.end = end;
-      result.file = span.origin;
+      result.file = (spanFile && spanFile.name)||span.origin;
       var cxStart = Math.max(0, span.node.start - 50);
       result.contextOffset = span.node.start - cxStart;
       result.context = spanFile.text.slice(cxStart, cxStart + 50);
@@ -10785,7 +10785,6 @@ if (isWorker || isChromeApp) {
 
     cx.curOrigin = null;
   };
-
   // PURGING
 
   exports.purge = function(origins, start, end) {
@@ -15839,7 +15838,7 @@ if (isWorker || isChromeApp) {
           var prop = node.properties[i];
           if (prop.type == 'SpreadElement') { continue; }
           var name = infer.propName(prop);
-          if (name != "<i>" && prop.commentsBefore)
+          if (name != "<i>" && prop.commentsBefore && node.objType)
             interpretComments(prop, prop.commentsBefore, scope, node.objType.getProp(name));
         }
       },
@@ -16214,12 +16213,16 @@ if (isWorker || isChromeApp) {
     var cx = infer.cx();
 
     var re = /\s@typedef\s+(.*)/g, m;
-    while (m = re.exec(text)) {
+    var paramRe = /\s+@prop(?:erty)?\s+(.*)/;
+    var next = re.exec(text);
+    var a = 0;
+    while ((m=next)) {
+      next = re.exec(text);
       var parsed = parseTypeOuter(scope, m[1]);
       var name = parsed && m[1].slice(parsed.end).match(/^\s*(\S+)/);
       if (name && parsed.type instanceof infer.Obj) {
-        var rest = text.slice(m.index + m[0].length);
-        while (m = /\s+@prop(?:erty)?\s+(.*)/.exec(rest)) {
+        var rest = text.slice(m.index + m[0].length,next?next.index:Infinity);
+        while ((m = paramRe.exec(rest))) {
           var propType = parseTypeOuter(scope, m[1]), propName;
           if (propType && (propName = m[1].slice(propType.end).match(/^\s*(\S+)/)))
             propType.type.propagate(parsed.type.defProp(propName[1]));
@@ -16337,1032 +16340,1597 @@ if (isWorker || isChromeApp) {
   }
 });
 //#endregion
-var tern_Defs = {}
+
+//#region node-express.js
+(function(mod) {
+  if (typeof exports == "object" && typeof module == "object") // CommonJS
+    return mod(require("tern/lib/infer"), require("tern/lib/tern"));
+  if (typeof define == "function" && define.amd) // AMD
+    return define([ "tern/lib/infer", "tern/lib/tern" ], mod);
+  mod(tern, tern);
+})(function(infer, tern) {
+  "use strict";
+
+  infer.registerFunction("express_render", function(_self, _args, argNodes) {
+    if (argNodes && argNodes.length && argNodes.length== 2) {
+      var arg = _args[1], argNode = argNodes[1], fn = getFunctionType(arg, argNode);
+      if (fn) {
+        // here we support the second signature.
+        var params = fn.argNames, cx = infer.cx(), paths = cx.paths;
+        var fnArgs = [];
+        for (var j = 0; j < params.length; j++) {
+          switch(j) {
+          case 0: // Error
+            fnArgs.push(new infer.Obj(paths["Error.prototype"]));
+            break;
+          case 1: // String
+            fnArgs.push(new infer.Obj(paths["String.prototype"]));
+            break;
+          }
+        }
+        fn.propagate(new infer.IsCallee(infer.cx().topScope, fnArgs, null, infer.ANull))          
+      }
+    }
+  });
+  
+  function getProto(name, paths) {
+    var proto = paths[name + ".prototype"];
+    if (proto) return proto;
+    return paths[name + ".prototype"] = paths[name].getProp("prototype").types[0];
+  }
+  
+  infer.registerFunction("express_callback", function(_self, _args, argNodes) {
+    // router.use can have 2 signatures : 
+    // - router.use(string, fn(req, resp, next))
+    // - router.use(fn(req, resp, next))    
+    // tern can support only one signature with JSON Type Definition. In your case
+    // we support the first signature (see Router.prototype.use)
+    if (argNodes && argNodes.length) {
+      for (var i = 0; i < argNodes.length; i++) {
+        var arg = _args[i], argNode = argNodes[i], fn = getFunctionType(arg, argNode);
+        if (fn) {
+          // here we support the second signature.
+          var params = fn.argNames, cx = infer.cx(), paths = cx.paths;
+          var fnArgs = [];
+          for (var j = 0; j < params.length; j++) {
+            switch(j) {
+            case 0: // Request
+              fnArgs.push(new infer.Obj(getProto("request.Request", paths)));
+              break;
+            case 1: // Response
+              fnArgs.push(new infer.Obj(getProto("response.Response", paths)));
+              break;
+            case 2: // next
+              fnArgs.push(new infer.Fn(null, infer.ANull, [], [], infer.ANull));
+              break;
+            }
+          }
+          fn.propagate(new infer.IsCallee(infer.cx().topScope, fnArgs, null, infer.ANull))          
+        }
+      }      
+    }
+  });
+  
+  function getFunctionType(arg, argNode) {
+    if (argNode.type =="FunctionExpression") return arg.getFunctionType();
+    if (argNode.type =="Identifier" && arg.getFunctionType) return arg.getFunctionType();
+  }
+  
+  tern.registerPlugin("node-express", function(server, options) {
+    server.on("preLoadDef", preLoadDef);
+    server.addDefs(defs);
+  });
+  
+  function preLoadDef(data) {
+    var cx = infer.cx(), localDefs = cx.localDefs;
+    if (cx.definitions["node"] && data["!define"] && data["!name"]== "node-express") {
+      // copy node definition to localDefs to support "!proto" : "http.IncomingMessage.prototype", for request.Request
+      for (var def in cx.definitions["node"]) {
+        cx.localDefs[def] = cx.definitions["node"][def];
+      }
+    }
+  }  
+
+  var defs = {
+    "!name": "node-express",
+    "!define": {
+      "!known_modules": {
+        express: {
+          "!type": "fn() -> application.Application",
+          "!url": "http://expressjs.com/4x/api.html#express",
+          "!doc": "Create an express application.",
+          Router: {
+            "!type": "fn(options?: router.RouterOptions) -> +router.Router"
+          }
+        }
+      },
+      application: {
+        Application: {
+          get: {
+            "!type": "fn(path: string, callback: fn(req: +request.Request, res: +response.Response)) -> !this",
+            "!effects": ["custom express_callback"],
+            "!url": "http://expressjs.com/4x/api.html#app.VERB",
+            "!doc": "The app.VERB() methods provide the routing functionality in Express, where VERB is one of the HTTP verbs (such as app.get()). "
+          },
+          post: {
+            "!type": "fn(path: string, callback: fn(req: +request.Request, res: +response.Response)) -> !this",
+            "!effects": ["custom express_callback"],
+            "!url": "http://expressjs.com/4x/api.html#app.VERB",
+            "!doc": "The app.VERB() methods provide the routing functionality in Express, where VERB is one of the HTTP verbs (such as app.post()). "
+          },
+          put: {
+            "!type": "fn(path: string, callback: fn(req: +request.Request, res: +response.Response)) -> !this",
+            "!effects": ["custom express_callback"],
+            "!url": "http://expressjs.com/4x/api.html#app.VERB",
+            "!doc": "The app.VERB() methods provide the routing functionality in Express, where VERB is one of the HTTP verbs (such as app.put()). "
+          },
+          set: {
+            "!type": "fn(name: string, value: ?) -> !this",
+            "!url": "http://expressjs.com/4x/api.html#app.set",
+            "!doc": "Assigns setting name to value."
+          },
+          enable: {
+            "!type": "fn(name: string) -> !this",
+            "!url": "http://expressjs.com/4x/api.html#app.enable",
+            "!doc": "Set setting name to true."
+          },
+          enabled: {
+            "!type": "fn(name: string) -> bool",
+            "!url": "http://expressjs.com/4x/api.html#app.enabled",
+            "!doc": "Check if setting name is enabled."
+          },
+          disable: {
+            "!type": "fn(name: string) -> !this",
+            "!url": "http://expressjs.com/4x/api.html#app.disable",
+            "!doc": "Set setting name to false."
+          },
+          disabled: {
+            "!type": "fn(name: string) -> bool",
+            "!url": "http://expressjs.com/4x/api.html#app.disabled",
+            "!doc": "Check if setting name is disabled."
+          },
+          use: {
+            "!type": "fn(path?: string, callback: fn(req: +request.Request, res: +response.Response, next: fn())) -> !this",
+            "!effects": ["custom express_callback"],
+            "!url": "http://expressjs.com/4x/api.html#app.use",
+            "!doc" : "Mount the middleware function(s) at the path. If path is not specified, it defaults to \"/\". Mounting a middleware at a path will cause the middleware function to be executed whenever the base of the requested path matches the path."
+          },
+          engine: {
+            "!type": "fn(ext: string, callback: fn()) -> !this",
+            "!url": "http://expressjs.com/4x/api.html#app.engine",
+            "!doc": "Register the given template engine callback as ext. By default, Express will require() the engine based on the file extension. For example if you try to render a \"foo.jade\" file Express will invoke the following internally, and cache the require() on subsequent calls to increase performance."
+          },
+          param: {
+            "!type": "fn(name?: string, callback: fn(req: +request.Request, res: +response.Response, next: fn())) -> !this",
+            "!effects": ["custom express_callback"],
+            "!url": "http://expressjs.com/4x/api.html#app.param",
+            "!doc" : "Map logic to route parameters. For example, when :user is present in a route path, you may map user loading logic to automatically provide req.user to the route, or perform validations on the parameter input."
+          },
+          all: {
+            "!type": "fn(path: string, callback: fn(req: +request.Request, res: +response.Response)) -> !this",
+            "!effects": ["custom express_callback"],
+            "!url": "http://expressjs.com/4x/api.html#app.all",
+            "!doc" : "This method functions just like the app.VERB() methods, however it matches all HTTP verbs. This method is extremely useful for mapping \"global\" logic for specific path prefixes or arbitrary matches. For example if you placed the following route at the top of all other route definitions, it would require that all routes from that point on would require authentication, and automatically load a user. Keep in mind that these callbacks do not have to act as end points, loadUser can perform a task, then next() to continue matching subsequent routes."
+          },
+          route: {
+            "!type": "fn(path: string) -> +router.Route",
+            "!url": "http://expressjs.com/4x/api.html#app.route",
+            "!doc": "Returns an instance of a single route, which can then be used to handle HTTP verbs with optional middleware. Using app.route() is a recommended approach for avoiding duplicate route names (and thus typo errors)."
+          },
+          locals: {
+            "!type": "+Object",
+            "!url": "http://expressjs.com/4x/api.html#app.locals",
+            "!doc": "Application local variables are provided to all templates rendered within the application. This is useful for providing helper functions to templates, as well as app-level data."
+          },
+          render: {
+            "!type": "fn(view: string, options?: string, callback: fn(err: +Error, html: string)) -> !this",
+            "!effects": ["custom express_render"],
+            "!url": "http://expressjs.com/4x/api.html#app.render",
+            "!doc" : "Render a view with a callback responding with the rendered string. This is the app-level variant of res.render(), and otherwise behaves the same way."
+          },
+          listen: {
+            "!type": "fn(port: number, hostname?: string, backlog?: number, callback?: fn())",
+            "!url": "http://expressjs.com/4x/api.html#app.listen",
+            "!doc": "Bind and listen for connections on the given host and port. This method is identical to node's http.Server#listen()."
+          },
+          path: {
+            "!type": "fn() -> string",
+            "!url": "http://expressjs.com/4x/api.html#app.path",
+            "!doc": "Returns the canonical path of the app."
+          },
+          mountpath: {
+            "!type": "string",
+            "!url": "http://expressjs.com/4x/api.html#app.mountpath",
+            "!doc": "This property refers to the path pattern(s) on which a sub app was mounted."
+          },
+          on: {
+            "!type": "fn(name: string, callback: fn(parent: Application))",
+            "!url": "http://expressjs.com/4x/api.html#app.onmount",
+            "!doc" : "The mount event is fired on a sub app, when it is mounted on a parent app. The parent app is passed to the callback function."
+          }
+        }
+      },
+      request: {
+        Request: {
+          "!type": "fn()",
+          prototype : {
+            "!proto" : "http.IncomingMessage.prototype",
+            params: {
+              "!type": "+Object",
+              "!url": "http://expressjs.com/4x/api.html#req.params",
+              "!doc": "This property is an object containing properties mapped to the named route \"parameters\". For example, if you have the route /user/:name, then the \"name\" property is available to you as req.params.name. This object defaults to {}."
+            },
+            query: {
+              "!type": "+Object",
+              "!url": "http://expressjs.com/4x/api.html#req.query",
+              "!doc": "This property is an object containing the parsed query-string, defaulting to {}."
+            },
+            param: {
+              "!type": "fn(name: string, defaultValue?: ?)",
+              "!url": "http://expressjs.com/4x/api.html#req.param",
+              "!doc": "Return the value of param name when present."
+            },
+            route: {
+                "!type": "+router.Route",
+                "!url": "http://expressjs.com/4x/api.html#req.route",
+                "!doc": "The currently matched Route."                
+            },
+            cookies: {
+                "!type": "+Object",
+                "!url": "http://expressjs.com/4x/api.html#req.cookies",
+                "!doc": "When the cookieParser() middleware is used, this object defaults to {}. Otherwise, it contains the cookies sent by the user-agent."                
+            },
+            signedCookies: {
+                "!type": "+Object",
+                "!url": "http://expressjs.com/4x/api.html#req.signedCookies",
+                "!doc": "When the cookieParser(secret) middleware is used, this object defaults to {}. Otherwise, it contains the signed cookies sent by the user-agent, unsigned and ready for use. Signed cookies reside in a different object to show developer intent; otherwise, a malicious attack could be placed on req.cookie values (which are easy to spoof). Note that signing a cookie does not make it \"hidden\" or encrypted; this simply prevents tampering (because the secret used to sign is private)."                 
+            },
+            get: {
+                "!type": "fn(field: string) -> string",
+                "!url": "http://expressjs.com/4x/api.html#req.route",
+                "!doc": "Get the case-insensitive request header field. The Referrer and Referer fields are interchangeable. Aliased as req.header(field)."                 
+            },
+            accepts: {
+                "!type": "fn(type: string) -> string",
+                "!url": "http://expressjs.com/4x/api.html#req.accepts",
+                "!doc": "Check if the given types are acceptable, returning the best match when true, or else undefined (in which case you should respond with 406 \"Not Acceptable\"). The type value may be a single mime type string (such as \"application/json\"), the extension name such as \"json\", a comma-delimited list, or an array. When a list or array is given, the best match (if any) is returned."              
+            },
+            acceptsCharsets: {
+                "!type": "fn(lang: string) -> bool",
+                "!url": "http://expressjs.com/4x/api.html#req.acceptsCharsets",
+                "!doc": "Check if the given charset are acceptable."                                
+            },
+            acceptsLanguages: {
+                "!type": "fn(encoding: string) -> bool",
+                "!url": "http://expressjs.com/4x/api.html#req.acceptsLanguages",
+                "!doc": "Check if the given lang are acceptable."                                       
+            },
+            acceptsEncodings: {
+                "!type": "fn(type: string) -> bool",
+                "!url": "http://expressjs.com/4x/api.html#req.acceptsLanguages",
+                "!doc": "Check if the given encoding are acceptable."                                               
+            },
+            is: {
+                "!type": "fn(type: string) -> string",
+                "!url": "http://expressjs.com/4x/api.html#req.is",
+                "!doc": "Check if the incoming request contains the \"Content-Type\" header field, and if it matches the give mime type."                     
+            },
+            ip: {
+                "!type": "fn() -> string",
+                "!url": "http://expressjs.com/4x/api.html#req.ip",
+                "!doc": "Return the remote address (or, if \"trust proxy\" is enabled, the upstream address)."                              
+            },
+            ips: {
+                "!type": "fn() -> [string]",
+                "!url": "http://expressjs.com/4x/api.html#req.ips",
+                "!doc": "When \"trust proxy\" is true, parse the \"X-Forwarded-For\" ip address list and return an array. Otherwise, an empty array is returned."                                                   
+            },
+            path: {
+                "!type": "fn() -> string",
+                "!url": "http://expressjs.com/4x/api.html#req.path",
+                "!doc": "Returns the request URL pathname."
+            },
+            hostname: {
+                "!type": "fn() -> string",
+                "!url": "http://expressjs.com/4x/api.html#req.hostname",
+                "!doc": "Returns the hostname from the \"Host\" header field."              
+            },
+            fresh: {
+                "!type": "fn() -> bool",
+                "!url": "http://expressjs.com/4x/api.html#req.fresh",
+                "!doc": "Check if the request is \"fresh\" (i.e. whether the Last-Modified and/or the ETag still match)."                           
+            },
+            stale: {
+                "!type": "fn() -> bool",
+                "!url": "http://expressjs.com/4x/api.html#req.stale",
+                "!doc": "Check if the request is \"stale\" (i.e. the Last-Modified and/or ETag headers do not match)."                                              
+            },
+            xhr: {
+                "!type": "fn() -> bool",
+                "!url": "http://expressjs.com/4x/api.html#req.xhr",
+                "!doc": "Check if the request was issued with the \"X-Requested-With\" header field set to \"XMLHttpRequest\" (jQuery etc)."                                                                
+            },
+            protocol: {
+                "!type": "fn() -> string",
+                "!url": "http://expressjs.com/4x/api.html#req.protocol",
+                "!doc": "Return the protocol string \"http\" or \"https\" when requested with TLS. If the \"trust proxy\" setting is enabled, the \"X-Forwarded-Proto\" header field will be trusted. If you're running behind a reverse proxy that supplies https for you, this may be enabled."                   
+            },
+            secure: {
+                "!type": "fn() -> bool",
+                "!url": "http://expressjs.com/4x/api.html#req.secure",
+                "!doc": "Check if a TLS connection is established."                                                                                 
+            },
+            subdomains: {
+                "!type": "fn() -> [string]",
+                "!url": "http://expressjs.com/4x/api.html#req.subdomains",
+                "!doc": "Return subdomains as an array."                                                            
+            },
+            originalUrl: {
+                "!type": "string",
+                "!url": "http://expressjs.com/4x/api.html#req.originalUrl",
+                "!doc": "This property is much like req.url; however, it retains the original request url, allowing you to rewrite req.url freely for internal routing purposes. For example, the \"mounting\" feature of app.use()) will rewrite req.url to strip the mount point."                                        
+            },
+            baseUrl: {
+                "!type": "string",
+                "!url": "http://expressjs.com/4x/api.html#req.baseUrl",
+                "!doc": "This property refers to the URL path, on which a router instance was mounted.Even if a path pattern or a set of path patterns were used to load the router, the matched string is returned as the baseUrl, instead of the pattern(s)."                                                     
+            }
+          }
+        }
+      },
+      response: {
+        Response: {
+          "!type": "fn()",
+          prototype : {
+            "!proto" : "http.ServerResponse.prototype",
+            status: {
+                "!type": "fn(statusCode: number)",
+                "!url": "http://expressjs.com/4x/api.html#res.status",
+                "!doc": "Chainable alias of node's res.statusCode. Use this method to set the HTTP status for the response."                
+            },         
+            set: {
+                "!type": "fn(field: string, value: string)",
+                "!url": "http://expressjs.com/4x/api.html#res.set",
+                "!doc": "Set header field to value, or pass an object to set multiple fields at once."              
+            },
+            get: {
+                "!type": "fn(field: string) -> string",
+                "!url": "http://expressjs.com/4x/api.html#res.get",
+                "!doc": "Get the case-insensitive response header field."                                   
+            },
+            cookie: {
+                "!type": "fn(name: string, field: ?, options?: +Object)",
+                "!url": "http://expressjs.com/4x/api.html#res.cookie",
+                "!doc": "Set cookie name to value, which may be a string or object converted to JSON. The path option defaults to \"/\"."                                   
+            },
+            clearCookie: {
+                "!type": "fn(name: string, options?: +Object)",
+                "!url": "http://expressjs.com/4x/api.html#res.clearCookie",
+                "!doc": "Clear cookie name. The path option defaults to "/"."                                               	
+            },
+            redirect: {
+                "!type": "fn(status?: number, url: string)",
+                "!url": "http://expressjs.com/4x/api.html#res.redirect",
+                "!doc": "Redirect to the given url with optional status code defaulting to 302 \"Found\". Express passes the specified URL string as-is to the browser in the Location header, without any validation or manipulation, except in case of back. Redirects can be relative to the root of the host name. Pathname relative redirects are also possible."                                               	           	
+            },
+            location: {
+                "!type": "fn(url: string)",
+                "!url": "http://expressjs.com/4x/api.html#res.location",
+                "!doc": "Set the location header. Express passes the specified URL string as-is to the browser in the Location header, without any validation or manipulation, except in case of back. Location can be relative to the root of the host name. Pathname relative locations are also possible."                                               	           	            	
+            },
+            send: {
+                "!type": "fn(body?: ?)",
+                "!url": "http://expressjs.com/4x/api.html#res.send",
+                "!doc": "Send a response."
+            },
+            json: {
+                "!type": "fn(body?: ?)",
+                "!url": "http://expressjs.com/4x/api.html#res.json",
+                "!doc": "Send a JSON response. This method is identical to res.send() when an object or array is passed. However, it may be used for explicit JSON conversion of non-objects, such as null, undefined, etc. (although these are technically not valid JSON)."
+            },
+            jsonp: {
+                "!type": "fn(body?: ?)",
+                "!url": "http://expressjs.com/4x/api.html#res.jsonp",
+                "!doc": "Send a JSON response with JSONP support. This method is identical to res.json(), except that it opts-in to JSONP callback support."
+            },
+            type: {
+                "!type": "fn(field: string)",
+                "!url": "http://expressjs.com/4x/api.html#res.type",
+                "!doc": "Sets the Content-Type to the mime lookup of type, or when "/" is present the Content-Type is simply set to this literal value."                                   
+            },
+            format: {
+                "!type": "fn(object: +Object)",
+                "!url": "http://expressjs.com/4x/api.html#res.format",
+                "!doc": "Performs content-negotiation on the Accept HTTP header on the request object, when present. It uses req.accepts() to select a handler for the request, based on the acceptable types ordered by their quality values. If the header is not specified, the first callback is invoked. When no match is found, the server responds with 406 \"Not Acceptable\", or invokes the default callback."                                   
+            },
+            attachment: {
+                "!type": "fn(filename?: string)",
+                "!url": "http://expressjs.com/4x/api.html#res.attachment",
+                "!doc": "Sets the Content-Disposition header field to \"attachment\". If a filename is given, then the Content-Type will be automatically set based on the extname via res.type(), and the Content-Disposition's \"filename=\" parameter will be set."           	
+            },
+            sendFile: {
+                "!type": "fn(path: string, options?: +Object, callback?: fn(err: +Error))",
+                "!effects": ["custom express_render"],
+                "!url": "http://expressjs.com/4x/api.html#res.sendFile",
+                "!doc" : "Transfer the file at the given path. The Content-Type response header field is automatically set based on the filename's extension. Unless the root option is set in the options object, path must be an absolute path of the file. Note: res.sendFile requires Express version to be at least 4.8.0"  	  
+            },
+            sendStatus: {
+                "!type": "fn(statusCode?: number)",
+                "!url": "http://expressjs.com/4x/api.html#res.sendStatus",
+                "!doc": "Set the response HTTP status code to statusCode and send its string representation as the response body."     	
+            },
+            download: {
+                "!type": "fn(path: string, filename?: string, callback?: fn(err: +Error))",
+                "!effects": ["custom express_render"],
+                "!url": "http://expressjs.com/4x/api.html#res.download",
+                "!doc" : "Transfer the file at path as an \"attachment\". Typically, browsers will prompt the user for download. The Content-Disposition \"filename=\" parameter (i.e. the one that will appear in the brower dialog) is set to path by default. However, you may provide an override filename. When an error has ocurred or transfer is complete the optional callback fn is invoked. This method uses res.sendFile() to transfer the file."           	
+            },
+            links: {
+                "!type": "fn(links: +Object)",
+                "!url": "http://expressjs.com/4x/api.html#res.links",
+                "!doc" : "Join the given links to populate the \"Link\" response header field."
+            },
+            locals: {
+                "!type": "+Object",
+                "!url": "http://expressjs.com/4x/api.html#res.locals",
+                "!doc": "Response local variables are scoped to the request, and therefore only available to the view(s) rendered during that request / response cycle (if any). Otherwise, this API is identical to app.locals."
+            },
+            render: {
+                "!type": "fn(view: string, locals?: +Object, callback: fn(err: +Error, html: string))",
+                "!effects": ["custom express_render"],
+                "!url": "http://expressjs.com/4x/api.html#res.render",
+                "!doc" : "Render a view with a callback responding with the rendered string. When an error occurs next(err) is invoked internally. When a callback is provided both the possible error and rendered string are passed, and no automated response is performed."  	             	
+            },
+            vary: {
+                "!type": "fn(field: string)",
+                "!url": "http://expressjs.com/4x/api.html#res.vary",
+                "!doc": "Adds the field to the Vary response header, if it is not there already."           	            	
+            },
+            end: {
+                "!type": "fn(data: ?, encoding: ?)",
+                "!url": "http://expressjs.com/4x/api.html#res.end",
+                "!doc": "Inherited from node's http.ServerResponse, ends the response process. The only recommended use is for quickly ending the response without any data. If you need to respond with data, use Express' response methods such as res.send(), res.json() etc.."           	            	           	
+            },
+            headersSent: {
+                "!type": "bool",
+                "!url": "http://expressjs.com/4x/api.html#res.headersSent",
+                "!doc": "Property indicating if HTTP headers has been sent for the response."          	
+            }         
+          },
+        }
+      },
+      router: {
+        Route: {
+          "!type": "fn()",
+          prototype : {
+            all: {
+              "!type": "fn(path: string, callback: fn(req: +request.Request, res: +response.Response)) -> !this",
+              "!effects": ["custom express_callback"],
+              "!url": "http://expressjs.com/4x/api.html#app.all",
+              "!doc" : "This method functions just like the app.VERB() methods, however it matches all HTTP verbs. This method is extremely useful for mapping \"global\" logic for specific path prefixes or arbitrary matches. For example if you placed the following route at the top of all other route definitions, it would require that all routes from that point on would require authentication, and automatically load a user. Keep in mind that these callbacks do not have to act as end points, loadUser can perform a task, then next() to continue matching subsequent routes."
+            },
+            get: {
+              "!type": "fn(path: string, callback: fn(req: +request.Request, res: +response.Response)) -> !this",
+              "!effects": ["custom express_callback"],
+              "!url": "http://expressjs.com/4x/api.html#app.VERB",
+              "!doc": "The app.VERB() methods provide the routing functionality in Express, where VERB is one of the HTTP verbs (such as app.get()). "
+            },
+            post: {
+              "!type": "fn(path: string, callback: fn(req: +request.Request, res: +response.Response)) -> !this",
+              "!effects": ["custom express_callback"],
+              "!url": "http://expressjs.com/4x/api.html#app.VERB",
+              "!doc": "The app.VERB() methods provide the routing functionality in Express, where VERB is one of the HTTP verbs (such as app.post()). "
+            },
+            put: {
+              "!type": "fn(path: string, callback: fn(req: +request.Request, res: +response.Response)) -> !this",
+              "!effects": ["custom express_callback"],
+              "!url": "http://expressjs.com/4x/api.html#app.VERB",
+              "!doc": "The app.VERB() methods provide the routing functionality in Express, where VERB is one of the HTTP verbs (such as app.put()). "
+            },
+            "delete": {
+              "!type": "fn(path: string, callback: fn(req: +request.Request, res: +response.Response)) -> !this",
+              "!effects": ["custom express_callback"],
+              "!url": "http://expressjs.com/4x/api.html#app.VERB",
+              "!doc": "The app.VERB() methods provide the routing functionality in Express, where VERB is one of the HTTP verbs (such as app.delete()). "
+            }
+          }
+        },
+        Router: {
+          "!type": "fn()",
+          prototype : {
+            use: {
+              "!type": "fn(path?: string, callback: fn(req: +request.Request, res: +response.Response, next: fn())) -> !this",
+              "!effects": ["custom express_callback"],
+              "!url": "http://expressjs.com/4x/api.html#router.use",
+              "!doc" : "Use the given middleware function, with optional mount path, defaulting to "/". Middleware is like a plumbing pipe, requests start at the first middleware you define and work their way \"down\" the middleware stack processing for each path they match."
+            },
+            param: {
+              "!type": "fn(name?: string, callback: fn(req: +request.Request, res: +response.Response, next: fn(), id: ?)) -> !this",
+              "!effects": ["custom express_callback"],
+              "!url": "http://expressjs.com/4x/api.html#router.param",
+              "!doc" : "Map logic to route parameters. For example, when :user is present in a route path you may map user loading logic to automatically provide req.user to the route, or perform validations on the parameter input."
+            },
+            route: {
+              "!type": "fn(path: string) -> +router.Route",
+              "!url": "http://expressjs.com/4x/api.html#router.route",
+              "!doc": "Returns an instance of a single route, which can then be used to handle HTTP verbs with optional middleware. Using router.route() is a recommended approach to avoiding duplicate route naming and thus typo errors."
+            },
+            all: {
+              "!type": "fn(path: string, callback: fn(req: +request.Request, res: +response.Response)) -> !this",
+              "!effects": ["custom express_callback"],
+              "!url": "http://expressjs.com/4x/api.html#app.all",
+              "!doc" : "This method functions just like the app.VERB() methods, however it matches all HTTP verbs. This method is extremely useful for mapping \"global\" logic for specific path prefixes or arbitrary matches. For example if you placed the following route at the top of all other route definitions, it would require that all routes from that point on would require authentication, and automatically load a user. Keep in mind that these callbacks do not have to act as end points, loadUser can perform a task, then next() to continue matching subsequent routes."
+            },
+            get: {
+              "!type": "fn(path: string, callback: fn(req: +request.Request, res: +response.Response)) -> !this",
+              "!effects": ["custom express_callback"],
+              "!url": "http://expressjs.com/4x/api.html#app.VERB",
+              "!doc": "The app.VERB() methods provide the routing functionality in Express, where VERB is one of the HTTP verbs (such as app.get()). "
+            },
+            post: {
+              "!type": "fn(path: string, callback: fn(req: +request.Request, res: +response.Response)) -> !this",
+              "!effects": ["custom express_callback"],
+              "!url": "http://expressjs.com/4x/api.html#app.VERB",
+              "!doc": "The app.VERB() methods provide the routing functionality in Express, where VERB is one of the HTTP verbs (such as app.post()). "
+            },
+            put: {
+              "!type": "fn(path: string, callback: fn(req: +request.Request, res: +response.Response)) -> !this",
+              "!effects": ["custom express_callback"],
+              "!url": "http://expressjs.com/4x/api.html#app.VERB",
+              "!doc": "The app.VERB() methods provide the routing functionality in Express, where VERB is one of the HTTP verbs (such as app.put()). "
+            },
+            "delete": {
+              "!type": "fn(path: string, callback: fn(req: +request.Request, res: +response.Response)) -> !this",
+              "!effects": ["custom express_callback"],
+              "!url": "http://expressjs.com/4x/api.html#app.VERB",
+              "!doc": "The app.VERB() methods provide the routing functionality in Express, where VERB is one of the HTTP verbs (such as app.delete()). "
+            }
+          }
+        },
+        RouterOptions: {
+          caseSensitive : {
+            "!type": "bool"
+          },
+          strict : {
+            "!type": "string"
+          },
+          mergeParams : {
+            "!type": "bool"
+          }
+        }
+      }
+    }
+  }
+});
+//#endregion
 
 //#region tern/plugin/angular.js
-tern_Defs.angular = (function(mod) {
-   if (typeof exports == "object" && typeof module == "object") // CommonJS
-     return mod(require("../lib/infer"), require("../lib/tern"), require("../lib/comment"),
-                require("acorn-walk"));
-   if (typeof define == "function" && define.amd) // AMD
-     return define(["../lib/infer", "../lib/tern", "../lib/comment", "acorn-walk/dist/walk"], mod);
-   mod(tern, tern, tern.comment, acorn.walk);
- })(function(infer, tern, comment, walk) {
-   "use strict";
- 
-   var SetDoc = infer.constraint({
-     construct: function(doc) { this.doc = doc; },
-     addType: function(type) {
-       if (!type.doc) type.doc = this.doc;
-     }
-   });
- 
-   function Injector() {
-     this.fields = Object.create(null);
-     this.forward = [];
-   }
- 
-   Injector.prototype.get = function(name) {
-     if (name == "$scope") return new infer.Obj(globalInclude("$rootScope").getType(), "$scope");
-     if (name in this.fields) return this.fields[name];
-     var field = this.fields[name] = new infer.AVal;
-     return field;
-   };
-   Injector.prototype.set = function(name, val, doc, node, depth) {
-     if (name == "$scope" || depth && depth > 10) return;
-     var field = this.fields[name] || (this.fields[name] = new infer.AVal);
-     if (!depth) field.local = true;
-     if (!field.origin) field.origin = infer.cx().curOrigin;
-     if (typeof node == "string" && !field.span) field.span = node;
-     else if (node && typeof node == "object" && !field.originNode) field.originNode = node;
-     if (doc) { field.doc = doc; field.propagate(new SetDoc(doc)); }
-     val.propagate(field);
-     for (var i = 0; i < this.forward.length; ++i)
-       this.forward[i].set(name, val, doc, node, (depth || 0) + 1);
-   };
-   Injector.prototype.forwardTo = function(injector) {
-     this.forward.push(injector);
-     for (var field in this.fields) {
-       var val = this.fields[field];
-       injector.set(field, val, val.doc, val.span || val.originNode, 1);
-     }
-   };
- 
-   function globalInclude(name) {
-     var service = infer.cx().definitions.angular.service;
-     if (service.hasProp(name)) return service.getProp(name);
-   }
- 
-   function getInclude(mod, name) {
-     var glob = globalInclude(name);
-     if (glob) return glob;
-     if (!mod.injector) return infer.ANull;
-     return mod.injector ? mod.injector.get(name) : infer.ANull;
-   }
- 
-   function applyWithInjection(mod, fnType, node, asNew) {
-     var deps = [];
-     if (/FunctionExpression/.test(node.type)) {
-       for (var i = 0; i < node.params.length; ++i)
-         deps.push(getInclude(mod, node.params[i].name));
-     } else if (node.type == "ArrayExpression") {
-       for (var i = 0; i < node.elements.length - 1; ++i) {
-         var elt = node.elements[i];
-         if (elt.type == "Literal" && typeof elt.value == "string")
-           deps.push(getInclude(mod, elt.value));
-         else
-           deps.push(infer.ANull);
-       }
-       var last = node.elements[node.elements.length - 1];
-       if (last && /FunctionExpression/.test(last.type))
-         fnType = last.scope.fnType;
-     }
-     var result = new infer.AVal;
-     if (asNew) {
-       var self = new infer.AVal;
-       fnType.propagate(new infer.IsCtor(self));
-       self.propagate(result, 90);
-       fnType.propagate(new infer.IsCallee(self, deps, null, new infer.IfObj(result)));
-     } else {
-       fnType.propagate(new infer.IsCallee(infer.cx().topScope, deps, null, result));
-     }
-     return result;
-   }
- 
-   infer.registerFunction("angular_callInject", function(argN) {
-     return function(self, args, argNodes) {
-       var mod = self.getType();
-       if (mod && argNodes && argNodes[argN])
-         applyWithInjection(mod, args[argN], argNodes[argN]);
-     };
-   });
- 
-   infer.registerFunction("angular_regFieldCall", function(self, args, argNodes) {
-     var mod = self.getType();
-     if (mod && argNodes && argNodes.length > 1) {
-       var result = applyWithInjection(mod, args[1], argNodes[1]);
-       if (mod.injector && argNodes[0].type == "Literal")
-         mod.injector.set(argNodes[0].value, result, argNodes[0].angularDoc, argNodes[0]);
-     }
-   });
- 
-   infer.registerFunction("angular_regFieldNew", function(self, args, argNodes) {
-     var mod = self.getType();
-     if (mod && argNodes && argNodes.length > 1) {
-       var result = applyWithInjection(mod, args[1], argNodes[1], true);
-       if (mod.injector && argNodes[0].type == "Literal")
-         mod.injector.set(argNodes[0].value, result, argNodes[0].angularDoc, argNodes[0]);
-     }
-   });
- 
-   infer.registerFunction("angular_regField", function(self, args, argNodes) {
-     var mod = self.getType();
-     if (mod && mod.injector && argNodes && argNodes[0] && argNodes[0].type == "Literal" && args[1])
-       mod.injector.set(argNodes[0].value, args[1], argNodes[0].angularDoc, argNodes[0]);
-   });
- 
-   function arrayNodeToStrings(node) {
-     var strings = [];
-     if (node && node.type == "ArrayExpression")
-       for (var i = 0; i < node.elements.length; ++i) {
-         var elt = node.elements[i];
-         if (elt.type == "Literal" && typeof elt.value == "string")
-           strings.push(elt.value);
-       }
-     return strings;
-   }
- 
-   function moduleProto(cx) {
-     var ngDefs = cx.definitions.angular;
-     return ngDefs && ngDefs.Module.getProp("prototype").getType();
-   }
- 
-   function declareMod(name, includes) {
-     var cx = infer.cx(), data = cx.parent.mod.angular;
-     var proto = moduleProto(cx);
-     var mod = new infer.Obj(proto || true);
-     if (!proto) data.nakedModules.push(mod);
-     mod.origin = cx.curOrigin;
-     mod.injector = new Injector();
-     mod.metaData = {includes: includes};
-     for (var i = 0; i < includes.length; ++i) {
-       var depMod = data.modules[includes[i]];
-       if (!depMod)
-         (data.pendingImports[includes[i]] || (data.pendingImports[includes[i]] = [])).push(mod.injector);
-       else if (depMod.injector)
-         depMod.injector.forwardTo(mod.injector);
-     }
-     if (typeof name == "string") {
-       data.modules[name] = mod;
-       var pending = data.pendingImports[name];
-       if (pending) {
-         delete data.pendingImports[name];
-         for (var i = 0; i < pending.length; ++i)
-           mod.injector.forwardTo(pending[i]);
-       }
-     }
-     return mod;
-   }
- 
-   infer.registerFunction("angular_module", function(_self, _args, argNodes) {
-     var mod, name = argNodes && argNodes[0] && argNodes[0].type == "Literal" && argNodes[0].value;
-     if (typeof name == "string")
-       mod = infer.cx().parent.mod.angular.modules[name];
-     if (!mod)
-       mod = declareMod(name, arrayNodeToStrings(argNodes && argNodes[1]));
-     return mod;
-   });
- 
-   var IsBound = infer.constraint({
-     construct: function(self, args, target) {
-       this.self = self; this.args = args; this.target = target;
-     },
-     addType: function(tp) {
-       if (!(tp instanceof infer.Fn)) return;
-       this.target.addType(new infer.Fn(tp.name, tp.self, tp.args.slice(this.args.length),
-                                        tp.argNames.slice(this.args.length), tp.retval));
-       this.self.propagate(tp.self);
-       for (var i = 0; i < Math.min(tp.args.length, this.args.length); ++i)
-         this.args[i].propagate(tp.args[i]);
-     }
-   });
- 
-   infer.registerFunction("angular_bind", function(_self, args) {
-     if (args.length < 2) return infer.ANull;
-     var result = new infer.AVal;
-     args[1].propagate(new IsBound(args[0], args.slice(2), result));
-     return result;
-   });
- 
-   function postParse(ast, text) {
-     walk.simple(ast, {
-       CallExpression: function(node) {
-         if (node.callee.type == "MemberExpression" &&
-             !node.callee.computed && node.arguments.length &&
-             /^(value|constant|controller|factory|provider)$/.test(node.callee.property.name)) {
-           var before = comment.commentsBefore(text, node.callee.property.start - 1);
-           if (before) {
-             var first = before[0], dot = first.search(/\.\s/);
-             if (dot > 5) first = first.slice(0, dot + 1);
-             first = first.trim().replace(/\s*\n\s*\*\s*|\s{1,}/g, " ");
-             node.arguments[0].angularDoc = first;
-           }
-         }
-       }
-     });
-   }
- 
-   function postLoadDef(json) {
-     var cx = infer.cx(), defName = json["!name"], defs = cx.definitions[defName];
-     if (defName == "angular") {
-       var proto = moduleProto(cx), naked = cx.parent.mod.angular.nakedModules;
-       if (proto) for (var i = 0; i < naked.length; ++i) naked[i].proto = proto;
-       return;
-     }
-     var mods = defs && defs["!ng"];
-     if (mods) for (var name in mods.props) {
-       var obj = mods.props[name].getType();
-       var mod = declareMod(name.replace(/`/g, "."), obj.metaData && obj.metaData.includes || []);
-       mod.origin = defName;
-       for (var prop in obj.props) {
-         var val = obj.props[prop], tp = val.getType();
-         if (!tp) continue;
-         if (/^_inject_/.test(prop)) {
-           if (!tp.name) tp.name = prop.slice(8);
-           mod.injector.set(prop.slice(8), tp, val.doc, val.span);
-         } else {
-           obj.props[prop].propagate(mod.defProp(prop));
-         }
-       }
-     }
-   }
- 
-   function preCondenseReach(state) {
-     var mods = infer.cx().parent.mod.angular.modules;
-     var modObj = new infer.Obj(null), found = 0;
-     for (var name in mods) {
-       var mod = mods[name];
-       if (state.origins.indexOf(mod.origin) > -1) {
-         var propName = name.replace(/\./g, "`");
-         modObj.defProp(propName).addType(mod);
-         mod.condenseForceInclude = true;
-         ++found;
-         if (mod.injector) for (var inj in mod.injector.fields) {
-           var field = mod.injector.fields[inj];
-           if (field.local) state.roots["!ng." + propName + "._inject_" + inj] = field;
-         }
-       }
-     }
-     if (found) state.roots["!ng"] = modObj;
-   }
- 
-   function postCondenseReach(state) {
-     var mods = infer.cx().parent.mod.angular.modules;
-     for (var path in state.types) {
-       var m;
-       if (m = path.match(/^!ng\.([^\.]+)\._inject_([^\.]+)$/)) {
-         var mod = mods[m[1].replace(/`/g, ".")];
-         var field = mod.injector.fields[m[2]];
-         var data = state.types[path];
-         if (field.span) data.span = field.span;
-         if (field.doc) data.doc = field.doc;
-       }
-     }
-   }
- 
-   function initServer(server) {
-     server.mod.angular = {
-       modules: Object.create(null),
-       pendingImports: Object.create(null),
-       nakedModules: []
-     };
-   }
- 
-   tern.registerPlugin("angular", function(server) {
-     initServer(server);
- 
-     server.on("reset", function() { initServer(server); });
-     server.on("postParse", postParse);
-     server.on("postLoadDef", postLoadDef);
-     server.on("preCondenseReach", preCondenseReach);
-     server.on("postCondenseReach", postCondenseReach);
- 
-     server.addDefs(defs, true);
-   });
- 
-   var defs = {
-     "!name": "angular",
-     "!define": {
-       cacheObj: {
-         info: "fn() -> ?",
-         put: "fn(key: string, value: ?) -> !1",
-         get: "fn(key: string) -> ?",
-         remove: "fn(key: string)",
-         removeAll: "fn()",
-         destroy: "fn()"
-       },
-       eventObj: {
-         targetScope: "service.$rootScope",
-         currentScope: "service.$rootScope",
-         name: "string",
-         stopPropagation: "fn()",
-         preventDefault: "fn()",
-         defaultPrevented: "bool"
-       },
-       directiveObj: {
-         multiElement: {
-           "!type": "bool",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-multielement-",
-           "!doc": "When this property is set to true, the HTML compiler will collect DOM nodes between nodes with the attributes directive-name-start and directive-name-end, and group them together as the directive elements. It is recommended that this feature be used on directives which are not strictly behavioural (such as ngClick), and which do not manipulate or replace child nodes (such as ngInclude)."
-         },
-         priority: {
-           "!type": "number",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-priority-",
-           "!doc": "When there are multiple directives defined on a single DOM element, sometimes it is necessary to specify the order in which the directives are applied. The priority is used to sort the directives before their compile functions get called. Priority is defined as a number. Directives with greater numerical priority are compiled first. Pre-link functions are also run in priority order, but post-link functions are run in reverse order. The order of directives with the same priority is undefined. The default priority is 0."
-         },
-         terminal: {
-           "!type": "bool",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-terminal-",
-           "!doc": "If set to true then the current priority will be the last set of directives which will execute (any directives at the current priority will still execute as the order of execution on same priority is undefined). Note that expressions and other directives used in the directive's template will also be excluded from execution."
-         },
-         scope: {
-           "!type": "?",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-scope-",
-           "!doc": "If set to true, then a new scope will be created for this directive. If multiple directives on the same element request a new scope, only one new scope is created. The new scope rule does not apply for the root of the template since the root of the template always gets a new scope. If set to {} (object hash), then a new 'isolate' scope is created. The 'isolate' scope differs from normal scope in that it does not prototypically inherit from the parent scope. This is useful when creating reusable components, which should not accidentally read or modify data in the parent scope."
-         },
-         bindToController: {
-           "!type": "bool",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-bindtocontroller-",
-           "!doc": "When an isolate scope is used for a component (see above), and controllerAs is used, bindToController: true will allow a component to have its properties bound to the controller, rather than to scope. When the controller is instantiated, the initial values of the isolate scope bindings are already available."
-         },
-         controller: {
-           "!type": "fn()",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-controller-",
-           "!doc": "Controller constructor function. The controller is instantiated before the pre-linking phase and it is shared with other directives (see require attribute). This allows the directives to communicate with each other and augment each other's behavior."
-         },
-         require: {
-           "!type": "string",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-require-",
-           "!doc": "Require another directive and inject its controller as the fourth argument to the linking function. The require takes a string name (or array of strings) of the directive(s) to pass in. If an array is used, the injected argument will be an array in corresponding order. If no such directive can be found, or if the directive does not have a controller, then an error is raised."
-         },
-         controllerAs: {
-           "!type": "string",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-controlleras-",
-           "!doc": "Controller alias at the directive scope. An alias for the controller so it can be referenced at the directive template. The directive needs to define a scope for this configuration to be used. Useful in the case when directive is used as component."
-         },
-         restrict: {
-           "!type": "string",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-restrict-",
-           "!doc": "String of subset of EACM which restricts the directive to a specific directive declaration style. If omitted, the defaults (elements and attributes) are used. E - Element name (default): <my-directive></my-directive>. A - Attribute (default): <div my-directive='exp'></div>. C - Class: <div class='my-directive: exp;'></div>. M - Comment: <!-- directive: my-directive exp --> "
-         },
-         templateNamespace: {
-           "!type": "string",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-templatenamespace-",
-           "!doc": "String representing the document type used by the markup in the template. AngularJS needs this information as those elements need to be created and cloned in a special way when they are defined outside their usual containers like <svg> and <math>."
-         },
-         template: {
-           "!type": "string",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-template-",
-           "!doc": "HTML markup that may: Replace the contents of the directive's element (default). Replace the directive's element itself (if replace is true - DEPRECATED). Wrap the contents of the directive's element (if transclude is true)."
-         },
-         templateUrl: {
-           "!type": "string",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-templateurl-",
-           "!doc": "This is similar to template but the template is loaded from the specified URL, asynchronously."
-         },
-         transclude: {
-           "!type": "bool",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-transclude-",
-           "!doc": "Extract the contents of the element where the directive appears and make it available to the directive. The contents are compiled and provided to the directive as a transclusion function."
-         },
-         compile: {
-           "!type": "fn(tElement: +Element, tAttrs: +Attr)",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-transclude-",
-           "!doc": "The compile function deals with transforming the template DOM. Since most directives do not do template transformation, it is not used often."
-         },
-         link: {
-           "!type": "fn(scope: ?, iElement: +Element, iAttrs: +Attr, controller: ?, transcludeFn: fn())",
-           "!url": "https://docs.angularjs.org/api/ng/service/$compile#-link-",
-           "!doc": "The link function is responsible for registering DOM listeners as well as updating the DOM. It is executed after the template has been cloned. This is where most of the directive logic will be put."
-         }
-       },
-       Module: {
-         "!url": "http://docs.angularjs.org/api/angular.Module",
-         "!doc": "Interface for configuring angular modules.",
-         prototype: {
-           animation: {
-             "!type": "fn(name: string, animationFactory: fn()) -> !this",
-             "!url": "http://docs.angularjs.org/api/angular.Module#animation",
-             "!doc": "Defines an animation hook that can be later used with $animate service and directives that use this service."
-           },
-           config: {
-             "!type": "fn(configFn: fn()) -> !this",
-             "!effects": ["custom angular_callInject 0"],
-             "!url": "http://docs.angularjs.org/api/angular.Module#config",
-             "!doc": "Use this method to register work which needs to be performed on module loading."
-           },
-           constant: "service.$provide.constant",
-           controller: {
-             "!type": "fn(name: string, constructor: fn()) -> !this",
-             "!effects": ["custom angular_regFieldCall"],
-             "!url": "http://docs.angularjs.org/api/ng.$controllerProvider",
-             "!doc": "Register a controller."
-           },
-           directive: {
-             "!type": "fn(name: string, directiveFactory: fn() -> directiveObj) -> !this",
-             "!effects": ["custom angular_regFieldCall"],
-             "!url": "http://docs.angularjs.org/api/ng.$compileProvider#directive",
-             "!doc": "Register a new directive with the compiler."
-           },
-           factory: "service.$provide.factory",
-           filter: {
-             "!type": "fn(name: string, filterFactory: fn()) -> !this",
-             "!effects": ["custom angular_callInject 1"],
-             "!url": "http://docs.angularjs.org/api/ng.$filterProvider",
-             "!doc": "Register filter factory function."
-           },
-           provider: "service.$provide.provider",
-           run: {
-             "!type": "fn(initializationFn: fn()) -> !this",
-             "!effects": ["custom angular_callInject 0"],
-             "!url": "http://docs.angularjs.org/api/angular.Module#run",
-             "!doc": "Register work which should be performed when the injector is done loading all modules."
-           },
-           service: "service.$provide.service",
-           value: "service.$provide.value",
-           name: {
-             "!type": "string",
-             "!url": "http://docs.angularjs.org/api/angular.Module#name",
-             "!doc": "Name of the module."
-           },
-           requires: {
-             "!type": "[string]",
-             "!url": "http://docs.angularjs.org/api/angular.Module#requires",
-             "!doc": "List of module names which must be loaded before this module."
-           }
-         }
-       },
-       Promise: {
-         "!url": "http://docs.angularjs.org/api/ng.$q",
-         "!doc": "Allow for interested parties to get access to the result of the deferred task when it completes.",
-         prototype: {
-           then: "fn(successCallback: fn(value: ?), errorCallback: fn(reason: ?), notifyCallback: fn(value: ?)) -> +Promise",
-           "catch": "fn(errorCallback: fn(reason: ?))",
-           "finally": "fn(callback: fn()) -> +Promise",
-           success: "fn(callback: fn(data: ?, status: number, headers: ?, config: ?)) -> +Promise",
-           error: "fn(callback: fn(data: ?, status: number, headers: ?, config: ?)) -> +Promise"
-         }
-       },
-       Deferred: {
-         "!url": "http://docs.angularjs.org/api/ng.$q",
-         prototype: {
-           resolve: "fn(value: ?)",
-           reject: "fn(reason: ?)",
-           notify: "fn(value: ?)",
-           promise: "+Promise"
-         }
-       },
-       ResourceClass: {
-         "!url": "http://docs.angularjs.org/api/ngResource.$resource",
-         prototype: {
-           $promise: "+Promise",
-           $save: "fn()"
-         }
-       },
-       Resource: {
-         "!url": "http://docs.angularjs.org/api/ngResource.$resource",
-         prototype: {
-           get: "fn(params: ?, callback: fn()) -> +ResourceClass",
-           save: "fn(params: ?, callback: fn()) -> +ResourceClass",
-           query: "fn(params: ?, callback: fn()) -> +ResourceClass",
-           remove: "fn(params: ?, callback: fn()) -> +ResourceClass",
-           "delete": "fn(params: ?, callback: fn()) -> +ResourceClass"
-         }
-       },
-       service: {
-         $anchorScroll: {
-           "!type": "fn()",
-           "!url": "http://docs.angularjs.org/api/ng.$anchorScroll",
-           "!doc": "Checks current value of $location.hash() and scroll to related element."
-         },
-         $animate: {
-           "!url": "http://docs.angularjs.org/api/ng.$animate",
-           "!doc": "Rudimentary DOM manipulation functions to insert, remove, move elements within the DOM.",
-           addClass: {
-             "!type": "fn(element: +Element, className: string, done?: fn()) -> !this",
-             "!url": "http://docs.angularjs.org/api/ng.$animate#addClass",
-             "!doc": "Adds the provided className CSS class value to the provided element."
-           },
-           enter: {
-             "!type": "fn(element: +Element, parent: +Element, after: +Element, done?: fn()) -> !this",
-             "!url": "http://docs.angularjs.org/api/ng.$animate#enter",
-             "!doc": "Inserts the element into the DOM either after the after element or within the parent element."
-           },
-           leave: {
-             "!type": "fn(element: +Element, done?: fn()) -> !this",
-             "!url": "http://docs.angularjs.org/api/ng.$animate#leave",
-             "!doc": "Removes the element from the DOM."
-           },
-           move: {
-             "!type": "fn(element: +Element, parent: +Element, after: +Element, done?: fn()) -> !this",
-             "!url": "http://docs.angularjs.org/api/ng.$animate#move",
-             "!doc": "Moves element to be placed either after the after element or inside of the parent element."
-           },
-           removeClass: {
-             "!type": "fn(element: +Element, className: string, done?: fn()) -> !this",
-             "!url": "http://docs.angularjs.org/api/ng.$animate#removeClass",
-             "!doc": "Removes the provided className CSS class value from the provided element."
-           }
-         },
-         $cacheFactory: {
-           "!type": "fn(cacheId: string, options?: ?) -> cacheObj",
-           "!url": "http://docs.angularjs.org/api/ng.$cacheFactory",
-           "!doc": "Factory that constructs cache objects and gives access to them."
-         },
-         $compile: {
-           "!type": "fn(element: +Element, transclude: fn(scope: ?), maxPriority: number)",
-           "!url": "http://docs.angularjs.org/api/ng.$compile",
-           "!doc": "Compiles a piece of HTML string or DOM into a template and produces a template function."
-         },
-         $controller: {
-           "!type": "fn(controller: fn(), locals: ?) -> ?",
-           "!url": "http://docs.angularjs.org/api/ng.$controller",
-           "!doc": "Instantiates controllers."
-         },
-         $document: {
-           "!type": "jQuery.fn",
-           "!url": "http://docs.angularjs.org/api/ng.$document",
-           "!doc": "A jQuery (lite)-wrapped reference to the browser's window.document element."
-         },
-         $exceptionHandler: {
-           "!type": "fn(exception: +Error, cause?: string)",
-           "!url": "http://docs.angularjs.org/api/ng.$exceptionHandler",
-           "!doc": "Any uncaught exception in angular expressions is delegated to this service."
-         },
-         $filter: {
-           "!type": "fn(name: string) -> fn(input: string) -> string",
-           "!url": "http://docs.angularjs.org/api/ng.$filter",
-           "!doc": "Retrieve a filter function."
-         },
-         $http: {
-           "!type": "fn(config: ?) -> service.$q",
-           "!url": "http://docs.angularjs.org/api/ng.$http",
-           "!doc": "Facilitates communication with remote HTTP servers.",
-           "delete": "fn(url: string, config?: ?) -> +Promise",
-           get: "fn(url: string, config?: ?) -> +Promise",
-           head: "fn(url: string, config?: ?) -> +Promise",
-           jsonp: "fn(url: string, config?: ?) -> +Promise",
-           post: "fn(url: string, data: ?, config?: ?) -> +Promise",
-           put: "fn(url: string, data: ?, config?: ?) -> +Promise"
-         },
-         $interpolate: {
-           "!type": "fn(text: string, mustHaveExpression?: bool, trustedContext?: string) -> fn(context: ?) -> string",
-           "!url": "http://docs.angularjs.org/api/ng.$interpolate",
-           "!doc": "Compiles a string with markup into an interpolation function."
-         },
-         $locale: {
-           "!url": "http://docs.angularjs.org/api/ng.$locale",
-           id: "string"
-         },
-         $location: {
-           "!url": "http://docs.angularjs.org/api/ng.$location",
-           "!doc": "Parses the URL in the browser address bar.",
-           absUrl: {
-             "!type": "fn() -> string",
-             "!url": "http://docs.angularjs.org/api/ng.$location#absUrl",
-             "!doc": "Return full url representation."
-           },
-           hash: {
-             "!type": "fn(value?: string) -> string",
-             "!url": "http://docs.angularjs.org/api/ng.$location#hash",
-             "!doc": "Get or set the hash fragment."
-           },
-           host: {
-             "!type": "fn() -> string",
-             "!url": "http://docs.angularjs.org/api/ng.$location#host",
-             "!doc": "Return host of current url."
-           },
-           path: {
-             "!type": "fn(value?: string) -> string",
-             "!url": "http://docs.angularjs.org/api/ng.$location#path",
-             "!doc": "Get or set the URL path."
-           },
-           port: {
-             "!type": "fn() -> number",
-             "!url": "http://docs.angularjs.org/api/ng.$location#port",
-             "!doc": "Returns the port of the current url."
-           },
-           protocol: {
-             "!type": "fn() -> string",
-             "!url": "http://docs.angularjs.org/api/ng.$location#protocol",
-             "!doc": "Return protocol of current url."
-           },
-           replace: {
-             "!type": "fn()",
-             "!url": "http://docs.angularjs.org/api/ng.$location#replace",
-             "!doc": "Changes to $location during current $digest will be replacing current history record, instead of adding new one."
-           },
-           search: {
-             "!type": "fn(search: string, paramValue?: string) -> string",
-             "!url": "http://docs.angularjs.org/api/ng.$location#search",
-             "!doc": "Get or set the URL query."
-           },
-           url: {
-             "!type": "fn(url: string, replace?: string) -> string",
-             "!url": "http://docs.angularjs.org/api/ng.$location#url",
-             "!doc": "Get or set the current url."
-           }
-         },
-         $log: {
-           "!url": "http://docs.angularjs.org/api/ng.$log",
-           "!doc": "Simple service for logging.",
-           debug: {
-             "!type": "fn(message: string)",
-             "!url": "http://docs.angularjs.org/api/ng.$log#debug",
-             "!doc": "Write a debug message."
-           },
-           error: {
-             "!type": "fn(message: string)",
-             "!url": "http://docs.angularjs.org/api/ng.$log#error",
-             "!doc": "Write an error message."
-           },
-           info: {
-             "!type": "fn(message: string)",
-             "!url": "http://docs.angularjs.org/api/ng.$log#info",
-             "!doc": "Write an info message."
-           },
-           log: {
-             "!type": "fn(message: string)",
-             "!url": "http://docs.angularjs.org/api/ng.$log#log",
-             "!doc": "Write a log message."
-           },
-           warn: {
-             "!type": "fn(message: string)",
-             "!url": "http://docs.angularjs.org/api/ng.$log#warn",
-             "!doc": "Write a warning message."
-           }
-         },
-         $parse: {
-           "!type": "fn(expression: string) -> fn(context: ?, locals: ?) -> ?",
-           "!url": "http://docs.angularjs.org/api/ng.$parse",
-           "!doc": "Converts Angular expression into a function."
-         },
-         $q: {
-           "!type": "fn(executor: fn(resolve: fn(value: ?) -> +Promise, reject: fn(value: ?) -> +Promise)) -> +Promise",
-           "!url": "http://docs.angularjs.org/api/ng.$q",
-           "!doc": "A promise/deferred implementation.",
-           all: {
-             "!type": "fn(promises: [+Promise]) -> +Promise",
-             "!url": "http://docs.angularjs.org/api/ng.$q#all",
-             "!doc": "Combines multiple promises into a single promise."
-           },
-           defer: {
-             "!type": "fn() -> +Deferred",
-             "!url": "http://docs.angularjs.org/api/ng.$q#defer",
-             "!doc": "Creates a Deferred object which represents a task which will finish in the future."
-           },
-           reject: {
-             "!type": "fn(reason: ?) -> +Promise",
-             "!url": "http://docs.angularjs.org/api/ng.$q#reject",
-             "!doc": "Creates a promise that is resolved as rejected with the specified reason."
-           },
-           when: {
-             "!type": "fn(value: ?) -> +Promise",
-             "!url": "http://docs.angularjs.org/api/ng.$q#when",
-             "!doc": "Wraps an object that might be a value or a (3rd party) then-able promise into a $q promise."
-           }
-         },
-         $rootElement: {
-           "!type": "+Element",
-           "!url": "http://docs.angularjs.org/api/ng.$rootElement",
-           "!doc": "The root element of Angular application."
-         },
-         $rootScope: {
-           "!url": "http://docs.angularjs.org/api/ng.$rootScope",
-           $apply: {
-             "!type": "fn(expression: string)",
-             "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$apply",
-             "!doc": "Execute an expression in angular from outside of the angular framework."
-           },
-           $broadcast: {
-             "!type": "fn(name: string, args?: ?) -> eventObj",
-             "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$broadcast",
-             "!doc": "Dispatches an event name downwards to all child scopes."
-           },
-           $destroy: {
-             "!type": "fn()",
-             "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$destroy",
-             "!doc": "Removes the current scope (and all of its children) from the parent scope."
-           },
-           $digest: {
-             "!type": "fn()",
-             "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$digest",
-             "!doc": "Processes all of the watchers of the current scope and its children."
-           },
-           $emit: {
-             "!type": "fn(name: string, args?: ?) -> eventObj",
-             "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$emit",
-             "!doc": "Dispatches an event name upwards through the scope hierarchy."
-           },
-           $eval: {
-             "!type": "fn(expression: string) -> ?",
-             "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$eval",
-             "!doc": "Executes the expression on the current scope and returns the result."
-           },
-           $evalAsync: {
-             "!type": "fn(expression: string)",
-             "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$evalAsync",
-             "!doc": "Executes the expression on the current scope at a later point in time."
-           },
-           $new: {
-             "!type": "fn(isolate: bool) -> service.$rootScope",
-             "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$new",
-             "!doc": "Creates a new child scope."
-           },
-           $on: {
-             "!type": "fn(name: string, listener: fn(event: ?)) -> fn()",
-             "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$on",
-             "!doc": "Listens on events of a given type."
-           },
-           $watch: {
-             "!type": "fn(watchExpression: string, listener?: fn(), objectEquality?: bool) -> fn()",
-             "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$watch",
-             "!doc": "Registers a listener callback to be executed whenever the watchExpression changes."
-           },
-           $watchCollection: {
-             "!type": "fn(obj: string, listener: fn()) -> fn()",
-             "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$watchCollection",
-             "!doc": "Shallow watches the properties of an object and fires whenever any of the properties."
-           },
-           $id: {
-             "!type": "number",
-             "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$id",
-             "!doc": "Unique scope ID."
-           }
-         },
-         $sce: {
-           HTML: "string",
-           CSS: "string",
-           URL: "string",
-           RESOURCE_URL: "string",
-           JS: "string",
-           getTrusted: "fn(type: string, maybeTrusted: ?) -> !1",
-           getTrustedCss: "fn(maybeTrusted: ?) -> !0",
-           getTrustedHtml: "fn(maybeTrusted: ?) -> !0",
-           getTrustedJs: "fn(maybeTrusted: ?) -> !0",
-           getTrustedResourceUrl: "fn(maybeTrusted: ?) -> !0",
-           getTrustedUrl: "fn(maybeTrusted: ?) -> !0",
-           parse: "fn(type: string, expression: string) -> fn(context: ?, locals: ?) -> ?",
-           parseAsCss: "fn(expression: string) -> fn(context: ?, locals: ?) -> ?",
-           parseAsHtml: "fn(expression: string) -> fn(context: ?, locals: ?) -> ?",
-           parseAsJs: "fn(expression: string) -> fn(context: ?, locals: ?) -> ?",
-           parseAsResourceUrl: "fn(expression: string) -> fn(context: ?, locals: ?) -> ?",
-           parseAsUrl: "fn(expression: string) -> fn(context: ?, locals: ?) -> ?",
-           trustAs: "fn(type: string, value: ?) -> !1",
-           trustAsHtml: "fn(value: ?) -> !0",
-           trustAsJs: "fn(value: ?) -> !0",
-           trustAsResourceUrl: "fn(value: ?) -> !0",
-           trustAsUrl: "fn(value: ?) -> !0",
-           isEnabled: "fn() -> bool"
-         },
-         $templateCache: {
-           "!url": "http://docs.angularjs.org/api/ng.$templateCache",
-           "!proto": "cacheObj"
-         },
-         $timeout: {
-           "!type": "fn(fn: fn(), delay?: number, invokeApply?: bool) -> +Promise",
-           "!url": "http://docs.angularjs.org/api/ng.$timeout",
-           "!doc": "Angular's wrapper for window.setTimeout.",
-           cancel: "fn(promise: +Promise)"
-         },
-         $window: "<top>",
-         $injector: {
-           "!url": "http://docs.angularjs.org/api/AUTO.$injector",
-           "!doc": "Retrieve object instances as defined by provider.",
-           annotate: {
-             "!type": "fn(f: fn()) -> [string]",
-             "!url": "http://docs.angularjs.org/api/AUTO.$injector#annotate",
-             "!doc": "Returns an array of service names which the function is requesting for injection."
-           },
-           get: {
-             "!type": "fn(name: string) -> ?",
-             "!url": "http://docs.angularjs.org/api/AUTO.$injector#get",
-             "!doc": "Return an instance of a service."
-           },
-           has: {
-             "!type": "fn(name: string) -> bool",
-             "!url": "http://docs.angularjs.org/api/AUTO.$injector#has",
-             "!doc": "Allows the user to query if the particular service exist."
-           },
-           instantiate: {
-             "!type": "fn(type: fn(), locals?: ?) -> +!0",
-             "!url": "http://docs.angularjs.org/api/AUTO.$injector#instantiate",
-             "!doc": "Create a new instance of JS type."
-           },
-           invoke: {
-             "!type": "fn(type: fn(), self?: ?, locals?: ?) -> !0.!ret",
-             "!url": "http://docs.angularjs.org/api/AUTO.$injector#invoke",
-             "!doc": "Invoke the method and supply the method arguments from the $injector."
-           }
-         },
-         $provide: {
-           "!url": "http://docs.angularjs.org/api/AUTO.$provide",
-           "!doc": "Use $provide to register new providers with the $injector.",
-           constant: {
-             "!type": "fn(name: string, value: ?) -> !this",
-             "!effects": ["custom angular_regField"],
-             "!url": "http://docs.angularjs.org/api/AUTO.$provide#constant",
-             "!doc": "A constant value."
-           },
-           decorator: {
-             "!type": "fn(name: string, decorator: fn())",
-             "!effects": ["custom angular_regFieldCall"],
-             "!url": "http://docs.angularjs.org/api/AUTO.$provide#decorator",
-             "!doc": "Decoration of service, allows the decorator to intercept the service instance creation."
-           },
-           factory: {
-             "!type": "fn(name: string, providerFunction: fn()) -> !this",
-             "!effects": ["custom angular_regFieldCall"],
-             "!url": "http://docs.angularjs.org/api/AUTO.$provide#factory",
-             "!doc": "A short hand for configuring services if only $get method is required."
-           },
-           provider: {
-             "!type": "fn(name: string, providerType: fn()) -> !this",
-             "!effects": ["custom angular_regFieldCall"],
-             "!url": "http://docs.angularjs.org/api/AUTO.$provide#provider",
-             "!doc": "Register a provider for a service."
-           },
-           service: {
-             "!type": "fn(name: string, constructor: fn()) -> !this",
-             "!effects": ["custom angular_regFieldNew"],
-             "!url": "http://docs.angularjs.org/api/AUTO.$provide#provider",
-             "!doc": "Register a provider for a service."
-           },
-           value: {
-             "!type": "fn(name: string, object: ?) -> !this",
-             "!effects": ["custom angular_regField"],
-             "!url": "http://docs.angularjs.org/api/AUTO.$providevalue",
-             "!doc": "A short hand for configuring services if the $get method is a constant."
-           }
-         },
-         $cookies: {
-           "!url": "http://docs.angularjs.org/api/ngCookies.$cookies",
-           "!doc": "Provides read/write access to browser's cookies.",
-           text: "string"
-         },
-         $resource: {
-           "!type": "fn(url: string, paramDefaults?: ?, actions?: ?) -> +Resource",
-           "!url": "http://docs.angularjs.org/api/ngResource.$resource",
-           "!doc": "Creates a resource object that lets you interact with RESTful server-side data sources."
-         },
-         $route: {
-           "!url": "http://docs.angularjs.org/api/ngRoute.$route",
-           "!doc": "Deep-link URLs to controllers and views.",
-           reload: {
-             "!type": "fn()",
-             "!url": "http://docs.angularjs.org/api/ngRoute.$route#reload",
-             "!doc": "Reload the current route even if $location hasn't changed."
-           },
-           current: {
-             "!url": "http://docs.angularjs.org/api/ngRoute.$route#current",
-             "!doc": "Reference to the current route definition.",
-             controller: "?",
-             locals: "?"
-           },
-           routes: "[?]"
-         },
-         $sanitize: {
-           "!type": "fn(string) -> string",
-           "!url": "http://docs.angularjs.org/api/ngSanitize.$sanitize",
-           "!doc": "Sanitize HTML input."
-         },
-         $swipe: {
-           "!url": "http://docs.angularjs.org/api/ngTouch.$swipe",
-           "!doc": "A service that abstracts the messier details of hold-and-drag swipe behavior.",
-           bind: {
-             "!type": "fn(element: +Element, handlers: ?)",
-             "!url": "http://docs.angularjs.org/api/ngTouch.$swipe#bind",
-             "!doc": "Abstracts the messier details of hold-and-drag swipe behavior."
-           }
-         }
-       }
-     },
-     angular: {
-       bind: {
-         "!type": "fn(self: ?, fn: fn(), args?: ?) -> !custom:angular_bind",
-         "!url": "http://docs.angularjs.org/api/angular.bind",
-         "!doc": "Returns a function which calls function fn bound to self."
-       },
-       bootstrap: {
-         "!type": "fn(element: +Element, modules?: [string]) -> service.$injector",
-         "!url": "http://docs.angularjs.org/api/angular.bootstrap",
-         "!doc": "Use this function to manually start up angular application."
-       },
-       copy: {
-         "!type": "fn(source: ?, target?: ?) -> !0",
-         "!url": "http://docs.angularjs.org/api/angular.copy",
-         "!doc": "Creates a deep copy of source, which should be an object or an array."
-       },
-       element: {
-         "!type": "fn(element: +Element) -> jQuery.fn",
-         "!url": "http://docs.angularjs.org/api/angular.element",
-         "!doc": "Wraps a raw DOM element or HTML string as a jQuery element."
-       },
-       equals: {
-         "!type": "fn(o1: ?, o2: ?) -> bool",
-         "!url": "http://docs.angularjs.org/api/angular.equals",
-         "!doc": "Determines if two objects or two values are equivalent."
-       },
-       extend: {
-         "!type": "fn(dst: ?, src: ?) -> !0",
-         "!effects": ["copy !1 !0"],
-         "!url": "http://docs.angularjs.org/api/angular.extend",
-         "!doc": "Extends the destination object dst by copying all of the properties from the src object(s) to dst."
-       },
-       forEach: {
-         "!type": "fn(obj: ?, iterator: fn(value: ?, key: ?), context?: ?) -> !0",
-         "!effects": ["call !1 this=!2 !0.<i> number"],
-         "!url": "http://docs.angularjs.org/api/angular.forEach",
-         "!doc": "Invokes the iterator function once for each item in obj collection, which can be either an object or an array."
-       },
-       fromJson: {
-         "!type": "fn(json: string) -> ?",
-         "!url": "http://docs.angularjs.org/api/angular.fromJson",
-         "!doc": "Deserializes a JSON string."
-       },
-       identity: {
-         "!type": "fn(val: ?) -> !0",
-         "!url": "http://docs.angularjs.org/api/angular.identity",
-         "!doc": "A function that returns its first argument."
-       },
-       injector: {
-         "!type": "fn(modules: [string]) -> service.$injector",
-         "!url": "http://docs.angularjs.org/api/angular.injector",
-         "!doc": "Creates an injector function"
-       },
-       isArray: {
-         "!type": "fn(val: ?) -> bool",
-         "!url": "http://docs.angularjs.org/api/angular.isArray",
-         "!doc": "Determines if a reference is an Array."
-       },
-       isDate: {
-         "!type": "fn(val: ?) -> bool",
-         "!url": "http://docs.angularjs.org/api/angular.isDate",
-         "!doc": "Determines if a reference is a date."
-       },
-       isDefined: {
-         "!type": "fn(val: ?) -> bool",
-         "!url": "http://docs.angularjs.org/api/angular.isDefined",
-         "!doc": "Determines if a reference is defined."
-       },
-       isElement: {
-         "!type": "fn(val: ?) -> bool",
-         "!url": "http://docs.angularjs.org/api/angular.isElement",
-         "!doc": "Determines if a reference is a DOM element."
-       },
-       isFunction: {
-         "!type": "fn(val: ?) -> bool",
-         "!url": "http://docs.angularjs.org/api/angular.isFunction",
-         "!doc": "Determines if a reference is a function."
-       },
-       isNumber: {
-         "!type": "fn(val: ?) -> bool",
-         "!url": "http://docs.angularjs.org/api/angular.isNumber",
-         "!doc": "Determines if a reference is a number."
-       },
-       isObject: {
-         "!type": "fn(val: ?) -> bool",
-         "!url": "http://docs.angularjs.org/api/angular.isObject",
-         "!doc": "Determines if a reference is an object."
-       },
-       isString: {
-         "!type": "fn(val: ?) -> bool",
-         "!url": "http://docs.angularjs.org/api/angular.isString",
-         "!doc": "Determines if a reference is a string."
-       },
-       isUndefined: {
-         "!type": "fn(val: ?) -> bool",
-         "!url": "http://docs.angularjs.org/api/angular.isUndefined",
-         "!doc": "Determines if a reference is undefined."
-       },
-       lowercase: {
-         "!type": "fn(val: string) -> string",
-         "!url": "http://docs.angularjs.org/api/angular.lowercase",
-         "!doc": "Converts the specified string to lowercase."
-       },
-       module: {
-         "!type": "fn(name: string, deps: [string]) -> !custom:angular_module",
-         "!url": "http://docs.angularjs.org/api/angular.module",
-         "!doc": "A global place for creating, registering and retrieving Angular modules."
-       },
-       Module: "Module",
-       noop: {
-         "!type": "fn()",
-         "!url": "http://docs.angularjs.org/api/angular.noop",
-         "!doc": "A function that performs no operations."
-       },
-       toJson: {
-         "!type": "fn(val: ?) -> string",
-         "!url": "http://docs.angularjs.org/api/angular.toJson",
-         "!doc": "Serializes input into a JSON-formatted string."
-       },
-       uppercase: {
-         "!type": "fn(string) -> string",
-         "!url": "http://docs.angularjs.org/api/angular.uppercase",
-         "!doc": "Converts the specified string to uppercase."
-       },
-       version: {
-         "!url": "http://docs.angularjs.org/api/angular.version",
-         full: "string",
-         major: "number",
-         minor: "number",
-         dot: "number",
-         codename: "string"
-       }
-     }
-   };
- });
- //#endregion
+(function(mod) {
+  if (typeof exports == "object" && typeof module == "object") // CommonJS
+    return mod(require("../lib/infer"), require("../lib/tern"), require("../lib/comment"),
+               require("acorn-walk"));
+  if (typeof define == "function" && define.amd) // AMD
+    return define(["../lib/infer", "../lib/tern", "../lib/comment", "acorn-walk/dist/walk"], mod);
+  mod(tern, tern, tern.comment, acorn.walk);
+})(function(infer, tern, comment, walk) {
+  "use strict";
+
+  var SetDoc = infer.constraint({
+    construct: function(doc) { this.doc = doc; },
+    addType: function(type) {
+      if (!type.doc) type.doc = this.doc;
+    }
+  });
+
+  function Injector() {
+    this.fields = Object.create(null);
+    this.forward = [];
+  }
+
+  Injector.prototype.get = function(name) {
+    if (name == "$scope") return new infer.Obj(globalInclude("$rootScope").getType(), "$scope");
+    if (name in this.fields) return this.fields[name];
+    var field = this.fields[name] = new infer.AVal;
+    return field;
+  };
+  Injector.prototype.set = function(name, val, doc, node, depth) {
+    if (name == "$scope" || depth && depth > 10) return;
+    var field = this.fields[name] || (this.fields[name] = new infer.AVal);
+    if (!depth) field.local = true;
+    if (!field.origin) field.origin = infer.cx().curOrigin;
+    if (typeof node == "string" && !field.span) field.span = node;
+    else if (node && typeof node == "object" && !field.originNode) field.originNode = node;
+    if (doc) { field.doc = doc; field.propagate(new SetDoc(doc)); }
+    val.propagate(field);
+    for (var i = 0; i < this.forward.length; ++i)
+      this.forward[i].set(name, val, doc, node, (depth || 0) + 1);
+  };
+  Injector.prototype.forwardTo = function(injector) {
+    this.forward.push(injector);
+    for (var field in this.fields) {
+      var val = this.fields[field];
+      injector.set(field, val, val.doc, val.span || val.originNode, 1);
+    }
+  };
+
+  function globalInclude(name) {
+    var service = infer.cx().definitions.angular.service;
+    if (service.hasProp(name)) return service.getProp(name);
+  }
+
+  function getInclude(mod, name) {
+    var glob = globalInclude(name);
+    if (glob) return glob;
+    if (!mod.injector) return infer.ANull;
+    return mod.injector ? mod.injector.get(name) : infer.ANull;
+  }
+
+  function applyWithInjection(mod, fnType, node, asNew) {
+    var deps = [];
+    if (/FunctionExpression/.test(node.type)) {
+      for (var i = 0; i < node.params.length; ++i)
+        deps.push(getInclude(mod, node.params[i].name));
+    } else if (node.type == "ArrayExpression") {
+      for (var i = 0; i < node.elements.length - 1; ++i) {
+        var elt = node.elements[i];
+        if (elt.type == "Literal" && typeof elt.value == "string")
+          deps.push(getInclude(mod, elt.value));
+        else
+          deps.push(infer.ANull);
+      }
+      var last = node.elements[node.elements.length - 1];
+      if (last && /FunctionExpression/.test(last.type))
+        fnType = last.scope.fnType;
+    }
+    var result = new infer.AVal;
+    if (asNew) {
+      var self = new infer.AVal;
+      fnType.propagate(new infer.IsCtor(self));
+      self.propagate(result, 90);
+      fnType.propagate(new infer.IsCallee(self, deps, null, new infer.IfObj(result)));
+    } else {
+      fnType.propagate(new infer.IsCallee(infer.cx().topScope, deps, null, result));
+    }
+    return result;
+  }
+
+  infer.registerFunction("angular_callInject", function(argN) {
+    return function(self, args, argNodes) {
+      var mod = self.getType();
+      if (mod && argNodes && argNodes[argN])
+        applyWithInjection(mod, args[argN], argNodes[argN]);
+    };
+  });
+
+  infer.registerFunction("angular_regFieldCall", function(self, args, argNodes) {
+    var mod = self.getType();
+    if (mod && argNodes && argNodes.length > 1) {
+      var result = applyWithInjection(mod, args[1], argNodes[1]);
+      if (mod.injector && argNodes[0].type == "Literal")
+        mod.injector.set(argNodes[0].value, result, argNodes[0].angularDoc, argNodes[0]);
+    }
+  });
+
+  infer.registerFunction("angular_regFieldNew", function(self, args, argNodes) {
+    var mod = self.getType();
+    if (mod && argNodes && argNodes.length > 1) {
+      var result = applyWithInjection(mod, args[1], argNodes[1], true);
+      if (mod.injector && argNodes[0].type == "Literal")
+        mod.injector.set(argNodes[0].value, result, argNodes[0].angularDoc, argNodes[0]);
+    }
+  });
+
+  infer.registerFunction("angular_regField", function(self, args, argNodes) {
+    var mod = self.getType();
+    if (mod && mod.injector && argNodes && argNodes[0] && argNodes[0].type == "Literal" && args[1])
+      mod.injector.set(argNodes[0].value, args[1], argNodes[0].angularDoc, argNodes[0]);
+  });
+
+  function arrayNodeToStrings(node) {
+    var strings = [];
+    if (node && node.type == "ArrayExpression")
+      for (var i = 0; i < node.elements.length; ++i) {
+        var elt = node.elements[i];
+        if (elt.type == "Literal" && typeof elt.value == "string")
+          strings.push(elt.value);
+      }
+    return strings;
+  }
+
+  function moduleProto(cx) {
+    var ngDefs = cx.definitions.angular;
+    return ngDefs && ngDefs.Module.getProp("prototype").getType();
+  }
+
+  function declareMod(name, includes) {
+    var cx = infer.cx(), data = cx.parent.mod.angular;
+    var proto = moduleProto(cx);
+    var mod = new infer.Obj(proto || true);
+    if (!proto) data.nakedModules.push(mod);
+    mod.origin = cx.curOrigin;
+    mod.injector = new Injector();
+    mod.metaData = {includes: includes};
+    for (var i = 0; i < includes.length; ++i) {
+      var depMod = data.modules[includes[i]];
+      if (!depMod)
+        (data.pendingImports[includes[i]] || (data.pendingImports[includes[i]] = [])).push(mod.injector);
+      else if (depMod.injector)
+        depMod.injector.forwardTo(mod.injector);
+    }
+    if (typeof name == "string") {
+      data.modules[name] = mod;
+      var pending = data.pendingImports[name];
+      if (pending) {
+        delete data.pendingImports[name];
+        for (var i = 0; i < pending.length; ++i)
+          mod.injector.forwardTo(pending[i]);
+      }
+    }
+    return mod;
+  }
+
+  infer.registerFunction("angular_module", function(_self, _args, argNodes) {
+    var mod, name = argNodes && argNodes[0] && argNodes[0].type == "Literal" && argNodes[0].value;
+    if (typeof name == "string")
+      mod = infer.cx().parent.mod.angular.modules[name];
+    if (!mod)
+      mod = declareMod(name, arrayNodeToStrings(argNodes && argNodes[1]));
+    return mod;
+  });
+
+  var IsBound = infer.constraint({
+    construct: function(self, args, target) {
+      this.self = self; this.args = args; this.target = target;
+    },
+    addType: function(tp) {
+      if (!(tp instanceof infer.Fn)) return;
+      this.target.addType(new infer.Fn(tp.name, tp.self, tp.args.slice(this.args.length),
+                                       tp.argNames.slice(this.args.length), tp.retval));
+      this.self.propagate(tp.self);
+      for (var i = 0; i < Math.min(tp.args.length, this.args.length); ++i)
+        this.args[i].propagate(tp.args[i]);
+    }
+  });
+
+  infer.registerFunction("angular_bind", function(_self, args) {
+    if (args.length < 2) return infer.ANull;
+    var result = new infer.AVal;
+    args[1].propagate(new IsBound(args[0], args.slice(2), result));
+    return result;
+  });
+
+  function postParse(ast, text) {
+    walk.simple(ast, {
+      CallExpression: function(node) {
+        if (node.callee.type == "MemberExpression" &&
+            !node.callee.computed && node.arguments.length &&
+            /^(value|constant|controller|factory|provider)$/.test(node.callee.property.name)) {
+          var before = comment.commentsBefore(text, node.callee.property.start - 1);
+          if (before) {
+            var first = before[0], dot = first.search(/\.\s/);
+            if (dot > 5) first = first.slice(0, dot + 1);
+            first = first.trim().replace(/\s*\n\s*\*\s*|\s{1,}/g, " ");
+            node.arguments[0].angularDoc = first;
+          }
+        }
+      }
+    });
+  }
+
+  function postLoadDef(json) {
+    var cx = infer.cx(), defName = json["!name"], defs = cx.definitions[defName];
+    if (defName == "angular") {
+      var proto = moduleProto(cx), naked = cx.parent.mod.angular.nakedModules;
+      if (proto) for (var i = 0; i < naked.length; ++i) naked[i].proto = proto;
+      return;
+    }
+    var mods = defs && defs["!ng"];
+    if (mods) for (var name in mods.props) {
+      var obj = mods.props[name].getType();
+      var mod = declareMod(name.replace(/`/g, "."), obj.metaData && obj.metaData.includes || []);
+      mod.origin = defName;
+      for (var prop in obj.props) {
+        var val = obj.props[prop], tp = val.getType();
+        if (!tp) continue;
+        if (/^_inject_/.test(prop)) {
+          if (!tp.name) tp.name = prop.slice(8);
+          mod.injector.set(prop.slice(8), tp, val.doc, val.span);
+        } else {
+          obj.props[prop].propagate(mod.defProp(prop));
+        }
+      }
+    }
+  }
+
+  function preCondenseReach(state) {
+    var mods = infer.cx().parent.mod.angular.modules;
+    var modObj = new infer.Obj(null), found = 0;
+    for (var name in mods) {
+      var mod = mods[name];
+      if (state.origins.indexOf(mod.origin) > -1) {
+        var propName = name.replace(/\./g, "`");
+        modObj.defProp(propName).addType(mod);
+        mod.condenseForceInclude = true;
+        ++found;
+        if (mod.injector) for (var inj in mod.injector.fields) {
+          var field = mod.injector.fields[inj];
+          if (field.local) state.roots["!ng." + propName + "._inject_" + inj] = field;
+        }
+      }
+    }
+    if (found) state.roots["!ng"] = modObj;
+  }
+
+  function postCondenseReach(state) {
+    var mods = infer.cx().parent.mod.angular.modules;
+    for (var path in state.types) {
+      var m;
+      if (m = path.match(/^!ng\.([^\.]+)\._inject_([^\.]+)$/)) {
+        var mod = mods[m[1].replace(/`/g, ".")];
+        var field = mod.injector.fields[m[2]];
+        var data = state.types[path];
+        if (field.span) data.span = field.span;
+        if (field.doc) data.doc = field.doc;
+      }
+    }
+  }
+
+  function initServer(server) {
+    server.mod.angular = {
+      modules: Object.create(null),
+      pendingImports: Object.create(null),
+      nakedModules: []
+    };
+  }
+
+  tern.registerPlugin("angular", function(server) {
+    initServer(server);
+
+    server.on("reset", function() { initServer(server); });
+    server.on("postParse", postParse);
+    server.on("postLoadDef", postLoadDef);
+    server.on("preCondenseReach", preCondenseReach);
+    server.on("postCondenseReach", postCondenseReach);
+
+    server.addDefs(defs, true);
+  });
+
+  var defs = {
+    "!name": "angular",
+    "!define": {
+      cacheObj: {
+        info: "fn() -> ?",
+        put: "fn(key: string, value: ?) -> !1",
+        get: "fn(key: string) -> ?",
+        remove: "fn(key: string)",
+        removeAll: "fn()",
+        destroy: "fn()"
+      },
+      eventObj: {
+        targetScope: "service.$rootScope",
+        currentScope: "service.$rootScope",
+        name: "string",
+        stopPropagation: "fn()",
+        preventDefault: "fn()",
+        defaultPrevented: "bool"
+      },
+      directiveObj: {
+        multiElement: {
+          "!type": "bool",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-multielement-",
+          "!doc": "When this property is set to true, the HTML compiler will collect DOM nodes between nodes with the attributes directive-name-start and directive-name-end, and group them together as the directive elements. It is recommended that this feature be used on directives which are not strictly behavioural (such as ngClick), and which do not manipulate or replace child nodes (such as ngInclude)."
+        },
+        priority: {
+          "!type": "number",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-priority-",
+          "!doc": "When there are multiple directives defined on a single DOM element, sometimes it is necessary to specify the order in which the directives are applied. The priority is used to sort the directives before their compile functions get called. Priority is defined as a number. Directives with greater numerical priority are compiled first. Pre-link functions are also run in priority order, but post-link functions are run in reverse order. The order of directives with the same priority is undefined. The default priority is 0."
+        },
+        terminal: {
+          "!type": "bool",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-terminal-",
+          "!doc": "If set to true then the current priority will be the last set of directives which will execute (any directives at the current priority will still execute as the order of execution on same priority is undefined). Note that expressions and other directives used in the directive's template will also be excluded from execution."
+        },
+        scope: {
+          "!type": "?",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-scope-",
+          "!doc": "If set to true, then a new scope will be created for this directive. If multiple directives on the same element request a new scope, only one new scope is created. The new scope rule does not apply for the root of the template since the root of the template always gets a new scope. If set to {} (object hash), then a new 'isolate' scope is created. The 'isolate' scope differs from normal scope in that it does not prototypically inherit from the parent scope. This is useful when creating reusable components, which should not accidentally read or modify data in the parent scope."
+        },
+        bindToController: {
+          "!type": "bool",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-bindtocontroller-",
+          "!doc": "When an isolate scope is used for a component (see above), and controllerAs is used, bindToController: true will allow a component to have its properties bound to the controller, rather than to scope. When the controller is instantiated, the initial values of the isolate scope bindings are already available."
+        },
+        controller: {
+          "!type": "fn()",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-controller-",
+          "!doc": "Controller constructor function. The controller is instantiated before the pre-linking phase and it is shared with other directives (see require attribute). This allows the directives to communicate with each other and augment each other's behavior."
+        },
+        require: {
+          "!type": "string",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-require-",
+          "!doc": "Require another directive and inject its controller as the fourth argument to the linking function. The require takes a string name (or array of strings) of the directive(s) to pass in. If an array is used, the injected argument will be an array in corresponding order. If no such directive can be found, or if the directive does not have a controller, then an error is raised."
+        },
+        controllerAs: {
+          "!type": "string",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-controlleras-",
+          "!doc": "Controller alias at the directive scope. An alias for the controller so it can be referenced at the directive template. The directive needs to define a scope for this configuration to be used. Useful in the case when directive is used as component."
+        },
+        restrict: {
+          "!type": "string",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-restrict-",
+          "!doc": "String of subset of EACM which restricts the directive to a specific directive declaration style. If omitted, the defaults (elements and attributes) are used. E - Element name (default): <my-directive></my-directive>. A - Attribute (default): <div my-directive='exp'></div>. C - Class: <div class='my-directive: exp;'></div>. M - Comment: <!-- directive: my-directive exp --> "
+        },
+        templateNamespace: {
+          "!type": "string",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-templatenamespace-",
+          "!doc": "String representing the document type used by the markup in the template. AngularJS needs this information as those elements need to be created and cloned in a special way when they are defined outside their usual containers like <svg> and <math>."
+        },
+        template: {
+          "!type": "string",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-template-",
+          "!doc": "HTML markup that may: Replace the contents of the directive's element (default). Replace the directive's element itself (if replace is true - DEPRECATED). Wrap the contents of the directive's element (if transclude is true)."
+        },
+        templateUrl: {
+          "!type": "string",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-templateurl-",
+          "!doc": "This is similar to template but the template is loaded from the specified URL, asynchronously."
+        },
+        transclude: {
+          "!type": "bool",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-transclude-",
+          "!doc": "Extract the contents of the element where the directive appears and make it available to the directive. The contents are compiled and provided to the directive as a transclusion function."
+        },
+        compile: {
+          "!type": "fn(tElement: +Element, tAttrs: +Attr)",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-transclude-",
+          "!doc": "The compile function deals with transforming the template DOM. Since most directives do not do template transformation, it is not used often."
+        },
+        link: {
+          "!type": "fn(scope: ?, iElement: +Element, iAttrs: +Attr, controller: ?, transcludeFn: fn())",
+          "!url": "https://docs.angularjs.org/api/ng/service/$compile#-link-",
+          "!doc": "The link function is responsible for registering DOM listeners as well as updating the DOM. It is executed after the template has been cloned. This is where most of the directive logic will be put."
+        }
+      },
+      Module: {
+        "!url": "http://docs.angularjs.org/api/angular.Module",
+        "!doc": "Interface for configuring angular modules.",
+        prototype: {
+          animation: {
+            "!type": "fn(name: string, animationFactory: fn()) -> !this",
+            "!url": "http://docs.angularjs.org/api/angular.Module#animation",
+            "!doc": "Defines an animation hook that can be later used with $animate service and directives that use this service."
+          },
+          config: {
+            "!type": "fn(configFn: fn()) -> !this",
+            "!effects": ["custom angular_callInject 0"],
+            "!url": "http://docs.angularjs.org/api/angular.Module#config",
+            "!doc": "Use this method to register work which needs to be performed on module loading."
+          },
+          constant: "service.$provide.constant",
+          controller: {
+            "!type": "fn(name: string, constructor: fn()) -> !this",
+            "!effects": ["custom angular_regFieldCall"],
+            "!url": "http://docs.angularjs.org/api/ng.$controllerProvider",
+            "!doc": "Register a controller."
+          },
+          directive: {
+            "!type": "fn(name: string, directiveFactory: fn() -> directiveObj) -> !this",
+            "!effects": ["custom angular_regFieldCall"],
+            "!url": "http://docs.angularjs.org/api/ng.$compileProvider#directive",
+            "!doc": "Register a new directive with the compiler."
+          },
+          factory: "service.$provide.factory",
+          filter: {
+            "!type": "fn(name: string, filterFactory: fn()) -> !this",
+            "!effects": ["custom angular_callInject 1"],
+            "!url": "http://docs.angularjs.org/api/ng.$filterProvider",
+            "!doc": "Register filter factory function."
+          },
+          provider: "service.$provide.provider",
+          run: {
+            "!type": "fn(initializationFn: fn()) -> !this",
+            "!effects": ["custom angular_callInject 0"],
+            "!url": "http://docs.angularjs.org/api/angular.Module#run",
+            "!doc": "Register work which should be performed when the injector is done loading all modules."
+          },
+          service: "service.$provide.service",
+          value: "service.$provide.value",
+          name: {
+            "!type": "string",
+            "!url": "http://docs.angularjs.org/api/angular.Module#name",
+            "!doc": "Name of the module."
+          },
+          requires: {
+            "!type": "[string]",
+            "!url": "http://docs.angularjs.org/api/angular.Module#requires",
+            "!doc": "List of module names which must be loaded before this module."
+          }
+        }
+      },
+      Promise: {
+        "!url": "http://docs.angularjs.org/api/ng.$q",
+        "!doc": "Allow for interested parties to get access to the result of the deferred task when it completes.",
+        prototype: {
+          then: "fn(successCallback: fn(value: ?), errorCallback: fn(reason: ?), notifyCallback: fn(value: ?)) -> +Promise",
+          "catch": "fn(errorCallback: fn(reason: ?))",
+          "finally": "fn(callback: fn()) -> +Promise",
+          success: "fn(callback: fn(data: ?, status: number, headers: ?, config: ?)) -> +Promise",
+          error: "fn(callback: fn(data: ?, status: number, headers: ?, config: ?)) -> +Promise"
+        }
+      },
+      Deferred: {
+        "!url": "http://docs.angularjs.org/api/ng.$q",
+        prototype: {
+          resolve: "fn(value: ?)",
+          reject: "fn(reason: ?)",
+          notify: "fn(value: ?)",
+          promise: "+Promise"
+        }
+      },
+      ResourceClass: {
+        "!url": "http://docs.angularjs.org/api/ngResource.$resource",
+        prototype: {
+          $promise: "+Promise",
+          $save: "fn()"
+        }
+      },
+      Resource: {
+        "!url": "http://docs.angularjs.org/api/ngResource.$resource",
+        prototype: {
+          get: "fn(params: ?, callback: fn()) -> +ResourceClass",
+          save: "fn(params: ?, callback: fn()) -> +ResourceClass",
+          query: "fn(params: ?, callback: fn()) -> +ResourceClass",
+          remove: "fn(params: ?, callback: fn()) -> +ResourceClass",
+          "delete": "fn(params: ?, callback: fn()) -> +ResourceClass"
+        }
+      },
+      service: {
+        $anchorScroll: {
+          "!type": "fn()",
+          "!url": "http://docs.angularjs.org/api/ng.$anchorScroll",
+          "!doc": "Checks current value of $location.hash() and scroll to related element."
+        },
+        $animate: {
+          "!url": "http://docs.angularjs.org/api/ng.$animate",
+          "!doc": "Rudimentary DOM manipulation functions to insert, remove, move elements within the DOM.",
+          addClass: {
+            "!type": "fn(element: +Element, className: string, done?: fn()) -> !this",
+            "!url": "http://docs.angularjs.org/api/ng.$animate#addClass",
+            "!doc": "Adds the provided className CSS class value to the provided element."
+          },
+          enter: {
+            "!type": "fn(element: +Element, parent: +Element, after: +Element, done?: fn()) -> !this",
+            "!url": "http://docs.angularjs.org/api/ng.$animate#enter",
+            "!doc": "Inserts the element into the DOM either after the after element or within the parent element."
+          },
+          leave: {
+            "!type": "fn(element: +Element, done?: fn()) -> !this",
+            "!url": "http://docs.angularjs.org/api/ng.$animate#leave",
+            "!doc": "Removes the element from the DOM."
+          },
+          move: {
+            "!type": "fn(element: +Element, parent: +Element, after: +Element, done?: fn()) -> !this",
+            "!url": "http://docs.angularjs.org/api/ng.$animate#move",
+            "!doc": "Moves element to be placed either after the after element or inside of the parent element."
+          },
+          removeClass: {
+            "!type": "fn(element: +Element, className: string, done?: fn()) -> !this",
+            "!url": "http://docs.angularjs.org/api/ng.$animate#removeClass",
+            "!doc": "Removes the provided className CSS class value from the provided element."
+          }
+        },
+        $cacheFactory: {
+          "!type": "fn(cacheId: string, options?: ?) -> cacheObj",
+          "!url": "http://docs.angularjs.org/api/ng.$cacheFactory",
+          "!doc": "Factory that constructs cache objects and gives access to them."
+        },
+        $compile: {
+          "!type": "fn(element: +Element, transclude: fn(scope: ?), maxPriority: number)",
+          "!url": "http://docs.angularjs.org/api/ng.$compile",
+          "!doc": "Compiles a piece of HTML string or DOM into a template and produces a template function."
+        },
+        $controller: {
+          "!type": "fn(controller: fn(), locals: ?) -> ?",
+          "!url": "http://docs.angularjs.org/api/ng.$controller",
+          "!doc": "Instantiates controllers."
+        },
+        $document: {
+          "!type": "jQuery.fn",
+          "!url": "http://docs.angularjs.org/api/ng.$document",
+          "!doc": "A jQuery (lite)-wrapped reference to the browser's window.document element."
+        },
+        $exceptionHandler: {
+          "!type": "fn(exception: +Error, cause?: string)",
+          "!url": "http://docs.angularjs.org/api/ng.$exceptionHandler",
+          "!doc": "Any uncaught exception in angular expressions is delegated to this service."
+        },
+        $filter: {
+          "!type": "fn(name: string) -> fn(input: string) -> string",
+          "!url": "http://docs.angularjs.org/api/ng.$filter",
+          "!doc": "Retrieve a filter function."
+        },
+        $http: {
+          "!type": "fn(config: ?) -> service.$q",
+          "!url": "http://docs.angularjs.org/api/ng.$http",
+          "!doc": "Facilitates communication with remote HTTP servers.",
+          "delete": "fn(url: string, config?: ?) -> +Promise",
+          get: "fn(url: string, config?: ?) -> +Promise",
+          head: "fn(url: string, config?: ?) -> +Promise",
+          jsonp: "fn(url: string, config?: ?) -> +Promise",
+          post: "fn(url: string, data: ?, config?: ?) -> +Promise",
+          put: "fn(url: string, data: ?, config?: ?) -> +Promise"
+        },
+        $interpolate: {
+          "!type": "fn(text: string, mustHaveExpression?: bool, trustedContext?: string) -> fn(context: ?) -> string",
+          "!url": "http://docs.angularjs.org/api/ng.$interpolate",
+          "!doc": "Compiles a string with markup into an interpolation function."
+        },
+        $locale: {
+          "!url": "http://docs.angularjs.org/api/ng.$locale",
+          id: "string"
+        },
+        $location: {
+          "!url": "http://docs.angularjs.org/api/ng.$location",
+          "!doc": "Parses the URL in the browser address bar.",
+          absUrl: {
+            "!type": "fn() -> string",
+            "!url": "http://docs.angularjs.org/api/ng.$location#absUrl",
+            "!doc": "Return full url representation."
+          },
+          hash: {
+            "!type": "fn(value?: string) -> string",
+            "!url": "http://docs.angularjs.org/api/ng.$location#hash",
+            "!doc": "Get or set the hash fragment."
+          },
+          host: {
+            "!type": "fn() -> string",
+            "!url": "http://docs.angularjs.org/api/ng.$location#host",
+            "!doc": "Return host of current url."
+          },
+          path: {
+            "!type": "fn(value?: string) -> string",
+            "!url": "http://docs.angularjs.org/api/ng.$location#path",
+            "!doc": "Get or set the URL path."
+          },
+          port: {
+            "!type": "fn() -> number",
+            "!url": "http://docs.angularjs.org/api/ng.$location#port",
+            "!doc": "Returns the port of the current url."
+          },
+          protocol: {
+            "!type": "fn() -> string",
+            "!url": "http://docs.angularjs.org/api/ng.$location#protocol",
+            "!doc": "Return protocol of current url."
+          },
+          replace: {
+            "!type": "fn()",
+            "!url": "http://docs.angularjs.org/api/ng.$location#replace",
+            "!doc": "Changes to $location during current $digest will be replacing current history record, instead of adding new one."
+          },
+          search: {
+            "!type": "fn(search: string, paramValue?: string) -> string",
+            "!url": "http://docs.angularjs.org/api/ng.$location#search",
+            "!doc": "Get or set the URL query."
+          },
+          url: {
+            "!type": "fn(url: string, replace?: string) -> string",
+            "!url": "http://docs.angularjs.org/api/ng.$location#url",
+            "!doc": "Get or set the current url."
+          }
+        },
+        $log: {
+          "!url": "http://docs.angularjs.org/api/ng.$log",
+          "!doc": "Simple service for logging.",
+          debug: {
+            "!type": "fn(message: string)",
+            "!url": "http://docs.angularjs.org/api/ng.$log#debug",
+            "!doc": "Write a debug message."
+          },
+          error: {
+            "!type": "fn(message: string)",
+            "!url": "http://docs.angularjs.org/api/ng.$log#error",
+            "!doc": "Write an error message."
+          },
+          info: {
+            "!type": "fn(message: string)",
+            "!url": "http://docs.angularjs.org/api/ng.$log#info",
+            "!doc": "Write an info message."
+          },
+          log: {
+            "!type": "fn(message: string)",
+            "!url": "http://docs.angularjs.org/api/ng.$log#log",
+            "!doc": "Write a log message."
+          },
+          warn: {
+            "!type": "fn(message: string)",
+            "!url": "http://docs.angularjs.org/api/ng.$log#warn",
+            "!doc": "Write a warning message."
+          }
+        },
+        $parse: {
+          "!type": "fn(expression: string) -> fn(context: ?, locals: ?) -> ?",
+          "!url": "http://docs.angularjs.org/api/ng.$parse",
+          "!doc": "Converts Angular expression into a function."
+        },
+        $q: {
+          "!type": "fn(executor: fn(resolve: fn(value: ?) -> +Promise, reject: fn(value: ?) -> +Promise)) -> +Promise",
+          "!url": "http://docs.angularjs.org/api/ng.$q",
+          "!doc": "A promise/deferred implementation.",
+          all: {
+            "!type": "fn(promises: [+Promise]) -> +Promise",
+            "!url": "http://docs.angularjs.org/api/ng.$q#all",
+            "!doc": "Combines multiple promises into a single promise."
+          },
+          defer: {
+            "!type": "fn() -> +Deferred",
+            "!url": "http://docs.angularjs.org/api/ng.$q#defer",
+            "!doc": "Creates a Deferred object which represents a task which will finish in the future."
+          },
+          reject: {
+            "!type": "fn(reason: ?) -> +Promise",
+            "!url": "http://docs.angularjs.org/api/ng.$q#reject",
+            "!doc": "Creates a promise that is resolved as rejected with the specified reason."
+          },
+          when: {
+            "!type": "fn(value: ?) -> +Promise",
+            "!url": "http://docs.angularjs.org/api/ng.$q#when",
+            "!doc": "Wraps an object that might be a value or a (3rd party) then-able promise into a $q promise."
+          }
+        },
+        $rootElement: {
+          "!type": "+Element",
+          "!url": "http://docs.angularjs.org/api/ng.$rootElement",
+          "!doc": "The root element of Angular application."
+        },
+        $rootScope: {
+          "!url": "http://docs.angularjs.org/api/ng.$rootScope",
+          $apply: {
+            "!type": "fn(expression: string)",
+            "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$apply",
+            "!doc": "Execute an expression in angular from outside of the angular framework."
+          },
+          $broadcast: {
+            "!type": "fn(name: string, args?: ?) -> eventObj",
+            "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$broadcast",
+            "!doc": "Dispatches an event name downwards to all child scopes."
+          },
+          $destroy: {
+            "!type": "fn()",
+            "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$destroy",
+            "!doc": "Removes the current scope (and all of its children) from the parent scope."
+          },
+          $digest: {
+            "!type": "fn()",
+            "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$digest",
+            "!doc": "Processes all of the watchers of the current scope and its children."
+          },
+          $emit: {
+            "!type": "fn(name: string, args?: ?) -> eventObj",
+            "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$emit",
+            "!doc": "Dispatches an event name upwards through the scope hierarchy."
+          },
+          $eval: {
+            "!type": "fn(expression: string) -> ?",
+            "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$eval",
+            "!doc": "Executes the expression on the current scope and returns the result."
+          },
+          $evalAsync: {
+            "!type": "fn(expression: string)",
+            "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$evalAsync",
+            "!doc": "Executes the expression on the current scope at a later point in time."
+          },
+          $new: {
+            "!type": "fn(isolate: bool) -> service.$rootScope",
+            "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$new",
+            "!doc": "Creates a new child scope."
+          },
+          $on: {
+            "!type": "fn(name: string, listener: fn(event: ?)) -> fn()",
+            "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$on",
+            "!doc": "Listens on events of a given type."
+          },
+          $watch: {
+            "!type": "fn(watchExpression: string, listener?: fn(), objectEquality?: bool) -> fn()",
+            "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$watch",
+            "!doc": "Registers a listener callback to be executed whenever the watchExpression changes."
+          },
+          $watchCollection: {
+            "!type": "fn(obj: string, listener: fn()) -> fn()",
+            "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$watchCollection",
+            "!doc": "Shallow watches the properties of an object and fires whenever any of the properties."
+          },
+          $id: {
+            "!type": "number",
+            "!url": "http://docs.angularjs.org/api/ng.$rootScope.Scope#$id",
+            "!doc": "Unique scope ID."
+          }
+        },
+        $sce: {
+          HTML: "string",
+          CSS: "string",
+          URL: "string",
+          RESOURCE_URL: "string",
+          JS: "string",
+          getTrusted: "fn(type: string, maybeTrusted: ?) -> !1",
+          getTrustedCss: "fn(maybeTrusted: ?) -> !0",
+          getTrustedHtml: "fn(maybeTrusted: ?) -> !0",
+          getTrustedJs: "fn(maybeTrusted: ?) -> !0",
+          getTrustedResourceUrl: "fn(maybeTrusted: ?) -> !0",
+          getTrustedUrl: "fn(maybeTrusted: ?) -> !0",
+          parse: "fn(type: string, expression: string) -> fn(context: ?, locals: ?) -> ?",
+          parseAsCss: "fn(expression: string) -> fn(context: ?, locals: ?) -> ?",
+          parseAsHtml: "fn(expression: string) -> fn(context: ?, locals: ?) -> ?",
+          parseAsJs: "fn(expression: string) -> fn(context: ?, locals: ?) -> ?",
+          parseAsResourceUrl: "fn(expression: string) -> fn(context: ?, locals: ?) -> ?",
+          parseAsUrl: "fn(expression: string) -> fn(context: ?, locals: ?) -> ?",
+          trustAs: "fn(type: string, value: ?) -> !1",
+          trustAsHtml: "fn(value: ?) -> !0",
+          trustAsJs: "fn(value: ?) -> !0",
+          trustAsResourceUrl: "fn(value: ?) -> !0",
+          trustAsUrl: "fn(value: ?) -> !0",
+          isEnabled: "fn() -> bool"
+        },
+        $templateCache: {
+          "!url": "http://docs.angularjs.org/api/ng.$templateCache",
+          "!proto": "cacheObj"
+        },
+        $timeout: {
+          "!type": "fn(fn: fn(), delay?: number, invokeApply?: bool) -> +Promise",
+          "!url": "http://docs.angularjs.org/api/ng.$timeout",
+          "!doc": "Angular's wrapper for window.setTimeout.",
+          cancel: "fn(promise: +Promise)"
+        },
+        $window: "<top>",
+        $injector: {
+          "!url": "http://docs.angularjs.org/api/AUTO.$injector",
+          "!doc": "Retrieve object instances as defined by provider.",
+          annotate: {
+            "!type": "fn(f: fn()) -> [string]",
+            "!url": "http://docs.angularjs.org/api/AUTO.$injector#annotate",
+            "!doc": "Returns an array of service names which the function is requesting for injection."
+          },
+          get: {
+            "!type": "fn(name: string) -> ?",
+            "!url": "http://docs.angularjs.org/api/AUTO.$injector#get",
+            "!doc": "Return an instance of a service."
+          },
+          has: {
+            "!type": "fn(name: string) -> bool",
+            "!url": "http://docs.angularjs.org/api/AUTO.$injector#has",
+            "!doc": "Allows the user to query if the particular service exist."
+          },
+          instantiate: {
+            "!type": "fn(type: fn(), locals?: ?) -> +!0",
+            "!url": "http://docs.angularjs.org/api/AUTO.$injector#instantiate",
+            "!doc": "Create a new instance of JS type."
+          },
+          invoke: {
+            "!type": "fn(type: fn(), self?: ?, locals?: ?) -> !0.!ret",
+            "!url": "http://docs.angularjs.org/api/AUTO.$injector#invoke",
+            "!doc": "Invoke the method and supply the method arguments from the $injector."
+          }
+        },
+        $provide: {
+          "!url": "http://docs.angularjs.org/api/AUTO.$provide",
+          "!doc": "Use $provide to register new providers with the $injector.",
+          constant: {
+            "!type": "fn(name: string, value: ?) -> !this",
+            "!effects": ["custom angular_regField"],
+            "!url": "http://docs.angularjs.org/api/AUTO.$provide#constant",
+            "!doc": "A constant value."
+          },
+          decorator: {
+            "!type": "fn(name: string, decorator: fn())",
+            "!effects": ["custom angular_regFieldCall"],
+            "!url": "http://docs.angularjs.org/api/AUTO.$provide#decorator",
+            "!doc": "Decoration of service, allows the decorator to intercept the service instance creation."
+          },
+          factory: {
+            "!type": "fn(name: string, providerFunction: fn()) -> !this",
+            "!effects": ["custom angular_regFieldCall"],
+            "!url": "http://docs.angularjs.org/api/AUTO.$provide#factory",
+            "!doc": "A short hand for configuring services if only $get method is required."
+          },
+          provider: {
+            "!type": "fn(name: string, providerType: fn()) -> !this",
+            "!effects": ["custom angular_regFieldCall"],
+            "!url": "http://docs.angularjs.org/api/AUTO.$provide#provider",
+            "!doc": "Register a provider for a service."
+          },
+          service: {
+            "!type": "fn(name: string, constructor: fn()) -> !this",
+            "!effects": ["custom angular_regFieldNew"],
+            "!url": "http://docs.angularjs.org/api/AUTO.$provide#provider",
+            "!doc": "Register a provider for a service."
+          },
+          value: {
+            "!type": "fn(name: string, object: ?) -> !this",
+            "!effects": ["custom angular_regField"],
+            "!url": "http://docs.angularjs.org/api/AUTO.$providevalue",
+            "!doc": "A short hand for configuring services if the $get method is a constant."
+          }
+        },
+        $cookies: {
+          "!url": "http://docs.angularjs.org/api/ngCookies.$cookies",
+          "!doc": "Provides read/write access to browser's cookies.",
+          text: "string"
+        },
+        $resource: {
+          "!type": "fn(url: string, paramDefaults?: ?, actions?: ?) -> +Resource",
+          "!url": "http://docs.angularjs.org/api/ngResource.$resource",
+          "!doc": "Creates a resource object that lets you interact with RESTful server-side data sources."
+        },
+        $route: {
+          "!url": "http://docs.angularjs.org/api/ngRoute.$route",
+          "!doc": "Deep-link URLs to controllers and views.",
+          reload: {
+            "!type": "fn()",
+            "!url": "http://docs.angularjs.org/api/ngRoute.$route#reload",
+            "!doc": "Reload the current route even if $location hasn't changed."
+          },
+          current: {
+            "!url": "http://docs.angularjs.org/api/ngRoute.$route#current",
+            "!doc": "Reference to the current route definition.",
+            controller: "?",
+            locals: "?"
+          },
+          routes: "[?]"
+        },
+        $sanitize: {
+          "!type": "fn(string) -> string",
+          "!url": "http://docs.angularjs.org/api/ngSanitize.$sanitize",
+          "!doc": "Sanitize HTML input."
+        },
+        $swipe: {
+          "!url": "http://docs.angularjs.org/api/ngTouch.$swipe",
+          "!doc": "A service that abstracts the messier details of hold-and-drag swipe behavior.",
+          bind: {
+            "!type": "fn(element: +Element, handlers: ?)",
+            "!url": "http://docs.angularjs.org/api/ngTouch.$swipe#bind",
+            "!doc": "Abstracts the messier details of hold-and-drag swipe behavior."
+          }
+        }
+      }
+    },
+    angular: {
+      bind: {
+        "!type": "fn(self: ?, fn: fn(), args?: ?) -> !custom:angular_bind",
+        "!url": "http://docs.angularjs.org/api/angular.bind",
+        "!doc": "Returns a function which calls function fn bound to self."
+      },
+      bootstrap: {
+        "!type": "fn(element: +Element, modules?: [string]) -> service.$injector",
+        "!url": "http://docs.angularjs.org/api/angular.bootstrap",
+        "!doc": "Use this function to manually start up angular application."
+      },
+      copy: {
+        "!type": "fn(source: ?, target?: ?) -> !0",
+        "!url": "http://docs.angularjs.org/api/angular.copy",
+        "!doc": "Creates a deep copy of source, which should be an object or an array."
+      },
+      element: {
+        "!type": "fn(element: +Element) -> jQuery.fn",
+        "!url": "http://docs.angularjs.org/api/angular.element",
+        "!doc": "Wraps a raw DOM element or HTML string as a jQuery element."
+      },
+      equals: {
+        "!type": "fn(o1: ?, o2: ?) -> bool",
+        "!url": "http://docs.angularjs.org/api/angular.equals",
+        "!doc": "Determines if two objects or two values are equivalent."
+      },
+      extend: {
+        "!type": "fn(dst: ?, src: ?) -> !0",
+        "!effects": ["copy !1 !0"],
+        "!url": "http://docs.angularjs.org/api/angular.extend",
+        "!doc": "Extends the destination object dst by copying all of the properties from the src object(s) to dst."
+      },
+      forEach: {
+        "!type": "fn(obj: ?, iterator: fn(value: ?, key: ?), context?: ?) -> !0",
+        "!effects": ["call !1 this=!2 !0.<i> number"],
+        "!url": "http://docs.angularjs.org/api/angular.forEach",
+        "!doc": "Invokes the iterator function once for each item in obj collection, which can be either an object or an array."
+      },
+      fromJson: {
+        "!type": "fn(json: string) -> ?",
+        "!url": "http://docs.angularjs.org/api/angular.fromJson",
+        "!doc": "Deserializes a JSON string."
+      },
+      identity: {
+        "!type": "fn(val: ?) -> !0",
+        "!url": "http://docs.angularjs.org/api/angular.identity",
+        "!doc": "A function that returns its first argument."
+      },
+      injector: {
+        "!type": "fn(modules: [string]) -> service.$injector",
+        "!url": "http://docs.angularjs.org/api/angular.injector",
+        "!doc": "Creates an injector function"
+      },
+      isArray: {
+        "!type": "fn(val: ?) -> bool",
+        "!url": "http://docs.angularjs.org/api/angular.isArray",
+        "!doc": "Determines if a reference is an Array."
+      },
+      isDate: {
+        "!type": "fn(val: ?) -> bool",
+        "!url": "http://docs.angularjs.org/api/angular.isDate",
+        "!doc": "Determines if a reference is a date."
+      },
+      isDefined: {
+        "!type": "fn(val: ?) -> bool",
+        "!url": "http://docs.angularjs.org/api/angular.isDefined",
+        "!doc": "Determines if a reference is defined."
+      },
+      isElement: {
+        "!type": "fn(val: ?) -> bool",
+        "!url": "http://docs.angularjs.org/api/angular.isElement",
+        "!doc": "Determines if a reference is a DOM element."
+      },
+      isFunction: {
+        "!type": "fn(val: ?) -> bool",
+        "!url": "http://docs.angularjs.org/api/angular.isFunction",
+        "!doc": "Determines if a reference is a function."
+      },
+      isNumber: {
+        "!type": "fn(val: ?) -> bool",
+        "!url": "http://docs.angularjs.org/api/angular.isNumber",
+        "!doc": "Determines if a reference is a number."
+      },
+      isObject: {
+        "!type": "fn(val: ?) -> bool",
+        "!url": "http://docs.angularjs.org/api/angular.isObject",
+        "!doc": "Determines if a reference is an object."
+      },
+      isString: {
+        "!type": "fn(val: ?) -> bool",
+        "!url": "http://docs.angularjs.org/api/angular.isString",
+        "!doc": "Determines if a reference is a string."
+      },
+      isUndefined: {
+        "!type": "fn(val: ?) -> bool",
+        "!url": "http://docs.angularjs.org/api/angular.isUndefined",
+        "!doc": "Determines if a reference is undefined."
+      },
+      lowercase: {
+        "!type": "fn(val: string) -> string",
+        "!url": "http://docs.angularjs.org/api/angular.lowercase",
+        "!doc": "Converts the specified string to lowercase."
+      },
+      module: {
+        "!type": "fn(name: string, deps: [string]) -> !custom:angular_module",
+        "!url": "http://docs.angularjs.org/api/angular.module",
+        "!doc": "A global place for creating, registering and retrieving Angular modules."
+      },
+      Module: "Module",
+      noop: {
+        "!type": "fn()",
+        "!url": "http://docs.angularjs.org/api/angular.noop",
+        "!doc": "A function that performs no operations."
+      },
+      toJson: {
+        "!type": "fn(val: ?) -> string",
+        "!url": "http://docs.angularjs.org/api/angular.toJson",
+        "!doc": "Serializes input into a JSON-formatted string."
+      },
+      uppercase: {
+        "!type": "fn(string) -> string",
+        "!url": "http://docs.angularjs.org/api/angular.uppercase",
+        "!doc": "Converts the specified string to uppercase."
+      },
+      version: {
+        "!url": "http://docs.angularjs.org/api/angular.version",
+        full: "string",
+        major: "number",
+        minor: "number",
+        dot: "number",
+        codename: "string"
+      }
+    }
+  };
+});
+//#endregion
+
+var tern_Defs = {}
+
 
 
 //#region tern/defs/browser.json
@@ -23456,6 +24024,1236 @@ tern_Defs.ecmascript = {
    }
  }
  //#endregion
+
+//#region mongoose.json
+tern_Defs.mongoose = {
+  "!name": "node-mongoose",
+  "!define": {
+   "!known_modules": {
+    "mongoose": {
+     "!type": "+index.Mongoose"
+    }
+   },
+   "aggregate": {
+    "Aggregate": {
+     "!type": "fn(ops?: +Object)",
+     "!doc": "\n\nAggregate constructor used for building aggregation pipelines.",
+     "prototype": {
+      "Aggregate": {
+       "!type": "fn(ops?: +Object)",
+       "!doc": "\n\nAggregate constructor used for building aggregation pipelines."
+      },
+      "append": {
+       "!type": "fn(ops: +Object) -> +aggregate.Aggregate",
+       "!doc": "\n\nAppends new operators to this aggregate pipeline"
+      },
+      "project": {
+       "!type": "fn(arg: +Object) -> +aggregate.Aggregate",
+       "!doc": "\n\nAppends a new $project operator to this aggregate pipeline."
+      },
+      "near": {
+       "!type": "fn(parameters: +Object) -> +aggregate.Aggregate",
+       "!doc": "\n\nAppends a new $geoNear operator to this aggregate pipeline."
+      },
+      "unwind": {
+       "!type": "fn(fields: string) -> +aggregate.Aggregate",
+       "!doc": "\n\nAppends new custom $unwind operator(s) to this aggregate pipeline."
+      },
+      "sort": {
+       "!type": "fn(arg: +Object) -> +query.Query",
+       "!doc": "\n\nAppends a new $sort operator to this aggregate pipeline."
+      },
+      "read": {
+       "!type": "fn(pref: string, tags?: [?])",
+       "!doc": "\n\nSets the readPreference option for the aggregation query."
+      },
+      "allowDiskUse": {
+       "!type": "fn(value: bool, tags?: [?])",
+       "!doc": "\n\nSets the allowDiskUse option for the aggregation query (ignored for < 2.6.0)"
+      },
+      "cursor": {
+       "!type": "fn(options: +Object)",
+       "!doc": "\n\nSets the cursor option option for the aggregation query (ignored for < 2.6.0)"
+      },
+      "exec": {
+       "!type": "fn(callback?: fn()) -> +promise.Promise",
+       "!doc": "\n\nExecutes the aggregate pipeline on the currently bound Model."
+      }
+     }
+    }
+   },
+   "browser": {},
+   "browserDocument": {
+    "Document": {
+     "!type": "fn(obj: +Object, fields?: +Object, skipId?: bool)",
+     "!doc": "\n\nDocument constructor."
+    }
+   },
+   "cast": {},
+   "collection": {
+    "Collection": {
+     "!type": "fn(name: string, conn: +connection.Connection, opts: +Object)",
+     "!doc": "\n\nAbstract Collection constructor",
+     "prototype": {
+      "Collection": {
+       "!type": "fn(name: string, conn: +connection.Connection, opts: +Object)",
+       "!doc": "\n\nAbstract Collection constructor"
+      },
+      "name": {
+       "!type": "?"
+      },
+      "conn": {
+       "!type": "?"
+      }
+     }
+    }
+   },
+   "connection": {
+    "Connection": {
+     "!type": "fn(base: +index.Mongoose)",
+     "!doc": "\n\nConnection constructor",
+     "prototype": {
+      "Connection": {
+       "!type": "fn(base: +index.Mongoose)",
+       "!doc": "\n\nConnection constructor"
+      },
+      "readyState": {
+       "!type": "?"
+      },
+      "collections": {
+       "!type": "?"
+      },
+      "db": {
+       "!type": "?"
+      },
+      "open": {
+       "!type": "fn(connection_string: string, database?: string, port?: number, options?: +Object, callback?: fn())",
+       "!doc": "\n\nOpens the connection to MongoDB."
+      },
+      "openSet": {
+       "!type": "fn(uris: string, database?: string, options?: +Object, callback?: fn())",
+       "!doc": "\n\nOpens the connection to a replica set."
+      },
+      "close": {
+       "!type": "fn(callback?: fn()) -> +connection.Connection",
+       "!doc": "\n\nCloses the connection"
+      },
+      "collection": {
+       "!type": "fn(name: string, options?: +Object) -> +collection.Collection",
+       "!doc": "\n\nRetrieves a collection, creating it if not cached."
+      },
+      "model": {
+       "!type": "fn(name: string, schema?: +schema.Schema, collection?: string) -> +model.Model",
+       "!doc": "\n\nDefines or retrieves a model."
+      },
+      "modelNames": {
+       "!type": "fn() -> [?]",
+       "!doc": "\n\nReturns an array of model names created on this connection."
+      },
+      "setProfiling": {
+       "!type": "fn(level: number, ms?: number, callback: fn())",
+       "!doc": "\n\nSet profiling level."
+      }
+     }
+    }
+   },
+   "connectionstate": {},
+   "document": {
+    "Document": {
+     "!type": "fn(obj: +Object, fields?: +Object, skipId?: bool)",
+     "!doc": "\n\nDocument constructor.",
+     "prototype": {
+      "schema": {
+       "!type": "?"
+      },
+      "isNew": {
+       "!type": "?"
+      },
+      "id": {
+       "!type": "?"
+      },
+      "errors": {
+       "!type": "?"
+      },
+      "update": {
+       "!type": "fn(doc: +Object, options: +Object, callback: fn()) -> +query.Query",
+       "!doc": "\n\nSends an update command with this document <code>_id</code> as the query selector."
+      },
+      "set": {
+       "!type": "fn(path: string, val: ?, type?: +schema.Schema, options?: +Object)",
+       "!doc": "\n\nSets the value of a path, or many paths."
+      },
+      "get": {
+       "!type": "fn(path: string, type?: +schema.Schema)",
+       "!doc": "\n\nReturns the value of a path."
+      },
+      "markModified": {
+       "!type": "fn(path: string)",
+       "!doc": "\n\nMarks the path as having pending changes to write to the db."
+      },
+      "modifiedPaths": {
+       "!type": "fn() -> [?]",
+       "!doc": "\n\nReturns the list of paths that have been modified."
+      },
+      "isModified": {
+       "!type": "fn(path?: string) -> bool",
+       "!doc": "\n\nReturns true if this document was modified, else false."
+      },
+      "isDirectModified": {
+       "!type": "fn(path: string) -> bool",
+       "!doc": "\n\nReturns true if <code>path</code> was directly set and modified, else false."
+      },
+      "isInit": {
+       "!type": "fn(path: string) -> bool",
+       "!doc": "\n\nChecks if <code>path</code> was initialized."
+      },
+      "isSelected": {
+       "!type": "fn(path: string) -> bool",
+       "!doc": "\n\nChecks if <code>path</code> was selected in the source query which initialized this document."
+      },
+      "validate": {
+       "!type": "fn(optional: fn()) -> +promise.Promise",
+       "!doc": "\n\nExecutes registered validation rules for this document."
+      },
+      "invalidate": {
+       "!type": "fn(path: string, errorMsg: string, value: +Object)",
+       "!doc": "\n\nMarks a path as invalid, causing validation to fail."
+      },
+      "toObject": {
+       "!type": "fn(options?: +Object) -> +Object",
+       "!doc": "\n\nConverts this document into a plain javascript object, ready for storage in MongoDB."
+      },
+      "minimize": {
+       "!type": "fn(object: +Object) -> +Object",
+       "!doc": "\n\nMinimizes an object, removing undefined values and empty objects"
+      },
+      "applyGetters": {
+       "!type": "fn(self: +document.Document, json: +Object, type: string) -> +Object",
+       "!doc": "\n\nApplies virtuals properties to <code>json</code>."
+      },
+      "toJSON": {
+       "!type": "fn(options: +Object) -> +Object",
+       "!doc": "\n\nThe return value of this method is used in calls to JSON.stringify(doc)."
+      },
+      "inspect": {
+       "!type": "fn()",
+       "!doc": "\n\nHelper for console.log"
+      },
+      "toString": {
+       "!doc": "\n\nHelper for console.log"
+      },
+      "equals": {
+       "!type": "fn(doc: +document.Document) -> bool",
+       "!doc": "\n\nReturns true if the Document stores the same data as doc."
+      },
+      "populate": {
+       "!type": "fn(path?: string, callback?: fn()) -> +document.Document",
+       "!doc": "\n\nPopulates document references, executing the <code>callback</code> when complete."
+      },
+      "populated": {
+       "!type": "fn(path: string) -> [?]",
+       "!doc": "\n\nGets _id(s) used during population of the given <code>path</code>."
+      }
+     }
+    }
+   },
+   "document_provider": {},
+   "drivers_node-mongodb-native_binary": {},
+   "drivers_node-mongodb-native_collection": {
+    "NativeCollection": {
+     "!type": "fn()",
+     "!doc": "\n\nA <a href=\"https://github.com/mongodb/node-mongodb-native\">node-mongodb-native</a> collection implementation.",
+     "prototype": {
+      "getIndexes": {
+       "!type": "?",
+       "!doc": "\n\nRetreives information about this collections indexes."
+      }
+     }
+    }
+   },
+   "drivers_node-mongodb-native_connection": {
+    "NativeConnection": {
+     "!type": "fn()",
+     "!doc": "\n\nA <a href=\"https://github.com/mongodb/node-mongodb-native\">node-mongodb-native</a> connection implementation.",
+     "prototype": {
+      "STATES": {
+       "!type": "?",
+       "!doc": "\n\nExpose the possible connection states."
+      },
+      "useDb": {
+       "!type": "fn(name: string) -> +connection.Connection",
+       "!doc": "\n\nSwitches to a different database using the same connection pool."
+      },
+      "validate": {
+       "!type": "fn(o: +Object)",
+       "!doc": "\n\nValidates the driver db options."
+      }
+     }
+    }
+   },
+   "drivers_node-mongodb-native_objectid": {},
+   "drivers_SPEC": {},
+   "error_browserMissingSchema": {
+    "MissingSchemaError": {
+     "!type": "fn()",
+     "!doc": "\n\nMissingSchema Error constructor.",
+     "prototype": {
+      "MissingSchemaError": {
+       "!type": "fn()",
+       "!doc": "\n\nMissingSchema Error constructor."
+      }
+     }
+    }
+   },
+   "error_cast": {
+    "CastError": {
+     "!type": "fn(type: string, value: string)",
+     "!doc": "\n\nCasting Error constructor."
+    }
+   },
+   "error_divergentArray": {
+    "DivergentArrayError": {
+     "!type": "fn()",
+     "!doc": "\n\nDivergentArrayError constructor.",
+     "prototype": {
+      "DivergentArrayError": {
+       "!type": "fn()",
+       "!doc": "\n\nDivergentArrayError constructor."
+      }
+     }
+    }
+   },
+   "error_messages": {},
+   "error_missingSchema": {
+    "MissingSchemaError": {
+     "!type": "fn()",
+     "!doc": "\n\nMissingSchema Error constructor.",
+     "prototype": {
+      "MissingSchemaError": {
+       "!type": "fn()",
+       "!doc": "\n\nMissingSchema Error constructor."
+      }
+     }
+    }
+   },
+   "error_overwriteModel": {
+    "OverwriteModelError": {
+     "!type": "fn()",
+     "!doc": "\n\nOverwriteModel Error constructor.",
+     "prototype": {
+      "OverwriteModelError": {
+       "!type": "fn()",
+       "!doc": "\n\nOverwriteModel Error constructor."
+      }
+     }
+    }
+   },
+   "error_validation": {
+    "ValidationError": {
+     "!type": "fn(instance: +document.Document)",
+     "!doc": "\n\nDocument Validation Error"
+    }
+   },
+   "error_validator": {
+    "ValidatorError": {
+     "!type": "fn(properties: +Object)",
+     "!doc": "\n\nSchema validator error"
+    }
+   },
+   "error_version": {
+    "VersionError": {
+     "!type": "fn()",
+     "!doc": "\n\nVersion Error constructor."
+    }
+   },
+   "error": {
+    "MongooseError": {
+     "!type": "fn(msg: string)",
+     "!doc": "\n\nMongooseError constructor",
+     "prototype": {
+      "MongooseError": {
+       "!type": "fn(msg: string)",
+       "!doc": "\n\nMongooseError constructor"
+      },
+      "messages": {
+       "!type": "?",
+       "!doc": "\n\nThe default built-in validator error messages."
+      }
+     }
+    }
+   },
+   "index": {
+    "Mongoose": {
+     "!type": "fn()",
+     "!doc": "\n\nMongoose constructor.",
+     "prototype": {
+      "Mongoose": {
+       "!type": "index.Mongoose",
+       "!doc": "\n\nThe Mongoose constructor"
+      },
+      "STATES": {
+       "!type": "?",
+       "!doc": "\n\nExpose connection states for user-land"
+      },
+      "set": {
+       "!type": "fn(key: string, value: string)",
+       "!doc": "\n\nSets mongoose options"
+      },
+      "get": {
+       "!type": "?",
+       "!doc": "\n\nGets mongoose options"
+      },
+      "createConnection": {
+       "!type": "fn(uri?: string, options?: +Object) -> +connection.Connection",
+       "!doc": "\n\nCreates a Connection instance."
+      },
+      "connect": {
+       "!type": "fn(uri: string, options?: +Object, callback?: fn()) -> +index.Mongoose",
+       "!doc": "\n\nOpens the default mongoose connection."
+      },
+      "disconnect": {
+       "!type": "fn(fn?: fn()) -> +index.Mongoose",
+       "!doc": "\n\nDisconnects all connections."
+      },
+      "model": {
+       "!type": "fn(name: string, schema?: +schema.Schema, collection?: string, skipInit?: bool) -> model.Model",
+       "!doc": "\n\nDefines a model or retrieves it."
+      },
+      "modelNames": {
+       "!type": "fn() -> [?]",
+       "!doc": "\n\nReturns an array of model names created on this instance of Mongoose."
+      },
+      "plugin": {
+       "!type": "fn(fn: fn(), opts?: +Object) -> +index.Mongoose",
+       "!doc": "\n\nDeclares a global plugin executed on all Schemas."
+      },
+      "connection": {
+       "!type": "?"
+      },
+      "Collection": {
+       "!type": "collection.Collection",
+       "!doc": "\n\nThe Mongoose Collection constructor"
+      },
+      "Connection": {
+       "!type": "connection.Connection",
+       "!doc": "\n\nThe Mongoose <a href=\"#connection_Connection\">Connection</a> constructor"
+      },
+      "version": {
+       "!type": "?",
+       "!doc": "\n\nThe Mongoose version"
+      },
+      "Schema": {
+       "!type": "schema.Schema",
+       "!doc": "\n\nThe Mongoose <a href=\"#schema_Schema\">Schema</a> constructor"
+      },
+      "SchemaType": {
+       "!type": "schematype.SchemaType",
+       "!doc": "\n\nThe Mongoose <a href=\"#schematype_SchemaType\">SchemaType</a> constructor"
+      },
+      "SchemaTypes": {
+       "!type": "?",
+       "!doc": "\n\nThe various Mongoose SchemaTypes."
+      },
+      "VirtualType": {
+       "!type": "virtualtype.VirtualType",
+       "!doc": "\n\nThe Mongoose <a href=\"#virtualtype_VirtualType\">VirtualType</a> constructor"
+      },
+      "Types": {
+       "!type": "?",
+       "!doc": "\n\nThe various Mongoose Types."
+      },
+      "Query": {
+       "!type": "query.Query",
+       "!doc": "\n\nThe Mongoose <a href=\"#query_Query\">Query</a> constructor."
+      },
+      "Promise": {
+       "!type": "promise.Promise",
+       "!doc": "\n\nThe Mongoose <a href=\"#promise_Promise\">Promise</a> constructor."
+      },
+      "Model": {
+       "!type": "model.Model",
+       "!doc": "\n\nThe Mongoose <a href=\"#model_Model\">Model</a> constructor."
+      },
+      "Document": {
+       "!type": "document.Document",
+       "!doc": "\n\nThe Mongoose <a href=\"#document-js\">Document</a> constructor."
+      },
+      "Error": {
+       "!type": "?",
+       "!doc": "\n\nThe <a href=\"#error_MongooseError\">MongooseError</a> constructor."
+      },
+      "mongo": {
+       "!type": "?",
+       "!doc": "\n\nThe <a href=\"https://github.com/mongodb/node-mongodb-native\">node-mongodb-native</a> driver Mongoose uses."
+      },
+      "mquery": {
+       "!type": "?",
+       "!doc": "\n\nThe <a href=\"https://github.com/aheckmann/mquery\">mquery</a> query builder Mongoose uses."
+      }
+     }
+    }
+   },
+   "internal": {},
+   "model": {
+    "Model": {
+     "!type": "fn(doc: +Object)",
+     "!doc": "\n\nModel constructor",
+     "prototype": {
+      "Model": {
+       "!type": "fn(doc: +Object)",
+       "!doc": "\n\nModel constructor"
+      },
+      "db": {
+       "!type": "?"
+      },
+      "collection": {
+       "!type": "?"
+      },
+      "modelName": {
+       "!type": "?"
+      },
+      "save": {
+       "!type": "fn(fn?: fn(err: +Error, product: +model.Model, numberAffected: number))",
+       "!doc": "\n\n@description Saves this document."
+      },
+      "operand": {
+       "!type": "fn(self: +document.Document, where: +Object, delta: +Object, data: +Object, val: +schema_mixed.Mixed, operation?: string)",
+       "!doc": "\n\nApply the operation to the delta (update) clause as\nwell as track versioning for our where clause."
+      },
+      "handleAtomics": {
+       "!type": "fn(self: +document.Document, where: +Object, delta: +Object, data: +Object, value: [?])",
+       "!doc": "\n\nCompiles an update and where clause for a <code>val</code> with _atomics."
+      },
+      "checkDivergentArray": {
+       "!type": "fn(doc: +document.Document, path: string) -> string",
+       "!doc": "\n\nDetermine if array was populated with some form of filter and is now\nbeing updated in a manner which could overwrite data unintentionally."
+      },
+      "increment": {
+       "!type": "fn()",
+       "!doc": "\n\nSignal that we desire an increment of this documents version."
+      },
+      "remove": {
+       "!type": "fn(conditions: +Object, callback?: fn(err: +Error))",
+       "!doc": "\n\n@description Removes this document from the db."
+      },
+      "model": {
+       "!type": "fn(name: string)",
+       "!doc": "\n\nReturns another Model instance."
+      },
+      "schema": {
+       "!type": "?"
+      },
+      "base": {
+       "!type": "?"
+      },
+      "discriminators": {
+       "!type": "?"
+      },
+      "convertTo_id": {
+       "!type": "fn(val: [?]) -> [?]",
+       "!doc": "\n\nRetrieve the _id of <code>val</code> if a Document or Array of Documents."
+      }
+     },
+     "discriminator": {
+      "!type": "fn(name: string, schema: +schema.Schema)",
+      "!doc": "\n\nAdds a discriminator type."
+     },
+     "ensureIndexes": {
+      "!type": "fn(cb?: fn()) -> +promise.Promise",
+      "!doc": "\n\nSends <code>ensureIndex</code> commands to mongo for each index declared in the schema."
+     },
+     "remove": {
+      "!type": "fn(conditions: +Object, callback?: fn(err: +Error))",
+      "!doc": "\n\nRemoves documents from the collection."
+     },
+     "find": {
+      "!type": "fn(conditions: +Object, fields?: +Object, options?: +Object, callback?: fn()) -> +query.Query",
+      "!doc": "\n\nFinds documents"
+     },
+     "findById": {
+      "!type": "fn(id: +schema_objectid.ObjectId, fields?: +Object, options?: +Object, callback?: fn()) -> +query.Query",
+      "!doc": "\n\nFinds a single document by id."
+     },
+     "findOne": {
+      "!type": "fn(conditions: +Object, fields?: +Object, options?: +Object, callback?: fn()) -> +query.Query",
+      "!doc": "\n\nFinds one document."
+     },
+     "count": {
+      "!type": "fn(conditions: +Object, callback?: fn()) -> +query.Query",
+      "!doc": "\n\nCounts number of matching documents in a database collection."
+     },
+     "distinct": {
+      "!type": "fn(field: string, conditions?: +Object, callback?: fn()) -> +query.Query",
+      "!doc": "\n\nCreates a Query for a <code>distinct</code> operation."
+     },
+     "where": {
+      "!type": "fn(path: string, val?: +Object) -> +query.Query",
+      "!doc": "\n\nCreates a Query, applies the passed conditions, and returns the Query."
+     },
+     "$where": {
+      "!type": "fn(argument: string) -> +query.Query",
+      "!doc": "\n\nCreates a <code>Query</code> and specifies a <code>$where</code> condition."
+     },
+     "findOneAndUpdate": {
+      "!type": "fn(conditions?: +Object, update?: +Object, options?: +Object, callback?: fn()) -> +query.Query",
+      "!doc": "\n\nIssues a mongodb findAndModify update command."
+     },
+     "findByIdAndUpdate": {
+      "!type": "fn(id: +schema_objectid.ObjectId, update?: +Object, options?: +Object, callback?: fn()) -> +query.Query",
+      "!doc": "\n\nIssues a mongodb findAndModify update command by a documents id."
+     },
+     "findOneAndRemove": {
+      "!type": "fn(conditions: +Object, options?: +Object, callback?: fn()) -> +query.Query",
+      "!doc": "\n\nIssue a mongodb findAndModify remove command."
+     },
+     "findByIdAndRemove": {
+      "!type": "fn(id: +schema_objectid.ObjectId, options?: +Object, callback?: fn()) -> +query.Query",
+      "!doc": "\n\nIssue a mongodb findAndModify remove command by a documents id."
+     },
+     "create": {
+      "!type": "fn(doc: [?], fn?: fn()) -> +promise.Promise",
+      "!doc": "\n\nShortcut for creating a new Document that is automatically saved to the db if valid."
+     },
+     "hydrate": {
+      "!type": "fn(obj: +Object) -> +document.Document",
+      "!doc": "\n\nShortcut for creating a new Document from existing raw data, pre-saved in the DB.\nThe document returned has no paths marked as modified initially."
+     },
+     "update": {
+      "!type": "fn(conditions: +Object, doc: +Object, options?: +Object, callback?: fn()) -> +query.Query",
+      "!doc": "\n\nUpdates documents in the database without returning them."
+     },
+     "mapReduce": {
+      "!type": "fn(o: +Object, callback?: fn()) -> +promise.Promise",
+      "!doc": "\n\nExecutes a mapReduce command."
+     },
+     "geoNear": {
+      "!type": "fn(GeoJSON: +Object, options: +Object, callback?: fn()) -> +promise.Promise",
+      "!doc": "\n\ngeoNear support for Mongoose"
+     },
+     "aggregate": {
+      "!type": "fn(?: +Object, callback?: fn()) -> +aggregate.Aggregate",
+      "!doc": "\n\nPerforms <a href=\"http://docs.mongodb.org/manual/applications/aggregation/\">aggregations</a> on the models collection."
+     },
+     "geoSearch": {
+      "!type": "fn(condition: +Object, options: +Object, callback?: fn()) -> +promise.Promise",
+      "!doc": "\n\nImplements <code>$geoSearch</code> functionality for Mongoose"
+     },
+     "populate": {
+      "!type": "fn(docs: +document.Document, options: +Object, cb?: fn()) -> +promise.Promise",
+      "!doc": "\n\nPopulates document references."
+     },
+     "compile": {
+      "!type": "fn(name: string, schema: +schema.Schema, collectionName: string, connection: +connection.Connection, base: +index.Mongoose)",
+      "!doc": "\n\nCompiler utility."
+     },
+     "__subclass": {
+      "!type": "fn(conn: +connection.Connection, schema?: +schema.Schema, collection?: string) -> +model.Model",
+      "!doc": "\n\nSubclass this model with <code>conn</code>, <code>schema</code>, and <code>collection</code> settings."
+     }
+    }
+   },
+   "promise": {
+    "Promise": {
+     "!type": "fn(fn: fn())",
+     "!doc": "\n\nPromise constructor.",
+     "prototype": {
+      "Promise": {
+       "!type": "fn(fn: fn())",
+       "!doc": "\n\nPromise constructor."
+      },
+      "error": {
+       "!type": "fn(err: string) -> +promise.Promise",
+       "!doc": "\n\nRejects this promise with <code>err</code>."
+      },
+      "resolve": {
+       "!type": "fn(err?: ?, val?: +Object)",
+       "!doc": "\n\nResolves this promise to a rejected state if <code>err</code> is passed or a fulfilled state if no <code>err</code> is passed."
+      },
+      "addBack": {
+       "!type": "?",
+       "!doc": "\n\nAdds a single function as a listener to both err and complete."
+      },
+      "complete": {
+       "!type": "?",
+       "!doc": "\n\nFulfills this promise with passed arguments."
+      },
+      "addCallback": {
+       "!type": "?",
+       "!doc": "\n\nAdds a listener to the <code>complete</code> (success) event."
+      },
+      "addErrback": {
+       "!type": "?",
+       "!doc": "\n\nAdds a listener to the <code>err</code> (rejected) event."
+      }
+     }
+    }
+   },
+   "query": {
+    "Query": {
+     "!type": "fn(options?: +Object, model?: +Object, conditions?: +Object, collection?: +Object)",
+     "!doc": "\n\nQuery constructor used for building queries.",
+     "prototype": {
+      "use$geoWithin": {
+       "!type": "?",
+       "!doc": "\n\nFlag to opt out of using <code>$geoWithin</code>."
+      },
+      "toConstructor": {
+       "!type": "fn() -> +query.Query",
+       "!doc": "\n\nConverts this query to a customized, reusable query constructor with all arguments and options retained."
+      },
+      "read": {
+       "!type": "fn(pref: string, tags?: [?]) -> +query.Query",
+       "!doc": "\n\nDetermines the MongoDB nodes from which to read."
+      },
+      "setOptions": {
+       "!type": "fn(options: +Object)",
+       "!doc": "\n\nSets query options."
+      },
+      "lean": {
+       "!type": "fn(bool: bool) -> +query.Query",
+       "!doc": "\n\nSets the lean option."
+      },
+      "find": {
+       "!type": "fn(criteria?: +Object, callback?: fn()) -> +query.Query",
+       "!doc": "\n\nFinds documents."
+      },
+      "completeMany": {
+       "!type": "fn(model: +model.Model, docs: [?], fields: +Object, self: +query.Query, pop?: [?], promise: +promise.Promise)",
+       "!doc": "\n\nhydrates many documents"
+      },
+      "findOne": {
+       "!type": "fn(criteria?: +Object, callback?: fn()) -> +query.Query",
+       "!doc": "\n\nDeclares the query a findOne operation. When executed, the first found document is passed to the callback."
+      },
+      "count": {
+       "!type": "fn(criteria?: +Object, callback?: fn()) -> +query.Query",
+       "!doc": "\n\nSpecifying this query as a <code>count</code> query."
+      },
+      "distinct": {
+       "!type": "fn(criteria?: +Object, field?: string, callback?: fn()) -> +query.Query",
+       "!doc": "\n\nDeclares or executes a distict() operation."
+      },
+      "sort": {
+       "!type": "fn(arg: +Object) -> +query.Query",
+       "!doc": "\n\nSets the sort order"
+      },
+      "remove": {
+       "!type": "fn(criteria?: +Object, callback?: fn()) -> +query.Query",
+       "!doc": "\n\nDeclare and/or execute this query as a remove() operation."
+      },
+      "completeOne": {
+       "!type": "fn(model: +model.Model, doc: +document.Document, fields: +Object, self: +query.Query, pop?: [?], promise: +promise.Promise)",
+       "!doc": "\n\nhydrates a document"
+      },
+      "update": {
+       "!type": "fn(criteria?: +Object, doc?: +Object, options?: +Object, callback?: fn()) -> +query.Query",
+       "!doc": "\n\nDeclare and/or execute this query as an update() operation."
+      },
+      "exec": {
+       "!type": "fn(operation?: string, callback?: fn()) -> +promise.Promise",
+       "!doc": "\n\nExecutes the query"
+      },
+      "populate": {
+       "!type": "fn(path: +Object, select?: +Object, model?: +model.Model, match?: +Object, options?: +Object) -> +query.Query",
+       "!doc": "\n\nSpecifies paths which should be populated with other documents."
+      },
+      "cast": {
+       "!type": "fn(model: +model.Model, obj?: +Object) -> +Object",
+       "!doc": "\n\nCasts this query to the schema of <code>model</code>"
+      },
+      "stream": {
+       "!type": "fn(options?: +Object) -> +querystream.QueryStream",
+       "!doc": "\n\nReturns a Node.js 0.8 style <a href=\"http://nodejs.org/docs/v0.8.21/api/stream.html#stream_readable_stream\">read stream</a> interface."
+      },
+      "maxscan": {
+       "!type": "?",
+       "!doc": "\n\n*DEPRECATED* Alias of <code>maxScan</code>"
+      },
+      "tailable": {
+       "!type": "fn(bool: bool)",
+       "!doc": "\n\nSets the tailable option (for use with capped collections)."
+      },
+      "nearSphere": {
+       "!type": "fn()",
+       "!doc": "\n\n*DEPRECATED* Specifies a <code>$nearSphere</code> condition"
+      },
+      "center": {
+       "!type": "?",
+       "!doc": "\n\n*DEPRECATED* Alias for <a href=\"#query_Query-circle\">circle</a>"
+      },
+      "centerSphere": {
+       "!type": "fn(path?: string, val: +Object) -> +query.Query",
+       "!doc": "\n\n*DEPRECATED* Specifies a $centerSphere condition"
+      }
+     }
+    }
+   },
+   "queryhelpers": {
+    "makeLean": {
+     "!type": "fn(option: +Object)",
+     "!doc": "\n\nSet each path query option to lean",
+     "preparePopulationOptions": {
+      "!type": "fn(query: +query.Query, options: +Object) -> [?]",
+      "!doc": "\n\nPrepare a set of path options for query population."
+     },
+     "preparePopulationOptionsMQ": {
+      "!type": "fn(query: +query.Query, options: +Object) -> [?]",
+      "!doc": "\n\nPrepare a set of path options for query population. This is the MongooseQuery\nversion"
+     },
+     "createModel": {
+      "!type": "fn(model: +model.Model, doc: +Object, fields: +Object) -> +model.Model",
+      "!doc": "\n\nIf the document is a mapped discriminator type, it returns a model instance for that type, otherwise,\nit returns an instance of the given model."
+     },
+     "prototype": {
+      "makeLean": {
+       "!type": "fn(option: +Object)",
+       "!doc": "\n\nSet each path query option to lean"
+      }
+     }
+    }
+   },
+   "querystream": {
+    "QueryStream": {
+     "!type": "fn(query: +query.Query, options?: +Object)",
+     "!doc": "\n\nProvides a Node.js 0.8 style <a href=\"http://nodejs.org/docs/v0.8.21/api/stream.html#stream_readable_stream\">ReadStream</a> interface for Queries.",
+     "prototype": {
+      "QueryStream": {
+       "!type": "fn(query: +query.Query, options?: +Object)",
+       "!doc": "\n\nProvides a Node.js 0.8 style <a href=\"http://nodejs.org/docs/v0.8.21/api/stream.html#stream_readable_stream\">ReadStream</a> interface for Queries."
+      },
+      "readable": {
+       "!type": "?"
+      },
+      "paused": {
+       "!type": "?"
+      },
+      "pause": {
+       "!type": "fn()",
+       "!doc": "\n\nPauses this stream."
+      },
+      "resume": {
+       "!type": "fn()",
+       "!doc": "\n\nResumes this stream."
+      },
+      "destroy": {
+       "!type": "fn(err?: ?)",
+       "!doc": "\n\nDestroys the stream, closing the underlying cursor. No more events will be emitted."
+      }
+     }
+    }
+   },
+   "schema_array": {
+    "SchemaArray": {
+     "!type": "fn(key: string, cast: +schematype.SchemaType, options: +Object)",
+     "!doc": "\n\nArray SchemaType constructor"
+    }
+   },
+   "schema_boolean": {
+    "SchemaBoolean": {
+     "!type": "fn(path: string, options: +Object)",
+     "!doc": "\n\nBoolean SchemaType constructor."
+    }
+   },
+   "schema_buffer": {
+    "SchemaBuffer": {
+     "!type": "fn(key: string, cast: +schematype.SchemaType)",
+     "!doc": "\n\nBuffer SchemaType constructor"
+    }
+   },
+   "schema_date": {
+    "SchemaDate": {
+     "!type": "fn(key: string, options: +Object)",
+     "!doc": "\n\nDate SchemaType constructor.",
+     "prototype": {
+      "expires": {
+       "!type": "fn(when: number) -> +schematype.SchemaType",
+       "!doc": "\n\nDeclares a TTL index (rounded to the nearest second) for *Date* types only."
+      }
+     }
+    }
+   },
+   "schema_documentarray": {
+    "DocumentArray": {
+     "!type": "fn(key: string, schema: +schema.Schema, options: +Object)",
+     "!doc": "\n\nSubdocsArray SchemaType constructor",
+     "prototype": {
+      "scopePaths": {
+       "!type": "fn(array: +schema_documentarray.DocumentArray, fields: +Object, init: bool)",
+       "!doc": "\n\nScopes paths selected in a query to this array.\nNecessary for proper default application of subdocument values."
+      }
+     }
+    }
+   },
+   "schema_index": {},
+   "schema_mixed": {
+    "Mixed": {
+     "!type": "fn(path: string, options: +Object)",
+     "!doc": "\n\nMixed SchemaType constructor."
+    }
+   },
+   "schema_number": {
+    "SchemaNumber": {
+     "!type": "fn(key: string, options: +Object)",
+     "!doc": "\n\nNumber SchemaType constructor.",
+     "prototype": {
+      "min": {
+       "!type": "fn(value: number, message?: string) -> +schematype.SchemaType",
+       "!doc": "\n\nSets a minimum number validator."
+      },
+      "max": {
+       "!type": "fn(maximum: number, message?: string) -> +schematype.SchemaType",
+       "!doc": "\n\nSets a maximum number validator."
+      }
+     }
+    }
+   },
+   "schema_objectid": {
+    "ObjectId": {
+     "!type": "fn(key: string, options: +Object)",
+     "!doc": "\n\nObjectId SchemaType constructor.",
+     "prototype": {
+      "auto": {
+       "!type": "fn(turnOn: bool) -> +schematype.SchemaType",
+       "!doc": "\n\nAdds an auto-generated ObjectId default if turnOn is true."
+      }
+     }
+    }
+   },
+   "schema_string": {
+    "SchemaString": {
+     "!type": "fn(key: string, options: +Object)",
+     "!doc": "\n\nString SchemaType constructor.",
+     "prototype": {
+      "enum": {
+       "!type": "fn(args?: string) -> +schematype.SchemaType",
+       "!doc": "\n\nAdds an enum validator"
+      },
+      "lowercase": {
+       "!type": "fn() -> +schematype.SchemaType",
+       "!doc": "\n\nAdds a lowercase setter."
+      },
+      "uppercase": {
+       "!type": "fn() -> +schematype.SchemaType",
+       "!doc": "\n\nAdds an uppercase setter."
+      },
+      "trim": {
+       "!type": "fn() -> +schematype.SchemaType",
+       "!doc": "\n\nAdds a trim setter."
+      },
+      "match": {
+       "!type": "fn(regExp: ?, message?: string) -> +schematype.SchemaType",
+       "!doc": "\n\nSets a regexp validator."
+      }
+     }
+    }
+   },
+   "schema": {
+    "Schema": {
+     "!type": "fn(definition: +Object)",
+     "!doc": "\n\nSchema constructor.",
+     "prototype": {
+      "Schema": {
+       "!type": "fn(definition: +Object)",
+       "!doc": "\n\nSchema constructor."
+      },
+      "paths": {
+       "!type": "?"
+      },
+      "tree": {
+       "!type": "?"
+      },
+      "add": {
+       "!type": "fn(obj: +Object, prefix: string)",
+       "!doc": "\n\nAdds key path / schema type pairs to this schema."
+      },
+      "reserved": {
+       "!type": "?",
+       "!doc": "\n\nReserved document keys."
+      },
+      "path": {
+       "!type": "fn(path: string, constructor: +Object)",
+       "!doc": "\n\nGets/sets schema paths."
+      },
+      "eachPath": {
+       "!type": "fn(fn: fn()) -> +schema.Schema",
+       "!doc": "\n\nIterates the schemas paths similar to Array#forEach."
+      },
+      "requiredPaths": {
+       "!type": "fn() -> [?]",
+       "!doc": "\n\nReturns an Array of path strings that are required by this schema."
+      },
+      "pathType": {
+       "!type": "fn(path: string) -> string",
+       "!doc": "\n\nReturns the pathType of <code>path</code> for this schema."
+      },
+      "pre": {
+       "!type": "fn(method: string, callback: fn())",
+       "!doc": "\n\nDefines a pre hook for the document."
+      },
+      "post": {
+       "!type": "fn(method: string, fn: fn())",
+       "!doc": "\n\nDefines a post hook for the document"
+      },
+      "plugin": {
+       "!type": "fn(plugin: fn(), opts: +Object)",
+       "!doc": "\n\nRegisters a plugin for this schema."
+      },
+      "method": {
+       "!type": "fn(method: string, fn?: fn())",
+       "!doc": "\n\nAdds an instance method to documents constructed from Models compiled from this schema."
+      },
+      "static": {
+       "!type": "fn(name: string, fn: fn())",
+       "!doc": "\n\nAdds static \"class\" methods to Models compiled from this schema."
+      },
+      "index": {
+       "!type": "fn(fields: +Object, options?: +Object)",
+       "!doc": "\n\nDefines an index (most likely compound) for this schema."
+      },
+      "set": {
+       "!type": "fn(key: string, value?: +Object)",
+       "!doc": "\n\nSets/gets a schema option."
+      },
+      "get": {
+       "!type": "fn(key: string)",
+       "!doc": "\n\nGets a schema option."
+      },
+      "indexes": {
+       "!type": "fn()",
+       "!doc": "\n\nCompiles indexes from fields and schema-level indexes"
+      },
+      "virtual": {
+       "!type": "fn(name: string, options?: +Object) -> +virtualtype.VirtualType",
+       "!doc": "\n\nCreates a virtual type with the given name."
+      },
+      "virtualpath": {
+       "!type": "fn(name: string) -> +virtualtype.VirtualType",
+       "!doc": "\n\nReturns the virtual type with the given <code>name</code>."
+      },
+      "Types": {
+       "!type": "?",
+       "!doc": "\n\nThe various built-in Mongoose Schema Types."
+      }
+     }
+    }
+   },
+   "schemadefault": {},
+   "schematype": {
+    "SchemaType": {
+     "!type": "fn(path: string, options?: +Object, instance?: string)",
+     "!doc": "\n\nSchemaType constructor",
+     "prototype": {
+      "SchemaType": {
+       "!type": "fn(path: string, options?: +Object, instance?: string)",
+       "!doc": "\n\nSchemaType constructor"
+      },
+      "default": {
+       "!type": "fn(val: fn()) -> ?",
+       "!doc": "\n\nSets a default value for this SchemaType."
+      },
+      "index": {
+       "!type": "fn(options: +Object) -> +schematype.SchemaType",
+       "!doc": "\n\nDeclares the index options for this schematype."
+      },
+      "unique": {
+       "!type": "fn(bool: bool) -> +schematype.SchemaType",
+       "!doc": "\n\nDeclares an unique index."
+      },
+      "sparse": {
+       "!type": "fn(bool: bool) -> +schematype.SchemaType",
+       "!doc": "\n\nDeclares a sparse index."
+      },
+      "set": {
+       "!type": "fn(fn: fn()) -> +schematype.SchemaType",
+       "!doc": "\n\nAdds a setter to this schematype."
+      },
+      "get": {
+       "!type": "fn(fn: fn()) -> +schematype.SchemaType",
+       "!doc": "\n\nAdds a getter to this schematype."
+      },
+      "validate": {
+       "!type": "fn(obj: fn(), errorMsg?: string, type?: string) -> +schematype.SchemaType",
+       "!doc": "\n\nAdds validator(s) for this document path."
+      },
+      "required": {
+       "!type": "fn(required: bool, message?: string) -> +schematype.SchemaType",
+       "!doc": "\n\nAdds a required validator to this schematype."
+      },
+      "select": {
+       "!type": "fn(val: bool) -> +schematype.SchemaType",
+       "!doc": "\n\nSets default <code>select()</code> behavior for this path."
+      }
+     }
+    }
+   },
+   "services_updateValidators": {},
+   "statemachine": {},
+   "types_array": {
+    "MongooseArray": {
+     "!type": "fn(values: [?], path: string, doc: +document.Document)",
+     "!doc": "\n\nMongoose Array constructor.",
+     "prototype": {
+      "_atomics": {
+       "!type": "?"
+      },
+      "_parent": {
+       "!type": "?"
+      }
+     }
+    }
+   },
+   "types_buffer": {
+    "MongooseBuffer": {
+     "!type": "fn(value: ?, encode: string, offset: number)",
+     "!doc": "\n\nMongoose Buffer constructor.",
+     "prototype": {
+      "_parent": {
+       "!type": "?"
+      },
+      "_subtype": {
+       "!type": "?"
+      }
+     },
+     "toObject": {
+      "!type": "fn(subtype?: ?) -> ?",
+      "!doc": "\n\nConverts this buffer to its Binary type representation."
+     },
+     "equals": {
+      "!type": "fn(other: ?) -> bool",
+      "!doc": "\n\nDetermines if this buffer is equals to <code>other</code> buffer"
+     },
+     "subtype": {
+      "!type": "fn(subtype: ?)",
+      "!doc": "\n\nSets the subtype option and marks the buffer modified."
+     }
+    }
+   },
+   "types_documentarray": {
+    "MongooseDocumentArray": {
+     "!type": "fn(values: [?], path: string, doc: +document.Document) -> +types_documentarray.MongooseDocumentArray",
+     "!doc": "\n\nDocumentArray constructor",
+     "id": {
+      "!type": "fn(id: +schema_objectid.ObjectId) -> +types_embedded.EmbeddedDocument",
+      "!doc": "\n\nSearches array items for the first document with a matching _id."
+     },
+     "toObject": {
+      "!type": "fn(options?: +Object) -> [?]",
+      "!doc": "\n\nReturns a native js Array of plain js objects"
+     },
+     "inspect": {
+      "!type": "fn()",
+      "!doc": "\n\nHelper for console.log"
+     },
+     "create": {
+      "!type": "fn(obj: +Object)",
+      "!doc": "\n\nCreates a subdocument casted to this schema."
+     }
+    }
+   },
+   "types_embedded": {
+    "EmbeddedDocument": {
+     "!type": "fn(obj: +Object, parentArr: +types_documentarray.MongooseDocumentArray, skipId: bool)",
+     "!doc": "\n\nEmbeddedDocument constructor.",
+     "prototype": {
+      "markModified": {
+       "!type": "fn(path: string)",
+       "!doc": "\n\nMarks the embedded doc modified."
+      },
+      "remove": {
+       "!type": "fn(fn?: fn())",
+       "!doc": "\n\nRemoves the subdocument from its parent array."
+      },
+      "inspect": {
+       "!type": "fn()",
+       "!doc": "\n\nHelper for console.log"
+      },
+      "invalidate": {
+       "!type": "fn(path: string, err: string) -> bool",
+       "!doc": "\n\nMarks a path as invalid, causing validation to fail."
+      },
+      "ownerDocument": {
+       "!type": "fn() -> +document.Document",
+       "!doc": "\n\nReturns the top level document of this sub-document."
+      },
+      "parent": {
+       "!type": "fn()",
+       "!doc": "\n\nReturns this sub-documents parent document."
+      },
+      "parentArray": {
+       "!type": "fn()",
+       "!doc": "\n\nReturns this sub-documents parent array."
+      }
+     }
+    }
+   },
+   "types_index": {},
+   "types_objectid": {},
+   "utils": {
+    "pluralize": {
+     "!type": "fn(string: string)",
+     "!doc": "\n\nPluralize function.",
+     "prototype": {
+      "pluralization": {
+       "!type": "?",
+       "!doc": "\n\nPluralization rules."
+      },
+      "uncountables": {
+       "!type": "?",
+       "!doc": "\n\nUncountable words."
+      }
+     },
+     "readPref": {
+      "!type": "fn(pref: string, tags?: [?])",
+      "!doc": "\n\nConverts arguments to ReadPrefs the driver\ncan understand."
+     },
+     "getValue": {
+      "!type": "fn(path: string, obj: +Object)",
+      "!doc": "\n\nReturn the value of <code>obj</code> at the given <code>path</code>."
+     },
+     "setValue": {
+      "!type": "fn(path: string, val: ?, obj: +Object)",
+      "!doc": "\n\nSets the value of <code>obj</code> at the given <code>path</code>."
+     },
+     "isNullOrUndefined": {
+      "!type": "fn() -> bool",
+      "!doc": "\n\nDetermine if <code>val</code> is null or undefined"
+     },
+     "flatten": {
+      "!type": "fn(arr: [?], filter?: fn()) -> [?]",
+      "!doc": "\n\nFlattens an array."
+     }
+    }
+   },
+   "virtualtype": {
+    "VirtualType": {
+     "!type": "fn()",
+     "!doc": "\n\nVirtualType constructor",
+     "prototype": {
+      "VirtualType": {
+       "!type": "fn()",
+       "!doc": "\n\nVirtualType constructor"
+      },
+      "get": {
+       "!type": "fn(fn: fn()) -> +virtualtype.VirtualType",
+       "!doc": "\n\nDefines a getter."
+      },
+      "set": {
+       "!type": "fn(fn: fn()) -> +virtualtype.VirtualType",
+       "!doc": "\n\nDefines a setter."
+      },
+      "applyGetters": {
+       "!type": "fn(value: +Object, scope: +Object) -> ?",
+       "!doc": "\n\nApplies getters to <code>value</code> using optional <code>scope</code>."
+      },
+      "applySetters": {
+       "!type": "fn(value: +Object, scope: +Object) -> ?",
+       "!doc": "\n\nApplies setters to <code>value</code> using optional <code>scope</code>."
+      }
+     }
+    }
+   }
+  }
+ }//#endregion
 
 
 //#region tern/defs/jquery.json

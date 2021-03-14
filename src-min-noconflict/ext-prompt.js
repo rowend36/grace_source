@@ -1,32 +1,104 @@
 define("ace/ext/menu_tools/get_editor_keyboard_shortcuts",["require","exports","module","ace/lib/keys"], function(require, exports, module) {
 "use strict";
 var keys = require("../../lib/keys");
-module.exports = function(editor) {
+var mods = {"C-": "Ctrl-", "S-": "Shift", "M-": "alt", "Cmd-": "command"};
+
+function upper(x) {
+    return x.toUpperCase(); }
+function toMod(key){
+    return mods[key]||key;
+}
+function normalize(k){
+    var a = k.toLowerCase();
+    a = a.replace(/(?:^|\-| )\w/g,upper);
+    a = a.replace(/(?:Cmd|[CSM])\-/g,toMod);
+    return a;
+}
+module.exports.getCommandsByName = function(editor,validate) {
     var KEY_MODS = keys.KEY_MODS;
-    var keybindings = [];
-    var commandMap = {};
+    var commandMap = Object.create(null);
+    var bindings;
+    if(validate){
+        bindings = module.exports.getCommandsByKey(editor);
+    }
     editor.keyBinding.$handlers.forEach(function(handler) {
         var ckb = handler.commandKeyBinding;
         for (var i in ckb) {
-            var key = i.replace(/(^|-)\w/g, function(x) { return x.toUpperCase(); });
+            var key = normalize(i);
             var commands = ckb[i];
             if (!Array.isArray(commands))
                 commands = [commands];
-            commands.forEach(function(command) {
-                if (typeof command != "string")
+            for(var k=0;k<commands.length;k++){
+                var command = commands[k];
+                var item,obj;
+                if (typeof command != "string"){
+                    item = command;
                     command  = command.name;
-                if (commandMap[command]) {
-                    commandMap[command].key += "|" + key;
-                } else {
-                    commandMap[command] = {key: key, command: command};
-                    keybindings.push(commandMap[command]);
-                }         
-            });
+                    obj = commandMap[command];
+                    if(obj && obj.item!=item){
+                        if(obj.item){
+                        }
+                        obj.item = item;
+                    }
+                }
+                else obj = commandMap[command];
+                var binding = key;
+                if(validate && bindings[key] && bindings[key][bindings[key].length-1]!=command){
+                    binding = "??"+key;
+                }
+                if(!obj){
+                    commandMap[command]={item:item,keys:binding};
+                }
+                else{
+                    var keys = obj.keys;
+                    if(!keys)obj.keys = binding;
+                    else if(keys!=binding){
+                        if(("|"+keys+"|").indexOf("|"+binding+"|")>0){
+                            keys = ("|"+keys+"|").replace("|"+binding+"|","|").substring(0,-1);
+                        }
+                        obj.keys = keys+"|"+binding;
+                    }
+                }
+            }
+        }
+        var unmapped = handler.commands;
+        for(var t in unmapped){
+            if(!commandMap[t]){
+                commandMap[t]={item:unmapped[t],keys:""};
+            }
         }
     });
-    return keybindings;
+    return commandMap;
 };
-
+module.exports.getCommandsByKey = function(editor) {
+    var KEY_MODS = keys.KEY_MODS;
+    var keyBindings = Object.create(null);
+    editor.keyBinding.$handlers.forEach(function(handler) {
+        var ckb = handler.commandKeyBinding;
+        for (var i in ckb) {
+            var key = normalize(i);
+            var commands = ckb[i];
+            if (!Array.isArray(commands))
+                commands = [commands];
+            var keys = keyBindings[key];
+            if(!keys){
+                keys = keyBindings[key]=[];
+            }
+            for(var k=0;k<commands.length;k++){
+                var command = commands[k];
+                if (typeof command != "string")
+                    command  = command.name;
+                var pos = keys.indexOf(command);
+                if(pos>-1){
+                    keys.splice(pos,1);
+                }
+                keys.push(command);
+            }
+        }
+    });
+    return keyBindings;
+};
+module.exports.normalizeKey = normalize;
 });
 
 define("ace/autocomplete/popup",["require","exports","module","ace/virtual_renderer","ace/editor","ace/range","ace/lib/event","ace/lib/lang","ace/lib/dom"], function(require, exports, module) {
@@ -53,10 +125,25 @@ var $singleLineEditor = function(el) {
 
     editor.$mouseHandler.$focusTimeout = 0;
     editor.$highlightTagPending = true;
-
+    editor.copyTheme = function(host){
+        editor.setTheme(host.getTheme());
+        var font = host.getFontSize();
+        if(font<16){
+            if(font<12)font=12;
+            editor.$popupFontBp = 12;
+        }
+        else if(font<20){
+            editor.$popupFontBp = 16;
+        }
+        else{
+            if(font>24)font = 24;
+            editor.$popupFontBp = 20;
+        }
+        editor.setFontSize(font);
+        editor.setOption("fontFamily",host.renderer.$fontFamily);
+    };
     return editor;
 };
-
 var AcePopup = function(parentNode) {
     var el = dom.createElement("div");
     var popup = new $singleLineEditor(el);
@@ -180,11 +267,10 @@ var AcePopup = function(parentNode) {
 
         function addToken(value, className) {
             value && tokens.push({
-                type: (data.className || "") + (className || ""), 
+                type: data.className?(className?data.className+ "."+className:data.className):(className || ""), 
                 value: value
             });
         }
-        
         var lower = caption.toLowerCase();
         var filterText = (popup.filterText || "").toLowerCase();
         var lastIndex = 0;
@@ -201,12 +287,19 @@ var AcePopup = function(parentNode) {
             }
         }
         addToken(caption.slice(lastIndex, caption.length), "");
-        
-        if (data.meta)
-            tokens.push({type: "completion-meta", value: data.meta});
         if (data.message)
             tokens.push({type: "completion-message", value: data.message});
-
+        if (data.meta){
+            var chunks = data.meta.split(/([^a-zA-Z0-9$])/);
+            for(var n=chunks.length,c=n-1;c>=0;c--){
+                if(chunks[c])
+                    tokens.push({type: "completion-meta.float-hack-"+(n-c), value: chunks[c]});
+                else n--;
+            }
+        }
+        if(popup.showIcons && tokens.length){
+            tokens[0].type += ".completion-icon.completion-icon-"+popup.$popupFontBp+(data.iconClass?"."+data.iconClass:"");
+        }
         return tokens;
     };
     bgTokenizer.$updateOnChange = noop;
@@ -219,6 +312,7 @@ var AcePopup = function(parentNode) {
     popup.isTopdown = false;
     popup.autoSelect = true;
     popup.filterText = "";
+    popup.showIcons = false;
 
     popup.data = [];
     popup.setData = function(list, filterText) {
@@ -258,26 +352,28 @@ var AcePopup = function(parentNode) {
         popup.isOpen = false;
     };
     popup.show = function(pos, lineHeight, topdownOnly) {
+        var margins = popup.getPopupMargins();
         var el = this.container;
-        var screenHeight = window.innerHeight;
-        var screenWidth = window.innerWidth;
+        var screenHeight = this.parentNode?this.parentNode.clientHeight:window.innerHeight;
+        var screenWidth = this.parentNode?this.parentNode.clientWidth:window.innerWidth;
         var renderer = this.renderer;
-        var maxH = renderer.$maxLines * lineHeight * 1.4;
         var top = pos.top + this.$borderSize;
-        var allowTopdown = top > screenHeight / 2 && !topdownOnly;
-        if (allowTopdown && top + lineHeight + maxH > screenHeight) {
-            renderer.$maxPixelHeight = top - 2 * this.$borderSize;
+        var SPACE_ABOVE = top-margins.marginTop;
+        var SPACE_BELOW = screenHeight-top-lineHeight-this.$borderSize-margins.marginBottom;
+        if (!topdownOnly && SPACE_ABOVE > SPACE_BELOW*1.4) {
+            renderer.$maxPixelHeight = top - 2 * this.$borderSize - margins.marginTop;
             el.style.top = "";
-            el.style.bottom = screenHeight - top + "px";
+            el.style.bottom = screenHeight - top - this.$borderSize + "px";
             popup.isTopdown = false;
         } else {
             top += lineHeight;
-            renderer.$maxPixelHeight = screenHeight - top - 0.2 * lineHeight;
+            renderer.$maxPixelHeight = screenHeight - margins.marginBottom - top - 0.2 * lineHeight;
             el.style.top = top + "px";
             el.style.bottom = "";
             popup.isTopdown = true;
         }
-
+        if(renderer.$maxPixelHeight<lineHeight*2)
+            renderer.$maxPixelHeight = lineHeight*2;
         el.style.display = "";
 
         var left = pos.left;
@@ -285,12 +381,9 @@ var AcePopup = function(parentNode) {
             left = screenWidth - el.offsetWidth;
 
         el.style.left = left + "px";
-
-        this._signal("show");
         lastMouseEvent = null;
         popup.isOpen = true;
     };
-
     popup.goTo = function(where) {
         var row = this.getRow();
         var max = this.session.getLength() - 1;
@@ -315,7 +408,12 @@ var AcePopup = function(parentNode) {
 
     return popup;
 };
-
+Editor.prototype.getPopupMargins = function(){
+    return {
+        marginTop: 0,
+        marginBottom: 0
+    };
+};
 dom.importCssString("\
 .ace_editor.ace_autocomplete .ace_marker-layer .ace_active-line {\
     background-color: #CAD6FA;\
@@ -335,12 +433,55 @@ dom.importCssString("\
     border: 1px solid rgba(109, 150, 13, 0.8);\
     background: rgba(58, 103, 78, 0.62);\
 }\
+.ace_autocomplete .ace_text-layer{\
+    width:100%;\
+}\
+.ace_autocomplete .ace_line{\
+    width:100%;\
+    overflow: hidden;\
+}\
 .ace_completion-meta {\
-    opacity: 0.5;\
-    margin: 0.9em;\
+    opacity: 0.7;\
+    float: right;\
+}\
+.ace_float-hack-1{\
+    margin-right: 10px;\
+}\
+.ace_completion-icon:before {\
+    display: inline-block;\
+    vertical-align: middle;\
+    max-height: 100%\
+    margin: 0;\
+    margin-right: 5px;\
+    text-align: center;\
+    content: ' ';\
+    -moz-box-sizing: border-box;\
+    -webkit-box-sizing: border-box;\
+    box-sizing: border-box;\
+}\
+.ace_completion-icon-12:before {\
+    width: 12px;\
+    height: 12px;\
+    font-size: 10px;\
+    line-height: 12px;\
+}\
+.ace_completion-icon-16:before {\
+    width: 16px;\
+    height: 16px;\
+    font-size: 15px;\
+    line-height: 16px;\
+}\
+.ace_completion-icon-20:before {\
+    width: 20px;\
+    height: 20px;\
+    font-size: 19px;\
+    line-height: 20px;\
 }\
 .ace_completion-message {\
-    color: blue;\
+    color: teal;\
+    font-weight: bold;\
+    margin-left: 1.5em;\
+    text-overflow: ellipsis;\
 }\
 .ace_editor.ace_autocomplete .ace_completion-highlight{\
     color: #2d69c7;\
@@ -387,7 +528,7 @@ exports.parForEach = function(array, fn, callback) {
     }
 };
 
-var ID_REGEX = /[a-zA-Z_0-9\$\-\u00A2-\uFFFF]/;
+var ID_REGEX = /[a-zA-Z_0-9\$\-\u00A2-\u2000\u2070-\uFFFF]/;
 
 exports.retrievePrecedingIdentifier = function(text, pos, regex) {
     regex = regex || ID_REGEX;
@@ -575,7 +716,9 @@ var SnippetManager = function() {
                 {regex: "\\|" + escape("\\|") + "*\\|", onMatch: function(val, state, stack) {
                     var choices = val.slice(1, -1).replace(/\\[,|\\]|,/g, function(operator) {
                         return operator.length == 2 ? operator[1] : "\x00";
-                    }).split("\x00");
+                    }).split("\x00").map(function(value){
+                        return {value: value};
+                    });
                     stack[0].choices = choices;
                     return [choices[0]];
                 }, next: "start"},
@@ -1046,6 +1189,12 @@ var SnippetManager = function() {
             }
             snippetMap[scope].push(s);
 
+            if (s.prefix)
+                s.tabTrigger = s.prefix;
+
+            if (!s.content && s.body)
+                s.content = Array.isArray(s.body) ? s.body.join("\n") : s.body;
+
             if (s.tabTrigger && !s.trigger) {
                 if (!s.guard && /^\w/.test(s.tabTrigger))
                     s.guard = "\\b";
@@ -1062,10 +1211,13 @@ var SnippetManager = function() {
             s.endTriggerRe = new RegExp(s.endTrigger);
         }
 
-        if (snippets && snippets.content)
-            addSnippet(snippets);
-        else if (Array.isArray(snippets))
+        if (Array.isArray(snippets)) {
             snippets.forEach(addSnippet);
+        } else {
+            Object.keys(snippets).forEach(function(key) {
+                addSnippet(snippets[key]);
+            });
+        }
         
         this._signal("registerSnippets", {scope: scope});
     };
@@ -1115,7 +1267,7 @@ var SnippetManager = function() {
                     snippet.tabTrigger = val.match(/^\S*/)[0];
                     if (!snippet.name)
                         snippet.name = val;
-                } else {
+                } else if (key) {
                     snippet[key] = val;
                 }
             }
@@ -1178,15 +1330,16 @@ var TabstopManager = function(editor) {
 
     this.onChange = function(delta) {
         var isRemove = delta.action[0] == "r";
-        var parents = this.selectedTabstop && this.selectedTabstop.parents || {};
+        var selectedTabstop = this.selectedTabstop || {};
+        var parents = selectedTabstop.parents || {};
         var tabstops = (this.tabstops || []).slice();
         for (var i = 0; i < tabstops.length; i++) {
             var ts = tabstops[i];
-            var active = ts == this.selectedTabstop || parents[ts.index];
+            var active = ts == selectedTabstop || parents[ts.index];
             ts.rangeList.$bias = active ? 0 : 1;
             
-            if (delta.action == "remove" && ts !== this.selectedTabstop) {
-                var parentActive = ts.parents && ts.parents[this.selectedTabstop.index];
+            if (delta.action == "remove" && ts !== selectedTabstop) {
+                var parentActive = ts.parents && ts.parents[selectedTabstop.index];
                 var startIndex = ts.rangeList.pointIndex(delta.start, parentActive);
                 startIndex = startIndex < 0 ? -startIndex - 1 : startIndex + 1;
                 var endIndex = ts.rangeList.pointIndex(delta.end, parentActive);
@@ -1263,18 +1416,17 @@ var TabstopManager = function(editor) {
         
         this.selectedTabstop = ts;
         var range = ts.firstNonLinked || ts;
+        if (ts.choices) range.cursor = range.start;
         if (!this.editor.inVirtualSelectionMode) {
             var sel = this.editor.multiSelect;
-            sel.toSingleRange(range.clone());
+            sel.toSingleRange(range);
             for (var i = 0; i < ts.length; i++) {
                 if (ts.hasLinkedRanges && ts[i].linked)
                     continue;
                 sel.addRange(ts[i].clone(), true);
             }
-            if (sel.ranges[0])
-                sel.addRange(sel.ranges[0].clone());
         } else {
-            this.editor.selection.setRange(range);
+            this.editor.selection.fromOrientedRange(range);
         }
         
         this.editor.keyBinding.addKeyboardHandler(this.keyboardHandler);
@@ -1299,8 +1451,6 @@ var TabstopManager = function(editor) {
         var ranges = this.ranges;
         tabstops.forEach(function(ts, index) {
             var dest = this.$openTabstops[index] || ts;
-            ts.rangeList = new RangeList();
-            ts.rangeList.$bias = 0;
             
             for (var i = 0; i < ts.length; i++) {
                 var p = ts[i];
@@ -1310,7 +1460,6 @@ var TabstopManager = function(editor) {
                 range.original = p;
                 range.tabstop = dest;
                 ranges.push(range);
-                ts.rangeList.ranges.push(range);
                 if (dest != ts)
                     dest.unshift(range);
                 else
@@ -1328,6 +1477,9 @@ var TabstopManager = function(editor) {
                 this.$openTabstops[index] = dest;
             }
             this.addTabstopMarkers(dest);
+            dest.rangeList = dest.rangeList || new RangeList();
+            dest.rangeList.$bias = 0;
+            dest.rangeList.addList(dest);
         }, this);
         
         if (arg.length > 2) {
@@ -1370,21 +1522,18 @@ var TabstopManager = function(editor) {
 
     this.keyboardHandler = new HashHandler();
     this.keyboardHandler.bindKeys({
-        "Tab": function(ed) {
-            if (exports.snippetManager && exports.snippetManager.expandWithTab(ed)) {
+        "Tab": function(editor) {
+            if (exports.snippetManager && exports.snippetManager.expandWithTab(editor))
                 return;
-            }
-
-            ed.tabstopManager.tabNext(1);
+            editor.tabstopManager.tabNext(1);
+            editor.renderer.scrollCursorIntoView();
         },
-        "Shift-Tab": function(ed) {
-            ed.tabstopManager.tabNext(-1);
+        "Shift-Tab": function(editor) {
+            editor.tabstopManager.tabNext(-1);
+            editor.renderer.scrollCursorIntoView();
         },
-        "Esc": function(ed) {
-            ed.tabstopManager.detach();
-        },
-        "Return": function(ed) {
-            return false;
+        "Esc": function(editor) {
+            editor.tabstopManager.detach();
         }
     });
 }).call(TabstopManager.prototype);
@@ -1462,7 +1611,9 @@ var Autocomplete = function() {
 (function() {
 
     this.$init = function() {
-        this.popup = new AcePopup(document.body || document.documentElement);
+        this.popup = new AcePopup();
+        this.setContainer(document.body || document.documentElement);
+        this.popup.showIcons = true;
         this.popup.on("click", function(e) {
             this.insertMatch();
             e.stop();
@@ -1491,9 +1642,7 @@ var Autocomplete = function() {
         var renderer = editor.renderer;
         this.popup.setRow(this.autoSelect ? 0 : -1);
         if (!keepPopupPosition) {
-            this.popup.setTheme(editor.getTheme());
-            this.popup.setFontSize(editor.getFontSize());
-
+            this.popup.copyTheme(editor);
             var lineHeight = renderer.layerConfig.lineHeight;
 
             var pos = renderer.$cursorLayer.getPixelPosition(this.base, true);
@@ -1508,14 +1657,17 @@ var Autocomplete = function() {
         } else if (keepPopupPosition && !prefix) {
             this.detach();
         }
+        this.changeTimer.cancel();
     };
 
     this.detach = function() {
-        this.editor.keyBinding.removeKeyboardHandler(this.keyboardHandler);
-        this.editor.off("changeSelection", this.changeListener);
-        this.editor.off("blur", this.blurListener);
-        this.editor.off("mousedown", this.mousedownListener);
-        this.editor.off("mousewheel", this.mousewheelListener);
+        if(this.editor){
+            this.editor.keyBinding.removeKeyboardHandler(this.keyboardHandler);
+            this.editor.off("changeSelection", this.changeListener);
+            this.editor.off("blur", this.blurListener);
+            this.editor.off("mousedown", this.mousedownListener);
+            this.editor.off("mousewheel", this.mousewheelListener);
+        }
         this.changeTimer.cancel();
         this.hideDocTooltip();
 
@@ -1570,13 +1722,15 @@ var Autocomplete = function() {
         if (!data)
             return false;
 
+        var completions = this.completions;
+        this.editor.startOperation({command: {name: "insertMatch"}});
         if (data.completer && data.completer.insertMatch) {
             data.completer.insertMatch(this.editor, data);
         } else {
-            if (this.completions.filterText) {
+            if (completions.filterText) {
                 var ranges = this.editor.selection.getAllRanges();
                 for (var i = 0, range; range = ranges[i]; i++) {
-                    range.start.column -= this.completions.filterText.length;
+                    range.start.column -= completions.filterText.length;
                     this.editor.session.remove(range);
                 }
             }
@@ -1585,7 +1739,9 @@ var Autocomplete = function() {
             else
                 this.editor.execCommand("insertstring", data.value || data);
         }
-        this.detach();
+        if (this.completions == completions)
+            this.detach();
+        this.editor.endOperation();
     };
 
 
@@ -1738,7 +1894,12 @@ var Autocomplete = function() {
             return this.hideDocTooltip();
         this.showDocTooltip(doc);
     };
-
+    this.setContainer = function(container){
+        this.parentContainer = container;
+        container.appendChild(this.popup.container);
+        this.popup.parentNode = container;
+    };
+    
     this.showDocTooltip = function(item) {
         if (!this.tooltipNode) {
             this.tooltipNode = dom.createElement("div");
@@ -1746,6 +1907,7 @@ var Autocomplete = function() {
             this.tooltipNode.style.margin = 0;
             this.tooltipNode.style.pointerEvents = "auto";
             this.tooltipNode.tabIndex = -1;
+            this.tooltipNode.style.fontSize = editor.getFontSize()+"px";
             this.tooltipNode.onblur = this.blurListener.bind(this);
             this.tooltipNode.onclick = this.onTooltipClick.bind(this);
         }
@@ -1758,35 +1920,80 @@ var Autocomplete = function() {
         }
 
         if (!tooltipNode.parentNode)
-            document.body.appendChild(tooltipNode);
+            this.parentContainer.appendChild(tooltipNode);
         var popup = this.popup;
-        var rect = popup.container.getBoundingClientRect();
-        tooltipNode.style.top = popup.container.style.top;
-        tooltipNode.style.bottom = popup.container.style.bottom;
-
+        var popupRect = popup.container.getBoundingClientRect();
+        var margins = this.popup.getPopupMargins(true);
+        var outerRect = this.parentContainer.getBoundingClientRect();
+        
         tooltipNode.style.display = "block";
-        if (window.innerWidth - rect.right < 320) {
-            if (rect.left < 320) {
-                if(popup.isTopdown) {
-                    tooltipNode.style.top = rect.bottom + "px";
-                    tooltipNode.style.left = rect.left + "px";
-                    tooltipNode.style.right = "";
-                    tooltipNode.style.bottom = "";
+        var VIEW_GAP = this.editor.renderer.layerConfig.lineHeight*2;
+        var TIP_MAX_WIDTH = Math.max(tooltipNode.offsetWidth,300);
+        var tooltipHeight = Math.max(70,tooltipNode.offsetHeight);
+        var isHorizontal = true;
+        var SPACE_TO_RIGHT = outerRect.right - popupRect.right;
+        if (SPACE_TO_RIGHT < TIP_MAX_WIDTH) {
+            var SPACE_TO_LEFT = popupRect.left - outerRect.left;
+            if (SPACE_TO_LEFT < TIP_MAX_WIDTH) {
+                isHorizontal = false;
+                var SPACE_ABOVE = popupRect.top - outerRect.top - margins.marginTop;
+                var SPACE_BELOW = outerRect.bottom - popupRect.bottom - margins.marginBottom;
+                if (popup.isTopdown ? //popup is below cursor, is there space below it??
+                    SPACE_BELOW > Math.min(tooltipHeight, SPACE_ABOVE) :
+                    SPACE_ABOVE < Math.min(tooltipHeight, SPACE_BELOW - VIEW_GAP)
+                ) {
+                    if (popup.isTopdown) VIEW_GAP = 1;
+                    tooltipNode.style.top = popupRect.bottom - outerRect.top + VIEW_GAP + "px";
+                    tooltipNode.style.maxHeight = SPACE_BELOW - VIEW_GAP + "px";
                 } else {
-                    tooltipNode.style.top = popup.container.offsetTop - tooltipNode.offsetHeight + "px";
-                    tooltipNode.style.left = rect.left + "px";
-                    tooltipNode.style.right = "";
-                    tooltipNode.style.bottom = "";
+                    if (popup.isTopdown) {
+                        var farthestTop = Math.max(outerRect.top+margins.marginTop,popupRect.top-outerRect.top - VIEW_GAP - Math.max(70,tooltipNode.offsetHeight+VIEW_GAP));
+                        tooltipNode.style.top = farthestTop + "px";
+                        tooltipNode.style.maxHeight = popupRect.top - outerRect.top - farthestTop - VIEW_GAP + "px";
+                        tooltipNode.style.bottom = "";
+                    } else {
+                        VIEW_GAP = 1;
+                        tooltipNode.style.bottom = outerRect.bottom - popupRect.top - VIEW_GAP+ "px";
+                        tooltipNode.style.maxHeight = SPACE_ABOVE + "px";
+                        tooltipNode.style.top = "";
+                    }
+                }
+                if (VIEW_GAP > 1) {
+                    if (SPACE_TO_LEFT < outerRect.width / 2) {
+                        tooltipNode.style.right = 10 + "px";
+                        tooltipNode.style.left = "";
+                    } else {
+                        tooltipNode.style.left = 10 + "px";
+                        tooltipNode.style.right = "";
+                    }
+                    tooltipNode.style.maxWidth = outerRect.width - 20 + "px";
+                } else {
+                    if (SPACE_TO_LEFT > SPACE_TO_RIGHT) {
+                        tooltipNode.style.right = SPACE_TO_RIGHT + "px";
+                        tooltipNode.style.maxWidth = SPACE_TO_LEFT + popupRect.width - 5 + "px";
+                        tooltipNode.style.left = "";
+                    } else if (SPACE_TO_LEFT < SPACE_TO_RIGHT) {
+                        tooltipNode.style.left = SPACE_TO_LEFT + "px";
+                        tooltipNode.style.maxWidth = SPACE_TO_RIGHT + popupRect.width - 5 + "px";
+                        tooltipNode.style.right = "";
+                    }
                 }
             } else {
-                tooltipNode.style.right = window.innerWidth - rect.left + "px";
+                tooltipNode.style.right =  outerRect.right-popupRect.left-1 + "px";
                 tooltipNode.style.left = "";
             }
         } else {
-            tooltipNode.style.left = (rect.right + 1) + "px";
+            tooltipNode.style.left = (popupRect.right + 1) + "px";
             tooltipNode.style.right = "";
         }
-    };
+        if(isHorizontal){
+            tooltipNode.style.top = popup.container.style.top;
+            tooltipNode.style.bottom = popup.container.style.bottom;
+            tooltipNode.style.maxWidth = TIP_MAX_WIDTH+"px";
+            tooltipNode.style.maxHeight = "auto";
+            tooltipNode.style.maxHeight = "";
+        }
+    };         
 
     this.hideDocTooltip = function() {
         this.tooltipTimer.cancel();
@@ -2098,22 +2305,23 @@ var supportedModes = {
     ABC:         ["abc"],
     ActionScript:["as"],
     ADA:         ["ada|adb"],
+    Alda:        ["alda"],
     Apache_Conf: ["^htaccess|^htgroups|^htpasswd|^conf|htaccess|htgroups|htpasswd"],
+    Apex:        ["apex|cls|trigger|tgr"],
+    AQL:         ["aql"],
     AsciiDoc:    ["asciidoc|adoc"],
     ASL:         ["dsl|asl"],
     Assembly_x86:["asm|a"],
     AutoHotKey:  ["ahk"],
-    Apex:        ["apex|cls|trigger|tgr"],
-    AQL:         ["aql"],
     BatchFile:   ["bat|cmd"],
     C_Cpp:       ["cpp|c|cc|cxx|h|hh|hpp|ino"],
     C9Search:    ["c9search_results"],
-    Crystal:     ["cr"],
     Cirru:       ["cirru|cr"],
     Clojure:     ["clj|cljs"],
     Cobol:       ["CBL|COB"],
     coffee:      ["coffee|cf|cson|^Cakefile"],
     ColdFusion:  ["cfm"],
+    Crystal:     ["cr"],
     CSharp:      ["cs"],
     Csound_Document: ["csd"],
     Csound_Orchestra: ["orc"],
@@ -2159,8 +2367,9 @@ var supportedModes = {
     Jack:        ["jack"],
     Jade:        ["jade|pug"],
     Java:        ["java"],
-    JavaScript:  ["js|jsm|jsx"],
+    JavaScript:  ["js|jsm"],
     JSON:        ["json"],
+    JSON5:       ["json5"],
     JSONiq:      ["jq"],
     JSP:         ["jsp"],
     JSSM:        ["jssm|jssm_state"],
@@ -2182,30 +2391,34 @@ var supportedModes = {
     Mask:        ["mask"],
     MATLAB:      ["matlab"],
     Maze:        ["mz"],
+    MediaWiki:   ["wiki|mediawiki"],
     MEL:         ["mel"],
     MIXAL:       ["mixal"],
     MUSHCode:    ["mc|mush"],
     MySQL:       ["mysql"],
     Nginx:       ["nginx|conf"],
-    Nix:         ["nix"],
     Nim:         ["nim"],
+    Nix:         ["nix"],
     NSIS:        ["nsi|nsh"],
+    Nunjucks:    ["nunjucks|nunjs|nj|njk"],
     ObjectiveC:  ["m|mm"],
     OCaml:       ["ml|mli"],
     Pascal:      ["pas|p"],
     Perl:        ["pl|pm"],
     Perl6:       ["p6|pl6|pm6"],
     pgSQL:       ["pgsql"],
-    PHP_Laravel_blade: ["blade.php"],
     PHP:         ["php|inc|phtml|shtml|php3|php4|php5|phps|phpt|aw|ctp|module"],
-    Puppet:      ["epp|pp"],
+    PHP_Laravel_blade: ["blade.php"],
     Pig:         ["pig"],
     Powershell:  ["ps1"],
     Praat:       ["praat|praatscript|psc|proc"],
+    Prisma:      ["prisma"],
     Prolog:      ["plg|prolog"],
     Properties:  ["properties"],
     Protobuf:    ["proto"],
+    Puppet:      ["epp|pp"],
     Python:      ["py"],
+    QML:         ["qml"],
     R:           ["r"],
     Razor:       ["cshtml|asp"],
     RDoc:        ["Rd"],
@@ -2342,14 +2555,14 @@ function prompt(editor, message, options, callback) {
     if (options.getCompletions) {
         var popup = new AcePopup();
         popup.renderer.setStyle("ace_autocomplete_inline");
-        popup.renderer.setTheme(editor.renderer.theme)
+        popup.copyTheme(editor);
         popup.container.style.display = "block";
         popup.container.style.maxWidth = "600px";
         popup.container.style.width = "100%";
         popup.container.style.marginTop = "3px";
         popup.renderer.setScrollMargin(2, 2, 0, 0);
         popup.autoSelect = false;
-        popup.renderer.$maxLines = 15;
+        popup.renderer.$maxLines = Math.min(Math.floor(0.5*window.innerWidth/popup.renderer.lineHeight),15);
         popup.setRow(-1);
         popup.on("click", function(e) {
             var data = popup.getData(popup.getRow());
@@ -2580,51 +2793,22 @@ prompt.commands = function(editor, callback) {
             return x[0] + " " + x[1].toLowerCase(x);
         });
     }
-    function getEditorCommandsByName(excludeCommands) {
-        var commandsByName = [];
-        var commandMap = {};
-        var bindings = [];
-        var s = shortcuts(editor);
-        for(var i in s){
-            bindings[s[i].command]=s[i].key;
-        }
-        editor.keyBinding.$handlers.reverse().forEach(function(handler) {
-            var platform = handler.platform;
-            var cbn = handler.byName;
-            for (var i in cbn) {
-                var commands = cbn[i];
-                if (!Array.isArray(commands))
-                    commands = [commands];
-                
-                commands.forEach(function(command) {
-                    var description;
-                    if (typeof command != "string"){
-                        description = command.description || normalizeName(command.name);
-                        command = command.name;
-                    }
-                    else description = normalizeName(command);
-                    var key = bindings[command]||"";
-                    var needle = excludeCommands.find(function(el) {
-                        return el === command;
-                    });
-                    if (!needle && command) {
-                        if (commandMap[command]) {
-                            if(key && (commandMap[command].key.indexOf(key)<0))
-                                commandMap[command].key += (commandMap[command].key && "|") + key;
-                        } else {
-                            commandMap[command] = {key: key||"", command: command||"", description: description};
-                            commandsByName.push(commandMap[command]);
-                        }
-                    }
-                });
-            }
-        });
-        return commandsByName;
-    }
     var excludeCommandsList = ["insertstring", "inserttext", "setIndentation", "paste"];
-    var shortcutsArray = getEditorCommandsByName(excludeCommandsList);
-    shortcutsArray = shortcutsArray.map(function(item) {
-        return {value: item.description, meta: item.key, command: item.command};
+    var shortcutsObj = shortcuts.getCommandsByName(editor,true);
+    var shortcutsArray = [];
+    for(var a in excludeCommandsList){
+        delete shortcutsObj[excludeCommandsList[a]];
+    }
+    for(var b in shortcutsObj){
+        var description = (shortcutsObj[b].item && shortcutsObj[b].item.description)||normalizeName(b);
+        shortcutsArray.push({
+            value: description,
+            meta: shortcutsObj[b].keys,
+            command: b
+        });
+    }
+    shortcutsArray.sort(function(a,b){
+        return a.value<b.value?-1:1;
     });
     prompt(editor, "",  {
         name: "commands",
@@ -2663,7 +2847,6 @@ prompt.commands = function(editor, callback) {
         },
         getCompletions: function(cmdLine) {
             function getFilteredCompletions(commands, prefix) {
-                console.log(commands);
                 var resultCommands = JSON.parse(JSON.stringify(commands));
 
                 var filtered = new FilteredList(resultCommands);

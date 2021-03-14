@@ -99,7 +99,6 @@ opacity: 1;\
 }\
 .ace_search_options {\
 margin: 0px;\
-margin-right: 30px;\
 text-align: right;\
 -webkit-user-select: none;\
 -moz-user-select: none;\
@@ -236,20 +235,18 @@ var SearchBox = function(editor, range, showReplaceForm) {
         }
     });
     this.setEditor = function(editor) {
-            editor.searchBox = this;
-            if (this.editor){
-                if(this.$scrollMargin) {
-                    this.editor.renderer.$minViewMarginTop = 0;
-                    var sm = this.editor.renderer.scrollMargin;
-                        this.editor.renderer.setScrollMargin(this.$scrollMargin.top, this.$scrollMargin.bottom, this.$scrollMargin.left, this.$scrollMargin.right);
-                    this.$scrollMargin = null;
-                }
-                this.editor.keyBinding.removeKeyboardHandler(this.$closeSearchBarKb);
-                this.editor.off("changeSession", this.setSession);
-            }
-            editor.container.appendChild(this.element);
-            this.editor = editor;
-        };
+        var show = false;
+        editor.searchBox = this;
+        if (this.editor && this.active){
+            show = true;
+            this.hide();
+        }
+        editor.container.appendChild(this.element);
+        this.editor = editor;
+        if(show){
+            this.show();
+        }
+    };
     this.allowedCommands = ["undo", "redo"];
     this.setSession = function(e) {
         this.searchRange = null;
@@ -257,6 +254,7 @@ var SearchBox = function(editor, range, showReplaceForm) {
     };
 
     this.$initElements = function(sb) {
+        this.element.style.display = "none";
         this.searchBox = sb.querySelector(".ace_search_form");
         this.replaceBox = sb.querySelector(".ace_replace_form");
         this.searchOption = sb.querySelector("[action=searchInSelection]");
@@ -488,14 +486,16 @@ var SearchBox = function(editor, range, showReplaceForm) {
         this.replaceOption.style.display = readOnly ? "none" : "";
         this.replaceBox.style.display = this.replaceOption.checked && !readOnly ? "" : "none";
         this.find(false, false, preventScroll);
-        this.editor.renderer.$minViewMarginTop = this.element.clientHeight + 5;
-        if (!this.$scrollMargin) {
-            var sm = this.editor.renderer.scrollMargin;
-            this.$scrollMargin = Object.assign({}, sm);
-            if (sm.top < this.element.clientHeight + 5) {
-                this.editor.renderer.setScrollMargin(this.element.clientHeight + 5, sm.bottom, sm.left, sm.right);
-            }
+        var height =  this.element.clientHeight+5;
+        if(!this.$scrollMargin){
+            this.$scrollMargin = {};
         }
+        if(height != this.$scrollMargin.top){
+            this.editor.renderer.$minViewMarginTop =height;
+            this.$scrollMargin.top=height;
+            this.editor.renderer.addScrollMargin(this.$scrollMargin);
+        }
+        
     };
 
     this.highlight = function(re) {
@@ -590,16 +590,16 @@ var SearchBox = function(editor, range, showReplaceForm) {
         this.searchOption.checked = false;
         this.editor.off("changeSession", this.setSession);
         if (this.$scrollMargin) {
-            var sm = this.editor.renderer.scrollMargin;
-                this.editor.renderer.setScrollMargin(this.$scrollMargin.top, this.$scrollMargin.bottom, this.$scrollMargin.left, this.$scrollMargin.right);
+            this.editor.renderer.removeScrollMargin(this.$scrollMargin);
             this.$scrollMargin = null;
+            this.editor.renderer.$minViewMarginTop = 0;
         }
-        this.editor.renderer.$minViewMarginTop = 0;
         this.searchHistory.currentItem = null;
         this.element.style.display = "none";
         this.editor.keyBinding.removeKeyboardHandler(this.$closeSearchBarKb);
         this.editor.focus();
     };
+        
     this.show = function(value, isReplace) {
         this.active = true;
         this.editor.on("changeSession", this.setSession);
@@ -628,7 +628,16 @@ exports.SearchBox = SearchBox;
 
 exports.Search = function(editor, isReplace) {
     var sb = editor.searchBox || new SearchBox(editor);
-    sb.show(editor.session.getTextRange(), isReplace);
+    var range =editor.selection.getRange();
+    var text = editor.session.getTextRange(range);
+    if(range.end.row-range.start.row>5 || text.length>100){
+        sb.setSearchRange(null);
+        sb.searchOption.checked = true;
+        sb.setSearchRange(range);
+        sb.$syncOptions();
+        range = "";
+    }
+    sb.show(text, isReplace);
 };
 
 });

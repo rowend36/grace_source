@@ -1,4 +1,4 @@
-(function(global){
+_Define(function(global){
 	var Utils = global.Utils;
 	var EventsEmitter = global.EventsEmitter;
     var domMatches = function(el, sel) {
@@ -124,7 +124,7 @@
         this.update();
     }
 
-    Utils.extend(DragTabs,EventsEmitter);
+    Utils.inherits(DragTabs,EventsEmitter);
     /**
      * Get the current active tab
      *
@@ -393,7 +393,7 @@
     function DragList(){
         DragList.super(this,arguments);
     }
-    Utils.extend(DragList,DragTabs);
+    Utils.inherits(DragList,DragTabs);
     DragList.prototype._moveTab = function(event) {
         var context = this._context,
             initialIndex = context.initialIndex,
@@ -454,4 +454,4 @@
     };
     global.DragList = DragList;
     global.DragTabs = DragTabs;
-})(Modules);
+});/*_EndDefine*/

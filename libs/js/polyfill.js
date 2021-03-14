@@ -25,13 +25,17 @@
   // Array methods
 
   var AP = Array.prototype;
-
+  window.isNaN = window.isNaN || function(a){
+      return Number(a)===NaN;
+  };
   AP.some = AP.some || function(pred) {
-    for (var i = 0; i < this.length; ++i) if (pred(this[i], i)) return true;
+    s = s || null;
+    for (var i = 0; i < this.length; ++i) if (pred.call(s,this[i], i)) return true;
   };
 
-  AP.forEach = AP.forEach || function(f) {
-    for (var i = 0; i < this.length; ++i) f(this[i], i);
+  AP.forEach = AP.forEach || function(f,s) {
+    s = s || null;
+    for (var i = 0; i < this.length; ++i) f.call(s,this[i], i);
   };
 
   AP.indexOf = AP.indexOf || function(x, start) {
@@ -44,8 +48,9 @@
     return -1;
   };
 
-  AP.map = AP.map || function(f) {
-    for (var r = [], i = 0; i < this.length; ++i) r.push(f(this[i], i));
+  AP.map = AP.map || function(f,s) {
+    s = s || null;
+    for (var r = [], i = 0; i < this.length; ++i) r.push(f.call(s,this[i], i));
     return r;
   };
 

@@ -1,26 +1,29 @@
-(function(global) {
+_Define(function(global) {
     var docs = global.docs;
     var Utils = global.Utils;
     var Doc = global.Doc;
     var FileUtils = global.FileUtils;
     var Editors = global.Editors;
     var getEditor = global.getEditor;
+    var checkBox = global.styleCheckbox;
     var getActiveDoc = global.getActiveDoc || function() {
         return Doc.forSession(getEditor().session);
     };
     var Functions = global.Functions;
-    var appConfig = global.appConfig;
     var appStorage = global.appStorage;
     var configure = global.configure;
-    global.registerAll({
+    var appConfig = global.registerAll({
         "allowLiveReload": true,
         "splitPreview": true,
-        "_server": Env._server,
-        "useSoftNewWindow": false,
+        "commandServer": Env._server && Env._server+"/run",
+        "useIframePreview": !Env.newWindow,
         "runPath": "",
         "lastRun": "",
-        "preCommand": "",
+        "buildCommand": "",
         "forceRun": ""
+    });
+    global.registerValues({
+        "commandServer": "The url of the fileserver eg http://localhost:3000"
     });
     var Notify = global.Notify;
     var createPreview = global.createPreview;
@@ -32,9 +35,10 @@
     function preview(path, reloader) {
         var isFull = !appConfig.splitPreview;
         if (isFull) {
-            if (Env.newWindow && !appConfig.useSoftNewWindow) {
+            if (Env.newWindow && !appConfig.useIframePreview) {
                 return Env.newWindow(path);
             }
+            else console.log(Env.newWindow ,appConfig.useIframePreview);
         }
         if (previewer) {
             previewer.setEditor(getEditor());
@@ -54,15 +58,9 @@
 
     var runPath = appConfig.runPath;
     var lastRun = appConfig.lastRun;
-    var preCommand = appConfig.preCommand;
-    var runModes = {
-        "js": BrowserRun,
-        "md": MarkdownPreview,
-        "html": HTMLPreview,
-        "node": NodeRun
-    };
-    var forceRun = runModes[appConfig.forceRun];
-
+    var buildCommand = appConfig.buildCommand;
+    
+    
     Functions.run = function(editor) {
         var path;
         var doc;
@@ -79,12 +77,14 @@
                 return;
             }
             path = doc.getPath();
+            if(!path){
+                path = "";
+            }
         }
         if (forceRun) {
-            forceRun.run(path, preCommand);
-            return;
+            forceRun.run(path);
         }
-        if (path.endsWith(".html")) {
+        else if (/html?$/.test(path)) {
             if (lastRun != path) {
                 lastRun = path;
                 configure("lastRun", path);
@@ -105,7 +105,7 @@
         }
 
     };
-    FileUtils.registerOption("project", ["file"], "run-as", {
+    FileUtils.registerOption("files", ["file"], "run-as", {
         caption: "Set as preview url",
         extension: "html",
         onclick: function(ev) {
@@ -113,6 +113,8 @@
             var path = ev.filepath;
             runPath = path;
             forceRun = HTMLPreview;
+            configure("runPath",runPath);
+            configure("forceRun",HTMLPreview.id);
         }
     });
     Editors.addCommands([{
@@ -122,7 +124,8 @@
     }]);
     var menu = global.MainMenu;
     menu.addOption('run-as', {
-        caption: 'Preview settings',
+        icon: 'build',
+        caption: 'Build/Run',
         onclick: function(ev, id, el) {
             var modal = $(Notify.modal({
                 header: "Preview Configuration",
@@ -141,7 +144,9 @@
                     "<input name='preview-url' id='preview-url'/>",
                     "</div>",
                     "<div class='config config-node'>",
-                    "<label for='preview-command'>Terminal Command</label>",
+                    "<label for='preview-server'>Build Server</label>",
+                    "<input name='preview-server' id='preview-server'/>",
+                    "<label for='preview-command'>Build Command</label>",
                     "<input name='preview-command' id='preview-command'/>",
                     "<label for='run-preview-url'>Force Preview Url </label>",
                     "<input name='run-preview-url' id='run-preview-url'/>",
@@ -159,11 +164,8 @@
             for (var i in runModes) {
                 modal.find('select').append("<option value=\"" + i + " \">" + runModes[i].name + "</option>");
             }
-            modal.find('input').filter('[type=checkbox]').addClass('checkbox').next().click(function(e) {
-                $(this).prev().click();
-                e.stopPropagation();
-                e.preventDefault();
-            }).prev().filter("#no-run").click(function() {
+            checkBox(modal);
+            modal.find("#no-run").click(function() {
                 modal.find('#run-preview-url').attr('disabled', this.checked).val("!norun");
             });
 
@@ -172,9 +174,10 @@
                 modal.find(".config-" + modal.find('select').val()).show();
             }
             modal.find('select').change(update);
+            modal.find("#preview-server").val(appConfig.commandServer);
             modal.find("#run-preview-url").val(runPath || lastRun);
             modal.find("#preview-url").val(runPath || lastRun);
-            modal.find("#preview-command").val(preCommand || "npm build");
+            modal.find("#preview-command").val(buildCommand || "npm build");
             modal.find("#no-run").val(runPath == "!norun");
 
             modal.find('form').submit(function(e) {
@@ -189,8 +192,9 @@
                         break;
                     case "node":
                         forceRun = NodeRun;
-                        preCommand = modal.find("#preview-command").val();
-                        configure("preCommand", preCommand);
+                        buildCommand = modal.find("#preview-command").val();
+                        configure("buildCommand", buildCommand);
+                        configure("commandServer",$("#preview-server").val());
                         runPath = modal.find("#run-preview-url").val();
                         break;
                     case "html":
@@ -263,13 +267,14 @@
     var NodeRun = {
         id: 'node',
         name: 'Terminal',
-        run: function(path, args) { //, errors, runMngr, args, realpath) {
+        run: function(path) { //, errors, runMngr, args, realpath) {
             if (this.pending) return;
             this.pending = setTimeout(function() {
-                this.pending = false;
-            }, Utils.parseTime('30s'));
-            $.post(appConfig._server + "/run/", {
-                command: args || "node " + path,
+                this.pending = null;
+            }, Utils.parseTime('5s'));
+            //does not give failure
+            $.post(appConfig.commandServer, {
+                command: buildCommand || "npm build",
                 currentDir: FileUtils.getProject().rootDir
             }, function(res) {
                 var result = JSON.parse(res);
@@ -326,6 +331,14 @@
         "log('ERROR '+a+' at position: '+(c/*-NUM_LINES*/)+','+d);}\n" +
         "console.log=console.error=console.warn=log</script>\n";
     BrowserRun.scriptStub = BrowserRun.scriptStub.replace('NUM_LINES', BrowserRun.scriptStub.split("\n").length - 1);
+    var runModes = {
+        "js": BrowserRun,
+        "md": MarkdownPreview,
+        "html": HTMLPreview,
+        "node": NodeRun
+    };
+    var forceRun = runModes[appConfig.forceRun];
+
     global.preview = preview;
     global.runModes = runModes;
-})(Modules);
+})/*_EndDefine*/

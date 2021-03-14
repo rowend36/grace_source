@@ -1,4 +1,4 @@
-(function(global) {
+_Define(function(global) {
     //FocusManager is a class to manager transfer of
     //focus in mobile, the defining methods are
     //FocusManager.trap and FocusManager.focusIfKeyboard
@@ -15,21 +15,23 @@
     /**
      *  The Virtual Keyboard Detector
      */
+    var events = global.AppEvents;
+    var setImmediate = global.Utils.setImmediate;
+    var noop = global.Utils.noop;
     var virtualKeyboardVisible = false;
-
+    var KeyboardDetector;
     if (!Env.isDesktop) {
-        var KeyboardDetector = (function(window, undefined) {
+        KeyboardDetector = (function(window, undefined) {
             //if you want something done well do it yourself
             var focusListener = (function() {
                 var recentlyFocused = false;
                 var recentlyFocusedTimeout = null;
-                var validFocusableElements = ['INPUT', 'TEXTAREA'];
-                var recentlyFocusedTimeoutDuration = 3000;
+                var recentlyFocusedTimeoutDuration = 2000;
                 var resized = false;
 
                 function handler(e) {
                     if (typeof e.target !== 'undefined' && typeof e.target.nodeName !== 'undefined') {
-                        if (validFocusableElements.indexOf(e.target.nodeName) != -1)
+                        if (isFocusable(e.target))
                             elementFocusHandler(e);
                     }
                 }
@@ -48,8 +50,12 @@
                 function expireRecentlyFocused() {
                     //whatever happens recognize a hardware
                     //keyboard when you see one
-                    if (!resized)
+                    if (!virtualKeyboardVisible) {
                         virtualKeyboardVisible = true;
+                        events.trigger("keyboard-change", {
+                            visible: true
+                        });
+                    }
                     recentlyFocused = false;
                     recentlyFocusedTimeout = null;
                 }
@@ -59,12 +65,18 @@
                         document.addEventListener('focus', handler, true);
                     },
                     activated: function(current) {
-                        resized = true;
-                        return recentlyFocused ? 1 : 0;
+                        if (recentlyFocused) {
+                            clearTimeout(recentlyFocusedTimeout);
+                            recentlyFocused = false;
+                            return 1;
+                        }
+                        return 0;
                     }
                 };
             })();
             var sizeListener = (function() {
+                //could have just used screen.height - window.innerHeight
+                //I guess this is more adaptive
                 var currentWidth, previousWidth;
                 var currentHeight, previousHeight, heightWithoutKeyboard;
                 var keyboardHeight, heightDiff;
@@ -74,7 +86,7 @@
                         previousWidth = currentWidth = window.innerWidth;
                         keyboardHeight = 0;
                     },
-                    activated: function(current) {
+                    activated: function(wasVisible) {
                         currentHeight = window.innerHeight;
                         currentWidth = window.innerWidth;
                         heightDiff = previousHeight - currentHeight;
@@ -84,52 +96,49 @@
                             previousWidth = currentWidth;
                             return 0;
                         }
-                        if (current && keyboardHeight > 50 && (-heightDiff < margin && heightDiff < margin)) {
+                        if (wasVisible && keyboardHeight > 50 && (-heightDiff < margin && heightDiff < margin)) {
                             /*some keyboards have number rows on top hence keyboardHeight/4 */
                             keyboardHeight += heightDiff;
                             return 1;
                         }
                         if (heightDiff > 0) {
                             //viewheight reduced && keyboard was not visible
-                            if (!current && heightDiff >= (keyboardHeight - 50)) {
+                            if (!wasVisible && heightDiff >= (keyboardHeight - 50)) {
                                 keyboardHeight = heightDiff;
                                 return 2;
-                            }
-                            else {
+                            } else {
                                 keyboardHeight = (keyboardHeight + heightDiff) / 2;
                                 //reduced view height but
                                 //not by upto keyboard height
                                 //or keyboard was not visible.
-                                //perharps user has switched to a smaller keyboard
+                                //perharps user has switched to a smaller keyboard layout
                                 //update keyboard height gradually
                                 //numRows code above will handle final update
                                 //but assume visible if it wasn't already visible
-                                return current ? 0 : 1;
+                                return wasVisible ? 0 : 1;
                             }
-                        }
-                        else if (current) {
+                        } else if (wasVisible) {
                             // view height increased by keyboardheight 
                             // && keyboard was visible
                             // This is the only time to assume keyboard is hidden
-                            //But it might bring wrong values
-                            //on hardware keyboard very bad
+                            //But it will bring wrong values
+                            //on hardware keyboard
                             if (-heightDiff >= keyboardHeight) {
                                 keyboardHeight = -heightDiff;
                                 return -2;
-                            }
-                            else {
+                            } else {
                                 keyboardHeight = (keyboardHeight - heightDiff) / 2;
                                 //unlike above we cannot assume
                                 //keyboard has been hidden yet
                                 //adjust keyboard height
                                 return 0;
                             }
-                        }
-                        else {
-                            //no keyboard and height is increasing
-                            //counter to recently focused
+                        } else {
+                            //no keyboard and height increased
                             //assume keyboard height stays the same
-                            //but re assert no keyboard
+                            //For keyboard status to stay the same,
+                            //recentlyFocus must be activated
+                            //else reassert no keyboard
                             return -1;
                         }
                     }
@@ -144,9 +153,6 @@
                 if (typeof options !== 'undefined') {
                     if (typeof options.recentlyFocusedTimeoutDuration !== 'undefined') recentlyFocusedTimeoutDuration = options.recentlyFocusedTimeoutDuration;
                 }
-                //for (var i in listeners) {
-                //    listeners[i].attach();
-                //}
                 focusListener.attach();
                 sizeListener.attach();
                 initResizeListener();
@@ -162,38 +168,60 @@
             }
 
             function resizeHandler() {
-                var score = 0;
-                //for (var i in listeners) {
-                //score += listeners[i].activated(virtualKeyboardVisible);
-                //}
-                score += sizeListener.activated(virtualKeyboardVisible);
-                score += focusListener.activated(virtualKeyboardVisible);
-                if (score > 0) {
+                var score =
+                    sizeListener.activated(virtualKeyboardVisible) +
+                    focusListener.activated(virtualKeyboardVisible);
+                if (score > 0 && !virtualKeyboardVisible) {
                     virtualKeyboardVisible = true;
-                }
-                if (score < 0) {
+                    events.trigger("keyboard-change", {
+                        visible: true,
+                        isTrusted: score > 1
+                    });
+                } else if (score < 0 && virtualKeyboardVisible) {
                     virtualKeyboardVisible = false;
+                    events.trigger("keyboard-change", {
+                        visible: false,
+                        isTrusted: score < -1
+                    });
                 }
-                else {
-                    //if ('activeElement' in document)
-                    //    document.activeElement.focus();
-                }
-                //TODO by detecting keyboard opened and immediately
-                // closed behaviour gradually correct sizeListeners
-                //notions of keyboardHeight && numRowHeight
             }
             // Make public functions available
             return {
-                init: init
+                init: init,
             };
 
         })(window);
         KeyboardDetector.init();
     }
+    events._eventRegistry["keyboard-change"] = null;
     //start tracking active element and stop loss of focus;
     var activeElement;
 
-    function doRefocus(e) {
+    function focus(el) {
+        //ace has special focus handling
+        //for old browsers
+        if(M.Modal._modalsOpen>0){
+            var a = $(el).closest('modal');
+            if(a.length<1)return postClearRefocus(true);
+            var instance = M.Modal.getInstance(a[a.length-1]);
+            if(!instance || instance._nthModalOpened!==M.Modal._modalsOpen){
+                return postClearRefocus(true);
+            }
+        }
+        if (!el.parentElement) return;
+        if (el.parentElement.env) {
+            el.parentElement.env.editor.textInput.focus();
+        } else {
+            el.focus();
+        }
+        setImmediate(function() {
+            if (activeElement == el && !hasFocusedInput()) {
+                focus(activeElement);
+            }
+        });
+    }
+
+    function autoRefocus(e) {
         if (!virtualKeyboardVisible)
             return;
         if (clearRefocusTimer) {
@@ -205,25 +233,27 @@
         if (activeElement) {
             if (activeElement != document.activeElement) {
                 activeElement.removeEventListener('blur', on_blur);
-            }
-            else
+            } else
                 return;
         }
         activeElement = document.activeElement;
         if (activeElement && activeElement != document.body) {
             activeElement.addEventListener('blur', on_blur);
-        }
-        else activeElement = null;
+            document.addEventListener('focusin', on_blur);
+            focus(activeElement);
+        } else activeElement = null;
     }
 
-    function doRefocusHook(e) {
-        doRefocus(e);
-        if (activeElement)
+    function autoRefocusEagerly(e) {
+        autoRefocus(e);
+        if (activeElement) {
             hook = true;
+        }
     }
-    //stop tracking active element
-    function stopRefocus() {
+    
+    function stopAutoRefocus() {
         activeElement.removeEventListener("blur", on_blur);
+        document.removeEventListener('focusin', on_blur);
         activeElement = null;
         hook = false;
         clearRefocusTimer = null;
@@ -231,7 +261,7 @@
 
     var clearRefocusTimer = null;
 
-    function focusable(el) {
+    function isFocusable(el) {
         if (el.tagName == 'TEXTAREA') return !el.readOnly;
         if (el.tagName == 'INPUT') {
             var type = el.type;
@@ -255,71 +285,74 @@
         if (clearRefocusTimer) {
             clearTimeout(clearRefocusTimer);
         }
-        if (immediate === true) stopRefocus();
-        else clearRefocusTimer = setTimeout(stopRefocus, 200);
+        if (immediate === true) stopAutoRefocus();
+        else clearRefocusTimer = setTimeout(stopAutoRefocus, 200);
     }
-    var event_mousedown = 'ontouchstart' in window ? 'touchstart' : 'mousedown';
-    var event_mouseup = 'ontouchend' in window ? 'touchend' : 'mouseup';
+    var event_mousedown = "ontouchstart" in window ? 'touchstart' : 'mousedown';
+    var event_mouseup = "ontouchend" in window ? 'touchend' : 'mouseup';
 
-    function hasActiveElement() {
-        return focusable(document.activeElement) && document.activeElement;
+    function hasFocusedInput() {
+        return document.activeElement && isFocusable(document.activeElement);
     }
     //guard for blur
     var on_blur = function(e) {
         if (hook) {
-            activeElement.focus();
-            /*window.setTimeout(function() {
-                if (activeElement)
-                    activeElement.focus();
-            }, 0);*/
-        }
-        else {
-            setTimeout(function() {
-                if (activeElement && !hasActiveElement()) {
-                    activeElement.focus();
+            focus(activeElement);
+
+        } else {
+            setImmediate(function() {
+                if (activeElement && !hasFocusedInput()) {
+                    focus(activeElement);
                 }
-            }, 0);
+            });
         }
     };
     var hook = false;
 
-    function focusIfKeyboard(el,allowDesktop) {
+    function focusIfKeyboard(el, allowDesktop, force) {
         if (activeElement) {
             postClearRefocus(true);
         }
-        if (virtualKeyboardVisible) {
-            el.focus();
-            doRefocus();
+        if (virtualKeyboardVisible || force || (allowDesktop && Env.isDesktop)) {
+            focus(el);
+            autoRefocus();
             postClearRefocus();
-        }
-        else if(allowDesktop && Env.isDesktop){
-            el.focus();
         }
     }
     global.FocusManager = {
         get activeElement() {
-            return activeElement || hasActiveElement();
+            return activeElement || (hasFocusedInput() || Env.isDesktop) && document.activeElement;
         },
-        trap: function(el, hook) {
+        //allows clicks to buttons to return focus to editor
+        trap: function(el, eagerly) {
             if (!Env.isDesktop) {
-                el.on(event_mousedown, hook ? doRefocusHook : doRefocus);
+                el.on(event_mousedown, eagerly ? autoRefocusEagerly : autoRefocus);
                 el.on(event_mouseup, postClearRefocus);
             }
         },
-        canTakeInput: focusable,
-        visit: function(newfocus) {
-            var element = activeElement || hasActiveElement() || (Env.isDesktop && document.activeElement);
+        canTakeInput: isFocusable,
+        //Focus on an element and return a callback
+        //which smartly returns focus to original position
+        //Useful for dialogs
+        visit: function(newfocus, forceFocus) {
+            var element = activeElement || ((virtualKeyboardVisible || Env.isDesktop) && hasFocusedInput()) && document.activeElement;
+            if(newfocus)
+                focusIfKeyboard(newfocus, true,forceFocus);
+            else element && element.blur();
             if (element) {
-                newfocus.focus();
-                return focusIfKeyboard.bind(null, element,true);
+                //return a function to return focus
+                return function() {
+                    if (hasFocusedInput() && document.activeElement != newfocus) return;
+                    focusIfKeyboard(element, true);
+                };
+            } else {
+                return noop;
             }
-            else return function() {};
-
         },
         release: function(el) {
             postClearRefocus(true);
-            el.off(event_mousedown, doRefocus);
-            el.off(event_mousedown, doRefocusHook);
+            el.off(event_mousedown, autoRefocus);
+            el.off(event_mousedown, autoRefocusEagerly);
             el.off(event_mouseup, postClearRefocus);
         },
         hintChangeFocus: function() {
@@ -329,6 +362,9 @@
         hintNoChangeFocus: function() {
             hook = true;
         },
+        get keyboardVisible() {
+            return virtualKeyboardVisible;
+        },
         focusIfKeyboard: focusIfKeyboard
     };
-})(Modules);
+}); /*_EndDefine*/

@@ -1,12 +1,18 @@
-(function(global) {
+_Define(function(global) {
     "use strict";
     var FileUtils = global.FileUtils;
     var Utils = global.Utils;
     var createCounter = global.Utils.createCounter;
+    var request = global.request;
+    var requestBuffer = global.requestBuffer;
+    var sendBuffer = global.sendBuffer;
+    var normalizeEncoding = FileUtils.normalizeEncoding;
 
     function upgradeFs(fs) {
         fs.delete = fs.delete || function(path, cb, error) {
-            error = error || { error: false };
+            error = error || {
+                error: false
+            };
             fs.stat(path, function(e, st) {
                 if (error.error) return cb();
                 if (e) {
@@ -32,8 +38,7 @@
                         });
                         counter.decrement();
                     });
-                }
-                else fs.unlink(path, cb);
+                } else fs.unlink(path, cb);
             });
         };
         fs.moveFile = fs.moveFile || function(path, newpath, cb, overwrite) {
@@ -43,8 +48,7 @@
                         if (!e) fs.delete(path);
                         cb && cb(e);
                     });
-                }
-                else cb();
+                } else cb();
             });
         };
         fs.getRoot = fs.getRoot || function() {
@@ -83,143 +87,54 @@
             return this.id;
         };
         fs.isEncoding = fs.isEncoding || function(e) {
-            var a = e.toLowerCase().replace("-", "");
-            if (a === "utf8") return a;
+            if (normalizeEncoding(e) === "utf8") return 'utf8';
         };
     }
     var InAppFileServer;
     global.getBrowserFileServer = function() {
+        if (InAppFileServer) return InAppFileServer;
         var fs = InAppFileServer;
-        if (!fs) {
-            if (window.LightningFS) {
-                fs = InAppFileServer = new LightningFS('grace');
-                upgradeFs(fs);
-            }
-            else {
-                fs = new StubFileServer("./libs/js/lightning-fs.js", global.getBrowserFileServer);
-            }
-            fs.id = "inApp";
-            fs.cachedFs = fs;
+        if (window.LightningFS) {
+            fs = InAppFileServer = new LightningFS('grace');
+            //No worker will be using you anytime soon
+            //And we want to be able to use storage
+            //even when quota is exhausted
+            //todo make this less of a hack
+            fs.promises._initPromise.then(function() {
+                fs.promises._mutex = {
+                    _has: true,
+                    has: function() {
+                        return this._has;
+                    },
+                    acquire: function() {
+                        this._has = true;
+                        return true;
+                    },
+                    wait: Utils.noop,
+                    release: function() {
+                        this._has = false;
+                        return true;
+                    },
+                    _keepAlive: function() {
+                        this._keepAliveTimeout = true;
+                    },
+                    _stopKeepAlive: function() {
+                        if (this._keepAliveTimeout) {
+                            this._keepAliveTimeout = null;
+                        }
+                    }
+                };
+                fs.promises._deactivate = Utils.noop;
+            });
+            upgradeFs(fs);
+        } else {
+            fs = new StubFileServer("./libs/js/lightning-fs.js", global.getBrowserFileServer);
         }
+        fs.id = "inApp";
+        fs.cachedFs = fs;
+
         return fs;
     };
-    var errors = {
-        404: 'ENOENT',
-        401: "EEXIST",
-        403: "ENOTEMPTY",
-        402: "EISDIR",
-        405: 'ENOTDIR',
-        406: 'EXDEV',
-        412: 'ETOOLARGE',
-        413: 'ENOTENCODING'
-    };
-    var getError = function(xhr, url, path) {
-        var code = errors[xhr.status] || xhr.responseText || 'EUNKNOWN';
-        if (xhr.status === 0 && !code) global.Notify.error('SERVER DOWN!!!');
-        return {
-            code: code,
-            message: code,
-            syscall: url,
-            path: path
-        };
-    };
-    var request = function(url, data, callback, processed, retryCount, stack) {
-        retryCount = retryCount || 0;
-        $.ajax({
-            url: url,
-            type: 'POST',
-            data: data,
-            processData: !processed,
-            success: function(res) {
-                callback && callback(null, res);
-            },
-            error: function(xhr, status, message) {
-                if ((xhr.status === 0 || (xhr.status === 501 && !xhr.responseText)) && retryCount < 3) {
-                    request(url, data, callback, processed, ++retryCount, stack);
-                }
-                else callback && callback(getError(xhr, url, data.path || data.dir || data.file));
-            }
-        });
-    };
-    var requestBuffer;
-
-    if (window.XMLHttpRequest && window.FormData && window.ArrayBuffer) {
-        requestBuffer = function(url, path, callback, retryCount, stack) {
-            retryCount = retryCount || 0;
-            stack = retryCount;
-            $.ajax({
-                url: url,
-                type: 'POST',
-                data: {
-                    file: path
-                },
-                success: function(res) {
-                    callback && callback(null, res);
-                },
-                error: function(xhr, status, message) {
-                    if ((xhr.status === 0 || (xhr.status === 501 && !xhr.responseText)) && retryCount < 3) {
-                        requestBuffer(url, path, callback, ++retryCount, stack);
-                    }
-                    else callback && callback(getError(xhr, stack, path));
-                },
-                xhr: function() {
-                    var a = new XMLHttpRequest();
-                    a.responseType = "arraybuffer";
-                    return a;
-                }
-            });
-        };
-    }
-    else {
-        var MAX_SIZE = 1000000;
-        //this size will take 4mb of memory
-        //bfs buffer impl can use readUint method
-        //And thus, save half the memory
-        //besides inbrowser fileserver 
-        //the other two servers
-        //use base64 as intermediate value
-        //this could make room for some
-        //optimization later
-        //but for now, we'll ignore it
-        var UintArrayImpl = function(binaryStr) {
-            if (binaryStr.length > MAX_SIZE) {
-                throw 'Error: File Too Large';
-            }
-            for (var i = 0; i < max; i++) {
-                this[i] = binaryStr.charCodeAt(i) && 0xff;
-            }
-            this.length = this.byteLength = binaryStr.length;
-            this.buffer = this;
-        };
-        UintArrayImpl.prototype = Object.create(Array.prototype);
-        UintArrayImpl.prototype.byteOffset = 0;
-
-        requestBuffer = function(url, path, callback, retryCount) {
-            retryCount = retryCount || 0;
-            $.ajax({
-                url: url,
-                type: 'POST',
-                data: {
-                    file: path
-                },
-                success: function(data) {
-                    var buffer = new UintArrayImpl(data);
-                    callback && callback(null, buffer);
-                },
-                error: function(xhr, status, message) {
-                    if ((xhr.status === 0 || (xhr.status === 501 && !xhr.responseText)) && retryCount < 3) {
-                        requestBuffer(url, path, callback, retry, ++retryCount);
-                    }
-                    else callback && callback(getError(xhr));
-                },
-                xhr: function() {
-                    var a = new XMLHttpRequest();
-                    xhr.overrideMimeType('text/plain; charset=x-user-defined');
-                    return a;
-                }
-            });
-        };
-    }
 
     function RESTFileServer(address, rootDir) {
         var server = address;
@@ -235,14 +150,12 @@
                 if (typeof opts === "function") {
                     callback = opts;
                     opts = null;
-                }
-                else encoding = opts.constructor === String ? opts : opts.encoding;
+                } else encoding = opts.constructor === String ? opts : opts.encoding;
             }
             if (!encoding) {
                 requestBuffer(server + "/open", path, callback);
-            }
-            else request(server + "/open", {
-                file: path,
+            } else request(server + "/open", {
+                path: path,
                 encoding: encoding
             }, callback);
         };
@@ -251,13 +164,13 @@
         };
         this.getFiles = function(path, callback) {
             request(server + "/files", {
-                dir: path,
+                path: path,
                 appendSlash: true
             }, callback);
         };
         this.readdir = function(path, callback) {
             request(server + "/files", {
-                dir: path
+                path: path
             }, callback);
         };
         this.writeFile = function(path, content, opts, callback) {
@@ -267,33 +180,17 @@
                     callback = opts;
                     opts = null;
                     encoding = null;
-                }
-                else if(typeof opts=="string"){
+                } else if (typeof opts == "string") {
                     encoding = opts;
-                }
-                else{
+                } else {
                     encoding = opts.encoding;
                 }
             }
-            // if (FileUtils.isBuffer(content)) {
+            var blob = new FormData();
+            blob.set("encoding", encoding);
+            blob.set("content", new Blob([content]), path);
+            sendBuffer(server + "/save?path=" + path.replace(/\//g, '%2F'), blob, callback);
 
-            // }
-            var data = new FormData();
-            data.set("encoding", encoding);
-            data.set("content", new Blob([content]), path);
-            var req = new XMLHttpRequest();
-            req.open('POST', server + "/save?path="+path.replace(/\//g,'%2F'), true);
-            req.send(data);
-            req.onload = function() {
-                if (req.status == 200)
-                    callback();
-                else {
-                    callback(getError(req, null, path));
-                }
-            };
-            req.onerror = function() {
-                callback(getError(req));
-            };
         };
         this.mkdir = function(path, callback) {
             request(server + "/new", {
@@ -349,7 +246,9 @@
         };
         this.isEncoding = function(e) {
             if (encodings.indexOf(e) > -1) return e;
-            if (e.toLowerCase() == "utf-8") return 'utf8';
+            //inefficient op
+            var i = encodings.map(normalizeEncoding).indexOf(normalizeEncoding(e));
+            if (i > -1) return encodings[i];
             return false;
         };
         this.getEncodings = function() {
@@ -359,7 +258,7 @@
             this.copyFile(path, dest, callback, false);
         };
         this.readlink = function(path, callback) {
-            setTimeout(function() {
+            setImmedate(function() {
                 callback(path);
             });
             //path,dest,callback,false);
@@ -370,13 +269,18 @@
         this.href = server + "/root/";
     }
     //the core props of a file server
-    var propsToEnqueue = ['getFiles', 'readFile', 'writeFile', 'stat', 'lstat', 'mkdir'];
 
     function StubFileServer(url, resolve) {
+        var propsToEnqueue = ['getFiles',
+            'readFile', 'writeFile', 'stat', 'lstat', 'mkdir'
+        ];
         var queuedOps = [];
         propsToEnqueue.forEach(function(e) {
             this[e] = function() {
-                queuedOps.push({ method: e, args: Array.prototype.slice.apply(arguments, [0]) });
+                queuedOps.push({
+                    method: e,
+                    args: Array.prototype.slice.apply(arguments, [0])
+                });
                 this.load();
             };
         }, this);
@@ -404,7 +308,7 @@
                 this.inject();
             }.bind(this);
             document.body.appendChild(script);
-            this.load = function() {};
+            this.load = Utils.noop;
         };
         this.getRoot = function() {
             return '/';
@@ -415,17 +319,17 @@
         this.inject = function() {
             var server = resolve();
             server.id = this.id;
-            //optional if you stick propsToEnqueue
+            //optional since methods are updated
             FileUtils.replaceServer(this, server);
             this.$isStub = server;
-            queuedOps.forEach(function(e) {
-                server[e.method].apply(server, e.args);
-            });
             queuedOps = null;
             this.inject = null;
             propsToEnqueue.forEach(function(e) {
                 this[e] = server[e].bind(server);
             }, this);
+            queuedOps.forEach(function(e) {
+                server[e.method].apply(server, e.args);
+            });
         };
     }
 
@@ -443,8 +347,7 @@
                     filter = function(i) {
                         return FileUtils.isDirectory(i) || i.match(glob);
                     };
-                }
-                else filter = function(i, folder) {
+                } else filter = function(i, folder) {
                     return (FileUtils.isDirectory(i) || ('^' + folder + i + '$').indexOf(glob) > -1);
                 };
                 return;
@@ -454,14 +357,13 @@
         self.getFiles = function(path, callback) {
             if (filter)
                 b.getFiles(path, function(err, res) {
-                    if (!filter) return callback(err, []);
+                    if (err || !filter) return callback(err, []);
                     var filtered = [];
                     for (var i of res) {
                         if (filter(i, path)) {
                             filtered.push(i);
                         }
                     }
-
                     if (callback)
                         callback(err, !err && filtered);
                 });
@@ -492,7 +394,7 @@
                 name: "address",
                 caption: "Address",
                 type: "text",
-                value: Env._server || ""
+                value: Env._server || "http://localhost:8000"
             },
             {
                 name: "root",
@@ -503,4 +405,4 @@
         ]);
     }
     FileUtils.registerFileServer('inApp', "In-Memory FileSystem", global.getBrowserFileServer);
-})(Modules);
+}) /*_EndDefine*/

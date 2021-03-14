@@ -1,5 +1,6 @@
-(function(global) {
+_Define(function(global) {
     var Utils = global.Utils;
+    var events = global.AppEvents;
     function resizeHandler(element) {
         return function() {
             var editors = element.find(".editor");
@@ -17,32 +18,34 @@
             sizes:sizes,
             gutterSize: gutterSize || 20,
             onDragEnd: handler
-        }))
+        }));
         handler();
     }
+    var splits = global.viewRoot;
+
     function addSplit(container, direction,gutterSize) {
         var child = container;
-        var parent = child.parent()
+        var parent = child.parent();
         if (parent.parent().hasClass('multieditor') &&
             parent.parent().data('splitter').pairs[0].direction == direction) {
-            parent = parent.parent()
-            parent.data('splitter').destroy()
+            parent = parent.parent();
+            parent.data('splitter').destroy();
         }
         else {
-            parent.addClass('multieditor')
-            child.wrap('<div class="pane"></div>')
+            parent.addClass('multieditor');
+            child.wrap('<div class="pane"></div>');
         }
-        var child2 = parent.append("<div class='pane'></div>").children().last()
-        var children = parent.children().toArray()
+        var child2 = parent.append("<div class='pane'></div>").children().last();
+        var children = parent.children().toArray();
         createSplit(parent,children,direction,null,gutterSize);
         return child2[0];
     }
-    $("#viewroot").on('click', '.editor', function() {
-        //editor = this.env.editor;
-    })
+    events.on("view-change",function(){
+        resizeHandler($(global.viewRoot))();
+    });
 
     function isSplit(child) {
-        var parent = child.parent().parent()
+        var parent = child.parent().parent();
         if (!parent.hasClass("multieditor")) {
             return false;
         }
@@ -57,43 +60,43 @@
     }
     function removeSplit(child) {
         if (!isSplit(child)) return false;
-        var parent = child.parent().parent();
-        child.parent().detach();
+        //each child is wrapped by a pane
+        var pane = child.parent();
+        var parent = pane.parent();
         var split = parent.data('splitter');
         var direction = split.pairs[0].direction;
         var gutterSize = parseInt(split.pairs[0].gutter.style.width);
         split.destroy();
-        var pop = parent.children();
-        if (pop.length > 1) {
+        pane.remove();
+        var remaining = parent.children();
+        if (remaining.length > 1) {
             //recreate splitter
-            var children = pop.toArray();
+            var children = remaining.toArray();
             createSplit(parent,children,direction,null,gutterSize);
         }
-        else if (!pop.hasClass("multieditor")) {
-            //remove empty multieditor
-            pop.children().unwrap();
-            pop.detach();
+        else if (!remaining.hasClass("multieditor")) {
+            //not a split, remove redundant pane
+            remaining.children().unwrap();
+            remaining.detach();
         }
         else {
-            //recreate child splitter
-            split = pop.data('splitter');
-            var sizes = split.getSizes()
-            direction = split.pairs[0].direction;
-            gutterSize = parseInt(split.pairs[0].gutter.style.width);
-            split.destroy()
-            pop.children().unwrap()
-            pop.detach()
-            createSplit(parent,parent.children.toArray(),direction,sizes);
+            //destroy split before removing pane
+            var childSplit = remaining.data('splitter');
+            var sizes = childSplit.getSizes();
+            direction = childSplit.pairs[0].direction;
+            gutterSize = parseInt(childSplit.pairs[0].gutter.style.width);
+            childSplit.destroy();
+            remaining.children().unwrap();
+            remaining.detach();
+            //create the split back but attaching directly to parent
+            createSplit(parent,parent.children().toArray(),direction,sizes);
         }
         resizeHandler(parent)();
         return true;
     }
     global.SplitManager = {
-        notifyResize: function(el){
-            resizeHandler(el)();
-        },
         add: addSplit,
         hasSplit: getSplitDirection,
         remove: removeSplit
-    }
-})(Modules)
+    };
+});/*_EndDefine*/

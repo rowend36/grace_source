@@ -1,4 +1,4 @@
-(function(global) {
+_Define(function(global) {
 	var Utils = global.Utils;
 	var appStorage = global.appStorage;
     var storages = {};
@@ -146,5 +146,5 @@
             this.saveItem(id);
         }
     };
-    Modules.DBStorage = Storage;
-})(Modules);
+    global.DBStorage = Storage;
+});/*_EndDefine*/

@@ -1,4 +1,4 @@
-(function(global) {
+_Define(function(global) {
     var appStorage = global.appStorage;
     var appEvents = global.AppEvents;
     var Utils = global.Utils;
@@ -137,7 +137,7 @@
         var a = global.getBindings(editor);
         for (var i in a) {
             var binding = a[i];
-            if (binding && binding.toLowerCase() != defaultBindings[i].toLowerCase()) {
+            if (binding && (!defaultBindings[i] || binding.toLowerCase() != defaultBindings[i].toLowerCase())) {
                 bindings[i] = binding;
             }
         }
@@ -176,7 +176,6 @@
         var bindings = {};
         if (editor.editor) editor = editor.editor;
         var commands = editor.commands.commandKeyBinding;
-        var platform = editor.commands.platform;
         var overriden = {};
         for (var i in commands) {
             var item = commands[i];
@@ -207,10 +206,6 @@
                     var other = item[u];
                     if (typeof other != "string") {
                         other = other.name;
-                        /*binding = (typeof item[j].bindKey == "object" ? (item[j].bindKey[platform]) : item[j].bindKey);
-                                if (binding)
-                                    binding = binding.toLowerCase().split("|");
-                            */
                     }
                     if (other != name)
                         overriden[other] = (overriden[other] || "") + "<" + binding + ":" + name + ">";
@@ -239,4 +234,4 @@
     appEvents.on("createEditor", function(e) {
         global.restoreBindings(e.editor);
     });
-})(Modules);
+})/*_EndDefine*/

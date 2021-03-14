@@ -1,29 +1,59 @@
-(function(global) {
+_Define(function(global) {
     var warningClasses = "red-text";
     var infoClasses = "blue";
+    var errorClasses = "red";
     var AutoCloseable = global.AutoCloseable;
+    var setImmediate = global.Utils.setImmediate;
+    var pending = [];
+    var active = M.Toast._toasts;
+    function doPending() {
+        if(pending.length>0) M.toast(pending.pop());
+    }
+    var suppressed = false;
+    var clearSuppressed = global.Utils.debounce(function(){
+        suppressed = false;
+    },200);
     var notify = function(text, duration, type) {
-        M.toast({
+        var opts = {
             html: text,
             displayLength: duration,
-            classes: type
-        });
+            completeCallback: doPending,
+        };
+        if (active.length < 2){
+            return M.toast(opts);
+        }
+        if(pending.length>10){
+            suppressed = M.toast({
+                html:'Output suppressed. Check console',
+                displayLength: Infinity,
+                completeCallback: clearSuppressed
+            });
+            pending.length = 0;
+        }
+        if(suppressed){
+            clearSuppressed();
+            console.log(text);
+        }
+        else pending.push(opts);
     };
     var warn = function(text, duration) {
-        notify("<span class='material-icons'>warning</span>" + text,
+        notify("<i class='orange-text material-icons toast-icon'>warning</i>" + text,
             duration || (text.length > 100 ? 5000 : 2000), warningClasses);
     };
     var info = function(text, duration) {
-        notify("<span class='white-text material-icons'>error</span>" + text,
+        notify("<i class='white-text material-icons toast-icon'>error</i>" + text,
             duration || (text.length > 100 ? 5000 : 2000), infoClasses);
+    };
+    var error = function(text, duration) {
+        notify("<i class='red-text material-icons toast-icon'>error</i>" + text,
+            duration || (text.length > 100 ? 5000 : 2000), errorClasses);
     };
     var ask = function(text, yes, no) {
         var answer = confirm(text);
         if (answer) {
-            setTimeout(yes);
-        }
-        else {
-            setTimeout(no);
+            setImmediate(yes);
+        } else {
+            setImmediate(no);
         }
     };
     var modal = function(opts, ondismiss) {
@@ -32,7 +62,11 @@
             opts.header +
             "</div class='modal-content'>" +
             opts.body +
-            "</div>";
+            "</div>" +
+            (opts.footers ? "<div class='modal-footer'>" + opts.footers.map(
+                function(e, i) {
+                    return "<button style='margin-right:10px' class='btn modal-" + e.toLowerCase().replace(/ /g, "_") + (1 == opts.footers.length ? " right" : " center") + "'>" + e + "</button>";
+                }).join("") + "</div>" : "");
         var container = document.createElement("div");
         global.watchTheme($(container));
         container.className = "modal modal-container";
@@ -40,7 +74,7 @@
         document.body.appendChild(container);
         var modalEl = $(container);
         var options = {
-            inDuration: 100,
+            inDuration: 50,
             outDuration: 50,
             dismissible: opts.dismissible !== false
         };
@@ -48,26 +82,31 @@
             options.onCloseEnd = function() {
                 ondismiss && ondismiss();
                 AutoCloseable.onCloseEnd.apply(this);
-                modalEl.modal('destroy');
-                modalEl.detach();
+                if (!opts.keepOnClose) {
+                    modalEl.modal('destroy');
+                    modalEl.detach();
+                }
             };
             options.onOpenEnd = AutoCloseable.onOpenEnd;
-        }
-        else{
+        } else {
             options.onCloseEnd = function() {
                 ondismiss && ondismiss();
-                modalEl.modal('destroy');
-                modalEl.detach();
+                if (!opts.keepOnClose) {
+                    modalEl.modal('destroy');
+                    modalEl.detach();
+                }
             };
         }
         modalEl.modal(options);
-        global.FocusManager.focusIfKeyboard(modalEl, true);
-        modalEl.modal('open');
+        if (opts.autoOpen !== false) {
+            global.FocusManager.hintChangeFocus();
+            modalEl.modal('open');
+        }
         return container;
     };
     var getTextNative = function(text, func) {
         var answer = prompt(text);
-        setTimeout(function() {
+        setImmediate(function() {
             func(answer);
         });
     };
@@ -77,7 +116,7 @@
     var ENTER = 13,
         ESC = 27;
     var Dropdown;
-    var ondismiss, completer;
+    var ondismiss, completer, returnFocus;
     var createInputDialog = function(caption, onchang, getValue, ondismis, complete) {
         if (!inputDialog) {
             var dialog = "<h6 class='modal-header'></h6>" +
@@ -100,7 +139,7 @@
                         changed = true;
                         if (onchange(input.value) !== false) {
                             inputDialog.modal('close');
-                        }
+                        } else input.focus();
                         break;
                     case 8:
                         if (completer) {
@@ -108,8 +147,7 @@
                             if (data.length) {
                                 Dropdown.update(data);
                                 Dropdown.show(this);
-                            }
-                            else Dropdown.hide();
+                            } else Dropdown.hide();
                         }
                 }
             });
@@ -119,11 +157,10 @@
                     if (data.length) {
                         Dropdown.update(data);
                         Dropdown.show(this);
-                    }
-                    else Dropdown.hide();
+                    } else Dropdown.hide();
                 }
             });
-            Dropdown = new global.Overflow(null, null, true, "left");
+            Dropdown = new global.Overflow(true, "left");
             Dropdown.onclick = function(ev, id, element, item) {
                 input.value = item;
             };
@@ -133,15 +170,20 @@
                 changed = true;
                 if (onchange(input.value) !== false) {
                     inputDialog.modal('close');
-                }
+                } else input.focus();
             });
             document.body.appendChild(creator);
             inputDialog = $(creator).modal({
                 onCloseStart: function() {
-                    if (!changed && ondismiss)
-                        ondismiss();
+                    if (!changed && ondismiss) {
+                        try {
+                            ondismiss();
+                        } catch (e) {
+                            console.error(e);
+                        }
+                    }
                     if (queued.length) {
-                        setTimeout(function() {
+                        setImmediate(function() {
                             changed = false;
                             var item = queued.shift();
                             inputDialog.modal('open');
@@ -151,8 +193,9 @@
                             onchange = item.pop();
                             header.innerHTML = item.pop();
                         }, 20);
-                    }
-                    else {
+                    } else {
+                        returnFocus();
+                        Dropdown.hide();
                         isOpen = false;
                         completer =
                             ondismiss =
@@ -165,26 +208,27 @@
         }
         return {
             caption: caption,
-            onclick: function() {
+            show: function() {
                 if (!isOpen) {
                     isOpen = true;
                     changed = false;
                     inputDialog.modal('open');
                     header.innerHTML = caption;
                     input.value = getValue() || "";
-                    input.focus();
+                    returnFocus = global.FocusManager.visit(input, true);
+                    //useed because of prompt
+                    global.FocusManager.hintNoChangeFocus();
                     ondismiss = ondismis;
                     onchange = onchang;
                     completer = complete;
-                }
-                else queued.push([caption, onchange, getValue, ondismiss, completer]);
+                } else queued.push([caption, onchange, getValue, ondismiss, completer]);
             }
         };
     };
 
     var getText = function(text, func, defText, values) {
-        if(values){
-            values = values.map(function(e){
+        if (values) {
+            values = values.map(function(e) {
                 return e.toLowerCase();
             }).sort()
         }
@@ -199,16 +243,17 @@
                 });
             }
         });
-        dialog.onclick();
+        dialog.show();
     };
 
     global.Notify = {
         notify: notify,
-        error: warn,
+        error: error,
+        dialog: createInputDialog,
         modal: modal,
         warn: warn,
         info: info,
         prompt: getText,
         ask: ask,
     };
-})(Modules);
+}) /*_EndDefine*/

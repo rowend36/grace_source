@@ -144,7 +144,9 @@ var SnippetManager = function() {
                 {regex: "\\|" + escape("\\|") + "*\\|", onMatch: function(val, state, stack) {
                     var choices = val.slice(1, -1).replace(/\\[,|\\]|,/g, function(operator) {
                         return operator.length == 2 ? operator[1] : "\x00";
-                    }).split("\x00");
+                    }).split("\x00").map(function(value){
+                        return {value: value};
+                    });
                     stack[0].choices = choices;
                     return [choices[0]];
                 }, next: "start"},
@@ -615,6 +617,12 @@ var SnippetManager = function() {
             }
             snippetMap[scope].push(s);
 
+            if (s.prefix)
+                s.tabTrigger = s.prefix;
+
+            if (!s.content && s.body)
+                s.content = Array.isArray(s.body) ? s.body.join("\n") : s.body;
+
             if (s.tabTrigger && !s.trigger) {
                 if (!s.guard && /^\w/.test(s.tabTrigger))
                     s.guard = "\\b";
@@ -631,10 +639,13 @@ var SnippetManager = function() {
             s.endTriggerRe = new RegExp(s.endTrigger);
         }
 
-        if (snippets && snippets.content)
-            addSnippet(snippets);
-        else if (Array.isArray(snippets))
+        if (Array.isArray(snippets)) {
             snippets.forEach(addSnippet);
+        } else {
+            Object.keys(snippets).forEach(function(key) {
+                addSnippet(snippets[key]);
+            });
+        }
         
         this._signal("registerSnippets", {scope: scope});
     };
@@ -684,7 +695,7 @@ var SnippetManager = function() {
                     snippet.tabTrigger = val.match(/^\S*/)[0];
                     if (!snippet.name)
                         snippet.name = val;
-                } else {
+                } else if (key) {
                     snippet[key] = val;
                 }
             }
@@ -747,15 +758,16 @@ var TabstopManager = function(editor) {
 
     this.onChange = function(delta) {
         var isRemove = delta.action[0] == "r";
-        var parents = this.selectedTabstop && this.selectedTabstop.parents || {};
+        var selectedTabstop = this.selectedTabstop || {};
+        var parents = selectedTabstop.parents || {};
         var tabstops = (this.tabstops || []).slice();
         for (var i = 0; i < tabstops.length; i++) {
             var ts = tabstops[i];
-            var active = ts == this.selectedTabstop || parents[ts.index];
+            var active = ts == selectedTabstop || parents[ts.index];
             ts.rangeList.$bias = active ? 0 : 1;
             
-            if (delta.action == "remove" && ts !== this.selectedTabstop) {
-                var parentActive = ts.parents && ts.parents[this.selectedTabstop.index];
+            if (delta.action == "remove" && ts !== selectedTabstop) {
+                var parentActive = ts.parents && ts.parents[selectedTabstop.index];
                 var startIndex = ts.rangeList.pointIndex(delta.start, parentActive);
                 startIndex = startIndex < 0 ? -startIndex - 1 : startIndex + 1;
                 var endIndex = ts.rangeList.pointIndex(delta.end, parentActive);
@@ -832,18 +844,17 @@ var TabstopManager = function(editor) {
         
         this.selectedTabstop = ts;
         var range = ts.firstNonLinked || ts;
+        if (ts.choices) range.cursor = range.start;
         if (!this.editor.inVirtualSelectionMode) {
             var sel = this.editor.multiSelect;
-            sel.toSingleRange(range.clone());
+            sel.toSingleRange(range);
             for (var i = 0; i < ts.length; i++) {
                 if (ts.hasLinkedRanges && ts[i].linked)
                     continue;
                 sel.addRange(ts[i].clone(), true);
             }
-            if (sel.ranges[0])
-                sel.addRange(sel.ranges[0].clone());
         } else {
-            this.editor.selection.setRange(range);
+            this.editor.selection.fromOrientedRange(range);
         }
         
         this.editor.keyBinding.addKeyboardHandler(this.keyboardHandler);
@@ -868,8 +879,6 @@ var TabstopManager = function(editor) {
         var ranges = this.ranges;
         tabstops.forEach(function(ts, index) {
             var dest = this.$openTabstops[index] || ts;
-            ts.rangeList = new RangeList();
-            ts.rangeList.$bias = 0;
             
             for (var i = 0; i < ts.length; i++) {
                 var p = ts[i];
@@ -879,7 +888,6 @@ var TabstopManager = function(editor) {
                 range.original = p;
                 range.tabstop = dest;
                 ranges.push(range);
-                ts.rangeList.ranges.push(range);
                 if (dest != ts)
                     dest.unshift(range);
                 else
@@ -897,6 +905,9 @@ var TabstopManager = function(editor) {
                 this.$openTabstops[index] = dest;
             }
             this.addTabstopMarkers(dest);
+            dest.rangeList = dest.rangeList || new RangeList();
+            dest.rangeList.$bias = 0;
+            dest.rangeList.addList(dest);
         }, this);
         
         if (arg.length > 2) {
@@ -939,21 +950,18 @@ var TabstopManager = function(editor) {
 
     this.keyboardHandler = new HashHandler();
     this.keyboardHandler.bindKeys({
-        "Tab": function(ed) {
-            if (exports.snippetManager && exports.snippetManager.expandWithTab(ed)) {
+        "Tab": function(editor) {
+            if (exports.snippetManager && exports.snippetManager.expandWithTab(editor))
                 return;
-            }
-
-            ed.tabstopManager.tabNext(1);
+            editor.tabstopManager.tabNext(1);
+            editor.renderer.scrollCursorIntoView();
         },
-        "Shift-Tab": function(ed) {
-            ed.tabstopManager.tabNext(-1);
+        "Shift-Tab": function(editor) {
+            editor.tabstopManager.tabNext(-1);
+            editor.renderer.scrollCursorIntoView();
         },
-        "Esc": function(ed) {
-            ed.tabstopManager.detach();
-        },
-        "Return": function(ed) {
-            return false;
+        "Esc": function(editor) {
+            editor.tabstopManager.detach();
         }
     });
 }).call(TabstopManager.prototype);
@@ -1021,10 +1029,25 @@ var $singleLineEditor = function(el) {
 
     editor.$mouseHandler.$focusTimeout = 0;
     editor.$highlightTagPending = true;
-
+    editor.copyTheme = function(host){
+        editor.setTheme(host.getTheme());
+        var font = host.getFontSize();
+        if(font<16){
+            if(font<12)font=12;
+            editor.$popupFontBp = 12;
+        }
+        else if(font<20){
+            editor.$popupFontBp = 16;
+        }
+        else{
+            if(font>24)font = 24;
+            editor.$popupFontBp = 20;
+        }
+        editor.setFontSize(font);
+        editor.setOption("fontFamily",host.renderer.$fontFamily);
+    };
     return editor;
 };
-
 var AcePopup = function(parentNode) {
     var el = dom.createElement("div");
     var popup = new $singleLineEditor(el);
@@ -1148,11 +1171,10 @@ var AcePopup = function(parentNode) {
 
         function addToken(value, className) {
             value && tokens.push({
-                type: (data.className || "") + (className || ""), 
+                type: data.className?(className?data.className+ "."+className:data.className):(className || ""), 
                 value: value
             });
         }
-        
         var lower = caption.toLowerCase();
         var filterText = (popup.filterText || "").toLowerCase();
         var lastIndex = 0;
@@ -1169,12 +1191,19 @@ var AcePopup = function(parentNode) {
             }
         }
         addToken(caption.slice(lastIndex, caption.length), "");
-        
-        if (data.meta)
-            tokens.push({type: "completion-meta", value: data.meta});
         if (data.message)
             tokens.push({type: "completion-message", value: data.message});
-
+        if (data.meta){
+            var chunks = data.meta.split(/([^a-zA-Z0-9$])/);
+            for(var n=chunks.length,c=n-1;c>=0;c--){
+                if(chunks[c])
+                    tokens.push({type: "completion-meta.float-hack-"+(n-c), value: chunks[c]});
+                else n--;
+            }
+        }
+        if(popup.showIcons && tokens.length){
+            tokens[0].type += ".completion-icon.completion-icon-"+popup.$popupFontBp+(data.iconClass?"."+data.iconClass:"");
+        }
         return tokens;
     };
     bgTokenizer.$updateOnChange = noop;
@@ -1187,6 +1216,7 @@ var AcePopup = function(parentNode) {
     popup.isTopdown = false;
     popup.autoSelect = true;
     popup.filterText = "";
+    popup.showIcons = false;
 
     popup.data = [];
     popup.setData = function(list, filterText) {
@@ -1226,26 +1256,28 @@ var AcePopup = function(parentNode) {
         popup.isOpen = false;
     };
     popup.show = function(pos, lineHeight, topdownOnly) {
+        var margins = popup.getPopupMargins();
         var el = this.container;
-        var screenHeight = window.innerHeight;
-        var screenWidth = window.innerWidth;
+        var screenHeight = this.parentNode?this.parentNode.clientHeight:window.innerHeight;
+        var screenWidth = this.parentNode?this.parentNode.clientWidth:window.innerWidth;
         var renderer = this.renderer;
-        var maxH = renderer.$maxLines * lineHeight * 1.4;
         var top = pos.top + this.$borderSize;
-        var allowTopdown = top > screenHeight / 2 && !topdownOnly;
-        if (allowTopdown && top + lineHeight + maxH > screenHeight) {
-            renderer.$maxPixelHeight = top - 2 * this.$borderSize;
+        var SPACE_ABOVE = top-margins.marginTop;
+        var SPACE_BELOW = screenHeight-top-lineHeight-this.$borderSize-margins.marginBottom;
+        if (!topdownOnly && SPACE_ABOVE > SPACE_BELOW*1.4) {
+            renderer.$maxPixelHeight = top - 2 * this.$borderSize - margins.marginTop;
             el.style.top = "";
-            el.style.bottom = screenHeight - top + "px";
+            el.style.bottom = screenHeight - top - this.$borderSize + "px";
             popup.isTopdown = false;
         } else {
             top += lineHeight;
-            renderer.$maxPixelHeight = screenHeight - top - 0.2 * lineHeight;
+            renderer.$maxPixelHeight = screenHeight - margins.marginBottom - top - 0.2 * lineHeight;
             el.style.top = top + "px";
             el.style.bottom = "";
             popup.isTopdown = true;
         }
-
+        if(renderer.$maxPixelHeight<lineHeight*2)
+            renderer.$maxPixelHeight = lineHeight*2;
         el.style.display = "";
 
         var left = pos.left;
@@ -1253,12 +1285,9 @@ var AcePopup = function(parentNode) {
             left = screenWidth - el.offsetWidth;
 
         el.style.left = left + "px";
-
-        this._signal("show");
         lastMouseEvent = null;
         popup.isOpen = true;
     };
-
     popup.goTo = function(where) {
         var row = this.getRow();
         var max = this.session.getLength() - 1;
@@ -1283,7 +1312,12 @@ var AcePopup = function(parentNode) {
 
     return popup;
 };
-
+Editor.prototype.getPopupMargins = function(){
+    return {
+        marginTop: 0,
+        marginBottom: 0
+    };
+};
 dom.importCssString("\
 .ace_editor.ace_autocomplete .ace_marker-layer .ace_active-line {\
     background-color: #CAD6FA;\
@@ -1303,12 +1337,55 @@ dom.importCssString("\
     border: 1px solid rgba(109, 150, 13, 0.8);\
     background: rgba(58, 103, 78, 0.62);\
 }\
+.ace_autocomplete .ace_text-layer{\
+    width:100%;\
+}\
+.ace_autocomplete .ace_line{\
+    width:100%;\
+    overflow: hidden;\
+}\
 .ace_completion-meta {\
-    opacity: 0.5;\
-    margin: 0.9em;\
+    opacity: 0.7;\
+    float: right;\
+}\
+.ace_float-hack-1{\
+    margin-right: 10px;\
+}\
+.ace_completion-icon:before {\
+    display: inline-block;\
+    vertical-align: middle;\
+    max-height: 100%\
+    margin: 0;\
+    margin-right: 5px;\
+    text-align: center;\
+    content: ' ';\
+    -moz-box-sizing: border-box;\
+    -webkit-box-sizing: border-box;\
+    box-sizing: border-box;\
+}\
+.ace_completion-icon-12:before {\
+    width: 12px;\
+    height: 12px;\
+    font-size: 10px;\
+    line-height: 12px;\
+}\
+.ace_completion-icon-16:before {\
+    width: 16px;\
+    height: 16px;\
+    font-size: 15px;\
+    line-height: 16px;\
+}\
+.ace_completion-icon-20:before {\
+    width: 20px;\
+    height: 20px;\
+    font-size: 19px;\
+    line-height: 20px;\
 }\
 .ace_completion-message {\
-    color: blue;\
+    color: teal;\
+    font-weight: bold;\
+    margin-left: 1.5em;\
+    text-overflow: ellipsis;\
 }\
 .ace_editor.ace_autocomplete .ace_completion-highlight{\
     color: #2d69c7;\
@@ -1355,7 +1432,7 @@ exports.parForEach = function(array, fn, callback) {
     }
 };
 
-var ID_REGEX = /[a-zA-Z_0-9\$\-\u00A2-\uFFFF]/;
+var ID_REGEX = /[a-zA-Z_0-9\$\-\u00A2-\u2000\u2070-\uFFFF]/;
 
 exports.retrievePrecedingIdentifier = function(text, pos, regex) {
     regex = regex || ID_REGEX;
@@ -1431,7 +1508,9 @@ var Autocomplete = function() {
 (function() {
 
     this.$init = function() {
-        this.popup = new AcePopup(document.body || document.documentElement);
+        this.popup = new AcePopup();
+        this.setContainer(document.body || document.documentElement);
+        this.popup.showIcons = true;
         this.popup.on("click", function(e) {
             this.insertMatch();
             e.stop();
@@ -1460,9 +1539,7 @@ var Autocomplete = function() {
         var renderer = editor.renderer;
         this.popup.setRow(this.autoSelect ? 0 : -1);
         if (!keepPopupPosition) {
-            this.popup.setTheme(editor.getTheme());
-            this.popup.setFontSize(editor.getFontSize());
-
+            this.popup.copyTheme(editor);
             var lineHeight = renderer.layerConfig.lineHeight;
 
             var pos = renderer.$cursorLayer.getPixelPosition(this.base, true);
@@ -1477,14 +1554,17 @@ var Autocomplete = function() {
         } else if (keepPopupPosition && !prefix) {
             this.detach();
         }
+        this.changeTimer.cancel();
     };
 
     this.detach = function() {
-        this.editor.keyBinding.removeKeyboardHandler(this.keyboardHandler);
-        this.editor.off("changeSelection", this.changeListener);
-        this.editor.off("blur", this.blurListener);
-        this.editor.off("mousedown", this.mousedownListener);
-        this.editor.off("mousewheel", this.mousewheelListener);
+        if(this.editor){
+            this.editor.keyBinding.removeKeyboardHandler(this.keyboardHandler);
+            this.editor.off("changeSelection", this.changeListener);
+            this.editor.off("blur", this.blurListener);
+            this.editor.off("mousedown", this.mousedownListener);
+            this.editor.off("mousewheel", this.mousewheelListener);
+        }
         this.changeTimer.cancel();
         this.hideDocTooltip();
 
@@ -1539,13 +1619,15 @@ var Autocomplete = function() {
         if (!data)
             return false;
 
+        var completions = this.completions;
+        this.editor.startOperation({command: {name: "insertMatch"}});
         if (data.completer && data.completer.insertMatch) {
             data.completer.insertMatch(this.editor, data);
         } else {
-            if (this.completions.filterText) {
+            if (completions.filterText) {
                 var ranges = this.editor.selection.getAllRanges();
                 for (var i = 0, range; range = ranges[i]; i++) {
-                    range.start.column -= this.completions.filterText.length;
+                    range.start.column -= completions.filterText.length;
                     this.editor.session.remove(range);
                 }
             }
@@ -1554,7 +1636,9 @@ var Autocomplete = function() {
             else
                 this.editor.execCommand("insertstring", data.value || data);
         }
-        this.detach();
+        if (this.completions == completions)
+            this.detach();
+        this.editor.endOperation();
     };
 
 
@@ -1707,7 +1791,12 @@ var Autocomplete = function() {
             return this.hideDocTooltip();
         this.showDocTooltip(doc);
     };
-
+    this.setContainer = function(container){
+        this.parentContainer = container;
+        container.appendChild(this.popup.container);
+        this.popup.parentNode = container;
+    };
+    
     this.showDocTooltip = function(item) {
         if (!this.tooltipNode) {
             this.tooltipNode = dom.createElement("div");
@@ -1715,6 +1804,7 @@ var Autocomplete = function() {
             this.tooltipNode.style.margin = 0;
             this.tooltipNode.style.pointerEvents = "auto";
             this.tooltipNode.tabIndex = -1;
+            this.tooltipNode.style.fontSize = editor.getFontSize()+"px";
             this.tooltipNode.onblur = this.blurListener.bind(this);
             this.tooltipNode.onclick = this.onTooltipClick.bind(this);
         }
@@ -1727,35 +1817,80 @@ var Autocomplete = function() {
         }
 
         if (!tooltipNode.parentNode)
-            document.body.appendChild(tooltipNode);
+            this.parentContainer.appendChild(tooltipNode);
         var popup = this.popup;
-        var rect = popup.container.getBoundingClientRect();
-        tooltipNode.style.top = popup.container.style.top;
-        tooltipNode.style.bottom = popup.container.style.bottom;
-
+        var popupRect = popup.container.getBoundingClientRect();
+        var margins = this.popup.getPopupMargins(true);
+        var outerRect = this.parentContainer.getBoundingClientRect();
+        
         tooltipNode.style.display = "block";
-        if (window.innerWidth - rect.right < 320) {
-            if (rect.left < 320) {
-                if(popup.isTopdown) {
-                    tooltipNode.style.top = rect.bottom + "px";
-                    tooltipNode.style.left = rect.left + "px";
-                    tooltipNode.style.right = "";
-                    tooltipNode.style.bottom = "";
+        var VIEW_GAP = this.editor.renderer.layerConfig.lineHeight*2;
+        var TIP_MAX_WIDTH = Math.max(tooltipNode.offsetWidth,300);
+        var tooltipHeight = Math.max(70,tooltipNode.offsetHeight);
+        var isHorizontal = true;
+        var SPACE_TO_RIGHT = outerRect.right - popupRect.right;
+        if (SPACE_TO_RIGHT < TIP_MAX_WIDTH) {
+            var SPACE_TO_LEFT = popupRect.left - outerRect.left;
+            if (SPACE_TO_LEFT < TIP_MAX_WIDTH) {
+                isHorizontal = false;
+                var SPACE_ABOVE = popupRect.top - outerRect.top - margins.marginTop;
+                var SPACE_BELOW = outerRect.bottom - popupRect.bottom - margins.marginBottom;
+                if (popup.isTopdown ? //popup is below cursor, is there space below it??
+                    SPACE_BELOW > Math.min(tooltipHeight, SPACE_ABOVE) :
+                    SPACE_ABOVE < Math.min(tooltipHeight, SPACE_BELOW - VIEW_GAP)
+                ) {
+                    if (popup.isTopdown) VIEW_GAP = 1;
+                    tooltipNode.style.top = popupRect.bottom - outerRect.top + VIEW_GAP + "px";
+                    tooltipNode.style.maxHeight = SPACE_BELOW - VIEW_GAP + "px";
                 } else {
-                    tooltipNode.style.top = popup.container.offsetTop - tooltipNode.offsetHeight + "px";
-                    tooltipNode.style.left = rect.left + "px";
-                    tooltipNode.style.right = "";
-                    tooltipNode.style.bottom = "";
+                    if (popup.isTopdown) {
+                        var farthestTop = Math.max(outerRect.top+margins.marginTop,popupRect.top-outerRect.top - VIEW_GAP - Math.max(70,tooltipNode.offsetHeight+VIEW_GAP));
+                        tooltipNode.style.top = farthestTop + "px";
+                        tooltipNode.style.maxHeight = popupRect.top - outerRect.top - farthestTop - VIEW_GAP + "px";
+                        tooltipNode.style.bottom = "";
+                    } else {
+                        VIEW_GAP = 1;
+                        tooltipNode.style.bottom = outerRect.bottom - popupRect.top - VIEW_GAP+ "px";
+                        tooltipNode.style.maxHeight = SPACE_ABOVE + "px";
+                        tooltipNode.style.top = "";
+                    }
+                }
+                if (VIEW_GAP > 1) {
+                    if (SPACE_TO_LEFT < outerRect.width / 2) {
+                        tooltipNode.style.right = 10 + "px";
+                        tooltipNode.style.left = "";
+                    } else {
+                        tooltipNode.style.left = 10 + "px";
+                        tooltipNode.style.right = "";
+                    }
+                    tooltipNode.style.maxWidth = outerRect.width - 20 + "px";
+                } else {
+                    if (SPACE_TO_LEFT > SPACE_TO_RIGHT) {
+                        tooltipNode.style.right = SPACE_TO_RIGHT + "px";
+                        tooltipNode.style.maxWidth = SPACE_TO_LEFT + popupRect.width - 5 + "px";
+                        tooltipNode.style.left = "";
+                    } else if (SPACE_TO_LEFT < SPACE_TO_RIGHT) {
+                        tooltipNode.style.left = SPACE_TO_LEFT + "px";
+                        tooltipNode.style.maxWidth = SPACE_TO_RIGHT + popupRect.width - 5 + "px";
+                        tooltipNode.style.right = "";
+                    }
                 }
             } else {
-                tooltipNode.style.right = window.innerWidth - rect.left + "px";
+                tooltipNode.style.right =  outerRect.right-popupRect.left-1 + "px";
                 tooltipNode.style.left = "";
             }
         } else {
-            tooltipNode.style.left = (rect.right + 1) + "px";
+            tooltipNode.style.left = (popupRect.right + 1) + "px";
             tooltipNode.style.right = "";
         }
-    };
+        if(isHorizontal){
+            tooltipNode.style.top = popup.container.style.top;
+            tooltipNode.style.bottom = popup.container.style.bottom;
+            tooltipNode.style.maxWidth = TIP_MAX_WIDTH+"px";
+            tooltipNode.style.maxHeight = "auto";
+            tooltipNode.style.maxHeight = "";
+        }
+    };         
 
     this.hideDocTooltip = function() {
         this.tooltipTimer.cancel();
@@ -1918,15 +2053,16 @@ define("ace/autocomplete/text_completer",["require","exports","module","ace/rang
         var prefixPos = getWordIndex(doc, pos);
         var words = doc.getValue().split(splitRegex);
         var wordScores = Object.create(null);
-        
+        var closeWord = exports.DISTANCE_CLOSE;
+        var multiplier = exports.MAX_SCORE/closeWord;
         var currentWord = words[prefixPos];
 
         words.forEach(function(word, idx) {
             if (!word || word === currentWord) return;
 
             var distance = Math.abs(prefixPos - idx);
-            var score = words.length - distance;
-            if (wordScores[word]) {
+            var score = closeWord>distance?(closeWord - distance)*multiplier:0;
+            if (wordScores[word]==undefined) {
                 wordScores[word] = Math.max(score, wordScores[word]);
             } else {
                 wordScores[word] = score;
@@ -1934,7 +2070,8 @@ define("ace/autocomplete/text_completer",["require","exports","module","ace/rang
         });
         return wordScores;
     }
-
+    exports.DISTANCE_CLOSE = 50;
+    exports.MAX_SCORE = 300;
     exports.getCompletions = function(editor, session, pos, prefix, callback) {
         var wordScore = wordDistance(session, pos);
         var wordList = Object.keys(wordScore);
@@ -1942,6 +2079,7 @@ define("ace/autocomplete/text_completer",["require","exports","module","ace/rang
             return {
                 caption: word,
                 value: word,
+                iconClass: "completion-text",
                 score: wordScore[word],
                 meta: "local"
             };
@@ -2033,31 +2171,33 @@ var onChangeMode = function(e, editor) {
 };
 
 var loadSnippetsForMode = function(mode) {
-    var id = mode.$id;
+    if (typeof mode == "string")
+        mode = config.$modes[mode];
+    if (!mode)
+        return;
     if (!snippetManager.files)
         snippetManager.files = {};
-    loadSnippetFile(id);
+    
+    loadSnippetFile(mode.$id, mode.snippetFileId);
     if (mode.modes)
         mode.modes.forEach(loadSnippetsForMode);
 };
 
-var loadSnippetFile = function(id) {
-    if (!id || snippetManager.files[id])
+var loadSnippetFile = function(id, snippetFilePath) {
+    if (!snippetFilePath || !id || snippetManager.files[id])
         return;
-    var snippetFilePath = id.replace("mode", "snippets");
     snippetManager.files[id] = {};
     config.loadModule(snippetFilePath, function(m) {
-        if (m) {
-            snippetManager.files[id] = m;
-            if (!m.snippets && m.snippetText)
-                m.snippets = snippetManager.parseSnippetFile(m.snippetText);
-            snippetManager.register(m.snippets || [], m.scope);
-            if (m.includeScopes) {
-                snippetManager.snippetMap[m.scope].includeScopes = m.includeScopes;
-                m.includeScopes.forEach(function(x) {
-                    loadSnippetFile("ace/mode/" + x);
-                });
-            }
+        if (!m) return;
+        snippetManager.files[id] = m;
+        if (!m.snippets && m.snippetText)
+            m.snippets = snippetManager.parseSnippetFile(m.snippetText);
+        snippetManager.register(m.snippets || [], m.scope);
+        if (m.includeScopes) {
+            snippetManager.snippetMap[m.scope].includeScopes = m.includeScopes;
+            m.includeScopes.forEach(function(x) {
+                loadSnippetsForMode("ace/mode/" + x);
+            });
         }
     });
 };

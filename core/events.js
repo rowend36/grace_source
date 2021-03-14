@@ -1,6 +1,7 @@
-(function(global) {
+_Define(function(global) {
     "use strict";
     var Utils = global.Utils;
+    var setImmediate = Utils.setImmediate;
     var EventsEmitter = function(parent) {
         this._eventRegistry = {};
         if (parent)
@@ -33,9 +34,9 @@
         //led to memory leaks and debugging
         frozenEvents: false,
         triggerAsync: function(eventname, obj, delegate) {
-            setTimeout((function() {
+            setImmediate((function() {
                 this.trigger(eventname, obj, delegate);
-            }).bind(this), 0);
+            }).bind(this));
         },
         trigger: function(eventname, obj, noEventObj) {
             if (!noEventObj)
@@ -102,7 +103,7 @@
                 if (reg == func) this._eventRegistry[event] = null;
             }
             else if (reg !== true) {
-                this._eventRegistry[event] = reg.filter(Utils.filter(func));
+                this._eventRegistry[event] = reg.filter(Utils.except(func));
             }
         },
         triggerForever: function(event) {
@@ -116,6 +117,10 @@
     global.AppEvents.frozenEvents = true;
     global.AppEvents._eventRegistry = {
         'app-loaded': null,
+        'documents-loaded': null,
+        'app-paused': null,
+        'app-resumed': null,
+        'view-change': null,
         'fully-loaded': null,
         'filebrowsers': null,
         'createDoc': null,
@@ -129,4 +134,4 @@
     };
     global.configEvents = new EventsEmitter();
     global.configEvents.frozen = true;
-})(Modules);
+})/*_EndDefine*/

@@ -1,23 +1,18 @@
-(function(global) {
+_Define(function(global) {
     var completionSettings = [
-        "enableTern",
         'enableSnippets',
         'enableLiveAutocompletion',
         'enableBasicAutocompletion',
         'enableIntelligentAutocompletion',
         'enableArgumentHints'
     ];
-    var appConfig = global.appConfig;
     var appStorage = global.appStorage;
     var themes = ace.require("ace/ext/themelist").themes.map(function(t) { return t.theme });
     
-    //These are needed so their options can be set
-    ace.require('ace/ext/html_beautify');
-    ace.require('ace/ext/tern');
     var docs = global.docs;
     var Doc = global.Doc;
     
-    global.registerAll({
+    var appConfig = global.registerAll({
         'perEditorTheming': true,
         'perEditorCompletion': false
     },"multieditors");
@@ -47,12 +42,14 @@
     };
     //default settings for editors
     var options = {
+        theme: "ace/theme/monokai",
         hideNonLatinChars: false,
         readOnly:false,
         wrap: false,
         htmlBeautify: true,
         autoBeautify: true,
         enableSnippets: true,
+        enableLiveAutocompletion: false,
         enableArgumentHints: true,
         enableBasicAutocompletion: true,
         enableIntelligentAutocompletion: true
@@ -73,7 +70,7 @@
     };
     EditorSettings.prototype.options = options;
     EditorSettings.prototype.setOption = function(key, val) {
-        var isForSession = (key == "mode");
+        var isForSession;
         if (key.startsWith("session-")) {
             key = key.substring(8);
             isForSession = true;
@@ -140,7 +137,6 @@
             var isForAllEditors = (editors.length == 1 || !(key == "mode" ||
                 (appConfig.perEditorCompletion && completionSettings.indexOf(key) > -1) ||
                 (appConfig.perEditorTheming && key === "theme")));
-
             if (isForAllEditors || this.editor === editors[0]) {
                 appStorage.setItem(key, val);
                 options[key] = val;
@@ -179,7 +175,7 @@
     };
 
     var BOOL = /^true|false$/;
-    var NUMBER = /^\d+$/;
+    var NUMBER = /^\d+(\.\d+)?$/;
     var STRING = /[^'"\n\r]+/;
     var THEME = {
         test: function(val) {
@@ -206,6 +202,7 @@
         "displayIndentGuides": BOOL,
         "dragDelay": NUMBER,
         "dragEnabled": BOOL,
+        "enableAutoIndent": BOOL,
         "enableBasicAutocompletion": BOOL,
         "enableBlockSelect": BOOL,
         "enableIntelligentAutocompletion": BOOL,
@@ -213,11 +210,13 @@
         "enableArgumentHints": BOOL,
         "enableMultiselect": BOOL,
         "enableSnippets": BOOL,
-        "enableTern": BOOL,
+        "enableTabCompletion": BOOL,
         "fadeFoldWidgets": BOOL,
         "firstLineNumber": NUMBER,
+        "fixedWidthGutter": BOOL,
         "focusTimeout": NUMBER,
         "foldStyle": FOLD_STYLE,
+        "fontFamily": STRING,
         "fontSize": NUMBER,
         "hideNonLatinChars": BOOL,
         "highlightActiveLine": BOOL,
@@ -225,6 +224,7 @@
         "highlightSelectedWord": BOOL,
         "hScrollBarAlwaysVisible": BOOL,
         "indentedSoftWrap": BOOL,
+        "keyboardHandler": STRING,
         "maxPixelHeight": NUMBER,
         "mergeUndoDeltas": BOOL,
         "navigateWithinSoftTabs": BOOL,
@@ -233,6 +233,7 @@
         "printMargin": NUMBER,
         "printMarginColumn": NUMBER,
         "readOnly": BOOL,
+        "relativeLineNumbers": BOOL,
         "scrollableGutter": BOOL,
         "scrollPastEnd": SCROLL_PAST_END,
         "scrollSpeed": NUMBER,
@@ -280,4 +281,4 @@
     }
     Doc.$defaults = sessionSettings;
     global.MultiEditor = EditorSettings;
-})(Modules);
+})/*_EndDefine*/

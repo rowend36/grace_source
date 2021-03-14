@@ -1,4 +1,4 @@
-(function(global) {
+_Define(function(global) {
     var Editors = global.Editors;
     var focusEditor = Editors.$focusEditor;
     var getEditor = global.getEditor;
@@ -14,6 +14,7 @@
 
     function ViewPager(editor) {
         var edit = editor.container;
+        this.mainEditor = editor;
         if (!edit) {
             //swap on elements is not supported yet
             throw 'Error: first argument should be a parentNode';
@@ -84,11 +85,12 @@
                             newhost.onEnter(editor, this);
                         }
                         catch (e) {
-                            console.error('host enter threw exception force removing tab', e);
+                            console.error('host enter threw exception force removing tab');
+                            console.error(e);
                             Notify.error('Plugin error: ' + id);
                             ViewPager.forceClose(id, this.views[id]);
-                            e.stopPropagation();
                         }
+                        e.stopPropagation();
                     }
                 }
                 else if (hasParent != parent) {
@@ -285,7 +287,10 @@
             return a.viewPager.editor || a;
         }
     }
+    global.getHostEditor = function(editor){
+        return doneInit?editor.viewPager.mainEditor:editor;
+    }
     global.getMainEditor = getEditor;
     global.ViewPager = ViewPager;
 
-})(Modules)
+});/*_EndDefine*/

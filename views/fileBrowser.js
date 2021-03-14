@@ -1,7 +1,9 @@
-(function(global) {
+_Define(function(global) {
     "use strict";
-    var appStorage = global.appStorage;
     var configure = global.configure;
+                           
+                           
+                       
     var unimplemented = global.unimplemented;
     var appConfig = global.registerAll({
         'recentFolders': '',
@@ -9,21 +11,24 @@
         'markFileOnHold': true,
         'expandAllFilter': ".git/,node_modules/,build/",
         'root:file-browser': '/sdcard/',
+        'askBeforeDelete': "**/.*git/**,**/src/,**/node_modules",
+        'askBeforeDeleteNonEmptyFolders': false
     }, "files");
     global.registerValues({
-        "expandAllFilter": 'Folders to ignore when executing "unfold all" and "find file" operations'
+        "expandAllFilter": 'Folders to ignore when executing "unfold all" and "find file" operations',
+        "askBeforeDelete": 'Files containing any of this fragments need confirmation before delete.\n Glob paths are recognised(experimental). \n Warning: This will not stop you from deleting parent folders: use askBeforeDeleteNonEmptyFolders',
+        "askBeforeDeleteNonEmptyFolders": "Confirm before deleting all non empty folders"
     }, "files");
-    var docs = global.docs;
+    var configEvents = global.configEvents;
     var FileUtils = global.FileUtils;
-    var EventsEmitter = global.EventsEmitter;
     var Overflow = global.Overflow;
-    var AutoCloseable = global.AutoCloseable;
     var FindFileServer = global.FindFileServer;
     var Notify = global.Notify;
     var Doc = global.Doc;
-    var addDoc = global.addDoc;
     var Utils = global.Utils;
+    var setImmediate = global.Utils.setImmediate;
     var sort = FileUtils.sort;
+    var normalize = global.FileUtils.normalize;
     var sort_mode = "folder,code,name";
     var file_colors = global.FileIconClasses = {
         'html': 'orange',
@@ -34,6 +39,18 @@
     };
     var copiedPath = null;
     var copy_mode = 0;
+    configEvents.on("files", function(ev) {
+        switch (ev.config) {
+            case "askBeforeDelete":
+                try {
+                    FileUtils.globToRegex(appConfig.askBeforeDelete);
+                }
+                catch (e) {
+                    Notify.error('Invalid glob');
+                    ev.preventDefault();
+                }
+        }
+    });
     //0 ->copy
     //1 ->move
     var recentFolders = Utils.parseList(appConfig.recentFolders);
@@ -92,8 +109,7 @@
             }
         };
         this.setRootDir(this.rootDir);
-        const self = this;
-        if (stub.length)
+        if (stub)
             this.createView(stub);
         if (this.hier)
             this.updateHierarchy(this.hier);
@@ -109,10 +125,14 @@
         var el = "";
         for (var i = 0; i < paths.length - 2; i++) {
             address += paths[i] + "/";
-            el += "<a href='#' data-target=" + address + " >" + paths[i] + "/" + "</a>";
+            el += "<a class='nav-breadcrumb' href='#' data-target=" + address + " >" + (paths[i]||"<i class='nav-breadcrumb-icon material-icons'>home</i>")  + "</a>";
         }
-        el += "<span>" + paths[i] + "</span>";
+        el += "<span>" + (paths[i]||"<i class='material-icons'>home</i>") + "</span>";
         return el;
+    }
+    function clip(e,self){
+        var rel = FileUtils.relative(self.rootDir,e,false,true)||e;
+        return rel;
     }
     FileBrowser.prototype.destroy = function() {
         this.removeEvents();
@@ -138,7 +158,7 @@
         if (this.inFilter) {
             return;
         }
-        const self = this;
+        var self = this;
         if (!this.header) {
             this.createHeader();
             return;
@@ -148,9 +168,9 @@
         if (!this.headerMode) {
             this.header.append(
                 '<div id="filedir-select" class="edge_box-2 h-50">' +
-                '<span class="fill_box clipper">' +
+                '<div class="fill_box filenav">' +
                 linkify(self.rootDir) +
-                '</span>' +
+                '</div>' +
                 '<button class="material-icons select side-1">' +
                 //"<b style='/*position:absolute;left:50px;right:50px;overflow:scroll*/'>" + this.rootDir + "</b>" +
                 "history</button>" +
@@ -161,30 +181,41 @@
             trigger.onclick = function(ev) {
                 var e;
                 var options = [];
-                for (e of recentFolders)
+                for (var i in recentFolders){
+                    e = recentFolders[i];
                     if (e != self.rootDir && options.indexOf(e) < 0)
-                        options.push(e);
-                for (e of FileUtils.getBookmarks())
+                        options.push({ icon: "history", caption: clip(e,self),className:'list-clip' });
+                }
+                var bookmarks = FileUtils.getBookmarks();
+                for (i in bookmarks){
+                    e = bookmarks[i];
                     if (options.indexOf(e) < 0)
-                        options.push(e);
-                var dropdown = new Overflow(null, null, null, "mobile");
+                        options.push({ icon: "star", caption: e,className: 'list-clip' });
+                }
+                var dropdown = new Overflow(false, "mobile");
                 dropdown.setHierarchy(options);
                 dropdown.show(this);
+                var rootDir = self.rootDir;
                 dropdown.onclick = function(ev, id, element, item) {
-                    safeGoto(self, item);
+                    safeGoto(self, FileUtils.resolve(rootDir,item.caption));
                     return true;
                 };
                 dropdown.ondismiss = function(ev) {
                     dropdown.setHierarchy(null);
                 };
             };
+            //tofix: memory leaks
             this.header.find(".create").click(function(e) {
                 (self.tree || self).showCtxMenu((self.tree || self).createDropdown, $(this)[0]);
                 e.stopPropagation();
             });
             this.header.find(".fill_box a").click(function(e) {
-                safeGoto(self, e.target.getAttribute("data-target"));
+                safeGoto(self, this.getAttribute("data-target"));
             });
+            var e = this.header.find(".fill_box")[0];
+            setTimeout(function(){
+                e.scrollLeft = e.scrollWidth-e.clientWidth-50;
+            },200);
             return;
         }
         switch (this.headerMode) {
@@ -207,7 +238,7 @@
             case "select":
                 this.header.append(
                     '<div class="h-50 edge_box-2">\
-                    <div class="flow-text fill_box"><span id = "num_marked" >' + this.marked.length + '  </span> of <span id = "num_total">' + this.hier.length + '</span></div>\
+                    <div class="flow-text fill_box"><span id = "num_marked" >' + (this.marked||[]).length + '  </span> of <span id = "num_total">' + this.hier.length + '</span></div>\
                     <span id="selectAll" class="side-1 material-icons">select_all</span>\
                     <span id="cancelMark" class="side-2 material-icons">close</span>\
                 </div>');
@@ -299,7 +330,6 @@
         return $(a);
     };
     FileBrowser.prototype.getItemTop = function(index, init = -1, cumul = 0) {
-        var end = index - this.pageStart;
         if (index < this.pageStart)
 
             index += this.pageStart;
@@ -347,11 +377,9 @@
         if (FileUtils.isBinaryFile(filename)) {
             view.addClass('binary-file');
         }
-        //view.css('background','red')
 
     };
     FileBrowser.prototype.createView = function(stub) {
-        const self = this;
         stub.empty();
         if (stub && stub != this.stub) {
             console.warn("Changing stubs is not really supported");
@@ -401,10 +429,10 @@
         $(newEl).addClass('selected');
 
     };
-    FileBrowser.prototype.getCurrentElement = function(newEl, oldEl) {
+    FileBrowser.prototype.getCurrentElement = function() {
         return this.root.find('.selected').not(".destroyed")[0] || this.root.children()[0];
     };
-    FileBrowser.prototype.blur = function(newEl, oldEl) {
+    FileBrowser.prototype.blur = function() {
         return this.root.find('.selected').removeClass('selected');
     };
     FileBrowser.prototype.attachEvents = function() {
@@ -506,8 +534,8 @@
     };
     FileBrowser.prototype.goto = function(path, cb, isFolder) {
         if (!path) return;
-        var segments = FileUtils.normalize(path + (isFolder ? "/" : ""));
-        if (segments.startsWith(this.fileServer.getRoot())) {
+        var segments = normalize(path + (isFolder ? "/" : ""));
+        if(segments.startsWith(this.fileServer.getRoot())){
             if (segments.endsWith("/")) {
                 this.reload(false, cb, segments);
             }
@@ -522,7 +550,7 @@
             }
             return true;
         }
-        else return false;
+        return false;
     };
 
     FileBrowser.prototype.updateHierarchy = function(hier, highlightNewFiles) {
@@ -532,8 +560,7 @@
             return;
         }
         if (this.inSelectMode) this.exitSelectMode();
-        var root = this.root; //.childr
-
+        
         if (!appConfig.showHiddenFiles) {
             hier = hier.filter(function(i) {
                 i.startsWith(".");
@@ -572,7 +599,6 @@
         this.updateVisibleItems(true);
         this.updateBottomElements();
         //Add fileitem getcurrentElement
-        var self = this;
         this.fileNameToSelect = null;
     };
     FileBrowser.prototype.scrollItemIntoView = function(filename, updatePage) {
@@ -621,7 +647,7 @@
                     var lastScroll = scrollElement.scrollTop;
                     this.$scrollDelay = setTimeout(function() {
                         this.$scrollDelay = null;
-                        if (Math.abs(scrollElement.scrollTop - lastScroll) > 300) {
+                        if (Math.abs(scrollElement.scrollTop - lastScroll) > 100) {
                             $(scrollElement).addClass("scrolling");
                             this.clearScroll = Utils.debounce(function() {
                                 this.clearScroll = null;
@@ -644,7 +670,6 @@
     FileBrowser.prototype.onBackPressed = function() {
         var self = this;
         var e = function() {
-            var lastDir = self.rootDir;
             var p = self.parentDir();
             self.reload(false, null, p);
         };
@@ -665,7 +690,7 @@
         return e;
     };
     FileBrowser.prototype.onFileClicked = function() {
-        const self = this;
+        var self = this;
         return function(e) {
             if (e.which == 1) {
                 e.stopPropagation();
@@ -756,7 +781,7 @@
             }
             else self.closeInlineDialog();
         });
-        e.find("input").focus()
+        e.find("input").focus();
         if (val) {
             e.find("input")[0].selectionStart = 0;
             e.find("input")[0].selectionEnd = val.length;
@@ -824,9 +849,8 @@
         var e = this.rootDir;
         if (e == this.fileServer.getRoot() || !e.startsWith(this.fileServer.getRoot()))
             return this.fileServer.getRoot();
-        while (e.endsWith("/"))
-            e = e.slice(0, e.length - 1);
-        return e.substring(0, e.lastIndexOf("/") + 1);
+        var a = FileUtils.dirname(this.rootDir);
+        return a?a+"/":this.rootDir;
     };
     FileBrowser.prototype.reload = function(highlightNewFiles, callback, rootDir) {
         var self = this;
@@ -874,7 +898,7 @@
         this.marked = [];
         if (this.prevMode) {
             this.headerMode = this.prevMode;
-            self.prevMode = null;
+            this.prevMode = null;
         }
         else this.headerMode = null;
         this.updateHeader();
@@ -894,6 +918,7 @@
         else this.mark(name);
     };
     FileBrowser.prototype.unmark = function(filename) {
+        if(!this.marked)return;
         if (this.hier.indexOf(filename) > -1 && this.marked.indexOf(filename) > -1) {
             this.getElement(filename).removeClass('marked-file');
             this.marked.splice(this.marked.indexOf(filename), 1);
@@ -910,7 +935,7 @@
     };
     FileBrowser.prototype.createTreeView = function() {
         var stub = this;
-        stub.tree = new ChildStub(stub.id, stub.rootDir, stub.fileServer, true);
+        stub.tree = new ChildStub(stub.stub, stub.rootDir, stub.fileServer, true);
     };
     FileBrowser.prototype.toggleTreeView = function() {
         var stub = this;
@@ -945,6 +970,8 @@
                     else return false;
                 }
             };
+            stub.tree.header = stub.header;
+            stub.tree.updateHeader = stub.updateHeader;
             stub.tree.preStart = stub.pageStart;
             stub.reload();
         }
@@ -969,9 +996,9 @@
                 encoding: encoding
             });
             if (!ev.defaultPrevented)
-                stub.fileServer.writeFile(filepath, "", encoding, function(ret) {
+                stub.fileServer.writeFile(filepath, "", encoding, function(err) {
                     stub.fileNameToSelect = name;
-                    stub.reload(true);
+                    stub.reload(true,callback);
                 });
         };
         stub.showInlineDialog(null, c, null, name || "");
@@ -989,7 +1016,7 @@
         var fall_through = false;
         var rootDir = stub.rootDir;
         var filepath = filename ? stub.childFilePath(filename) : rootDir;
-        var event = this.menuClickHandler.trigger(id, {
+        var event = this.handler.trigger(id, {
             browser: stub,
             filename: filename,
             filepath: filepath,
@@ -1035,6 +1062,7 @@
             case "add-bookmark":
                 if (FileUtils.getBookmarks().indexOf(rootDir) < 0) {
                     FileUtils.getBookmarks().push(rootDir);
+                    configure("bookmarks",FileUtils.getBookmarks().join(","),"files");
                 }
                 break;
             case "reload-browser":
@@ -1136,113 +1164,129 @@
                 stub.header.find('#search_text').focus();
                 break;
             case "paste-file":
-                if (copiedPath) {
-                    var oldCopy = copiedPath;
-                    var method = copy_mode === 0 ? "copyFile" : "moveFile";
-                    var copyServer = copiedPath.server;
-                    var doPaste = function(path, next, failed) {
-                        name = stub.filename(path, true);
-                        var error = stub.validateNewFileName(name);
-                        if (error) {
-                            failed(error, name);
-                            return;
+                if (!copiedPath) return;
+                var oldCopy = copiedPath;
+                var method = copy_mode === 0 ? "copy" : "move";
+                var copyServer = copiedPath.server;
+                var doPaste = function(path, next, failed) {
+                    name = stub.filename(path, true);
+                    var error = stub.validateNewFileName(name);
+                    if (error) {
+                        failed(error, name);
+                        return;
+                    }
+                    var newpath = stub.childFilePath(name);
+                    var type = FileUtils.isDirectory(path) ? "Folder" : "File";
+                    FileUtils[method + type](path, newpath, copyServer, server, function(err) {
+                        if (!err) {
+                            next(name);
                         }
-                        var newpath = stub.childFilePath(name);
-                        FileUtils[method](path, newpath, copyServer, server, function(err) {
-                            if (!err) {
-                                next(name);
+                        else {
+                            console.error(err);
+                            failed('Failed to ' + method, name);
+                        }
+                    }, null, function(path, e) {
+                        //
+                    });
+                };
+                if (!copiedPath.files) {
+                    doPaste(copiedPath.path, function() {
+                        Notify.info('Pasted ' + name);
+                        stub.reload(true);
+                        if (method == 'move') {
+                            if (oldCopy == copiedPath) {
+                                if (copiedPath.host != stub)
+                                    copiedPath.host.reload();
+                                copiedPath = null;
                             }
-                            else {
-                                console.error(err);
-                                failed('Failed to ' + method.substring(0, 4), name);
-                            }
-                        });
-                    };
-                    if (!copiedPath.files) {
-                        doPaste(copiedPath.path, function() {
-                            Notify.info('Pasted ' + name);
+                        }
+                    }, function(error, name) {
+                        Notify.error(error + " " + name);
+                        stub.reload(true);
+                    });
+                }
+                else {
+                    var filesToCopy = [].concat(copiedPath.files);
+                    var size = 0;
+                    var MAX_SIMULTANEOUS_COPY = 5;
+                    Utils.asyncForEach(filesToCopy,
+                        function(file, i, next, cancel) {
+                            doPaste(file, next, function() {
+                                Notify.ask("Failed To " + method + " " + name + ", continue?", function() {
+                                    size++;
+                                    next();
+                                }, cancel);
+                            });
+                        },
+                        function(cancelled) {
+                            if (!cancelled)
+                                Notify.info("Pasted " + (size || 0) + ' files');
+                            else if (size > 0)
+                                Notify.warn("Pasted " + size + ' files');
                             stub.reload(true);
-                            if (method == 'moveFile') {
+                            if (method == 'move') {
                                 if (oldCopy == copiedPath) {
                                     if (copiedPath.host != stub)
                                         copiedPath.host.reload();
                                     copiedPath = null;
                                 }
                             }
-                        }, function(error, name) {
-                            Notify.error(error + " " + name);
-                            stub.reload(true);
-                        });
-                    }
-                    else {
-                        var filesToCopy = [].concat(copiedPath.files);
-                        var size = -1;
-                        var truncate = function() {
-                            next = function() {};
-                            error = function() {};
-                            if (size > 0)
-                                Notify.warn("Pasted " + size + ' files');
-                            stub.reload(true);
-                            if (method == 'moveFile') {
-                                if (oldCopy == copiedPath) {
-                                    if (copiedPath.host != stub)
-                                        copiedPath.host.reload();
-                                    copiedPath.files = filesToCopy;
-                                }
-                            }
-                        };
-                        var error = function(error, name) {
-                            Notify.ask("Failed To Copy " + name + ", continue?", next, truncate);
-                        };
-                        var next = function() {
-                            size++;
-                            if (filesToCopy.length < 1) {
-                                if (pending > 0) return pending--;
-                                Notify.info("Pasted " + (size || 0) + ' files');
-                                stub.reload(true);
-                                if (method == 'moveFile') {
-                                    if (oldCopy == copiedPath) {
-                                        if (copiedPath.host != stub)
-                                            copiedPath.host.reload();
-                                        copiedPath = null;
-                                    }
-                                }
-                            }
-                            else doPaste(filesToCopy.pop(), next, error);
-                        };
-                        var MAX_SIMULTANEOUS_COPY = 10;
-                        var max = Math.min(filesToCopy.length, MAX_SIMULTANEOUS_COPY);
-                        var pending = max - 1;
-                        size = -max;
-                        do {
-                            next();
-                        }
-                        while (--max > 0);
-                    }
+                        }, MAX_SIMULTANEOUS_COPY, false, true);
                 }
+
                 break;
             case "delete-browser":
                 FileUtils.deleteBrowser(stub.id);
                 break;
             case "delete-file":
             case "delete-folder":
-                if (!stub.inSelectMode) {
-                    Notify.ask("Delete " + filename + "?",
-                        function() {
-                            server.delete(filepath, function() {
-                                stub.reload();
-                            });
+                var message, toDelete;
+
+                var doDelete = function() {
+                    if (toDelete.length > 0)
+                        server.delete(stub.childFilePath(toDelete.pop()), doDelete);
+                    else stub.reload();
+                }
+
+                var ask = function(c) {
+                    if (c) {
+                        Notify.prompt(message + "\nEnter " + code + " to continue", function(ans) {
+                            if (ans != code) return false;
+                            doDelete();
                         });
+                    }
+                    else {
+                        Notify.ask(message, doDelete);
+                    }
+                }
+                if (!stub.inSelectMode) {
+                    toDelete = [filename];
+                    message = "Delete " + filename + "?";
+
                 }
                 else {
-                    var toDelete = stub.marked.slice(0);
-                    var next2 = function() {
-                        if (toDelete.length > 0)
-                            server.delete(stub.childFilePath(toDelete.pop()), next2);
-                        else stub.reload();
-                    };
-                    Notify.ask("Delete " + stub.marked.length + " files.\n" + stub.marked.join("\n"), next2);
+                    toDelete = stub.marked.slice(0);
+                    message = "Delete " + stub.marked.length + " files.\n" + stub.marked.join("\n");
                 }
+                var code = "" + Math.floor(Math.random() * 999999);
+                if (appConfig.askBeforeDelete) {
+                    var test = FileUtils.globToRegex(appConfig.askBeforeDelete);
+                    if (toDelete.map(stub.childFilePath,stub).concat(toDelete).some(test.test,test)) {
+                        return ask(true);
+                    }
+                }
+                else if (appConfig.askBeforeDeleteNonEmptyFolders) {
+                    var folders = toDelete.filter(FileUtils.isDirectory);
+                    if (folders.length) {
+                        return Utils.asyncForEach(folders, function(name, i, next, cancel) {
+                            server.readdir(stub.childFilePath(name), function(e, res) {
+                                if (e || (res && res.length > 0)) cancel(e);
+                                else next();
+                            });
+                        }, ask, 4, false, true);
+                    }
+                }
+                Notify.ask(message,doDelete);
                 break;
             case "mark-file":
                 stub.enterSelectMode(filename);
@@ -1256,6 +1300,12 @@
                     }
                 });
                 break;
+            case "show-current-doc":
+                var doc = global.getActiveDoc();
+                if (doc) {
+                    stub.goto(doc.getSavePath());
+                }
+                break;
             case "fold-all":
                 if (filename && FileUtils.isDirectory(filename)) {
                     if (stub.childStubs[filename]) {
@@ -1265,12 +1315,6 @@
 
                 }
                 else stub.foldAll();
-                break;
-            case "show-current-doc":
-                var doc = docs[global.appConfig.currentDoc];
-                if (doc) {
-                    stub.goto(doc.getSavePath());
-                }
                 break;
             case "fold-parent":
                 if (filename) {
@@ -1296,7 +1340,6 @@
     FileBrowser.prototype.overflows = {};
     FileBrowser.prototype.showCtxMenu = function(menu, el) {
         if (!this.menuItems[menu]) return;
-        var stub = this;
         var name = $(el).attr("filename");
         if (FileUtils.activeFileBrowser) {
             FileUtils.activeFileBrowser.menu.hide();
@@ -1323,7 +1366,7 @@
             menuEl = new Overflow();
             this.overflows[menu] = menuEl;
             menuEl.setHierarchy(this.menuItems[menu]);
-            menuEl.onclick = function(e, id, link, data) {
+            menuEl.onclick = function(e, id, link) {
                 if (this.filebrowser.menuItems[menu][id]) {
                     this.filebrowser.onCtxMenuClick(id, this.filebrowser.selected, link);
                     return true;
@@ -1377,6 +1420,8 @@
             "rename-folder": {
                 caption: "Rename"
             },
+            "copy-file": "Copy",
+            "cut-file": "Cut",
             "delete-folder": {
                 caption: "Delete"
             },
@@ -1430,6 +1475,9 @@
 
     //A nested filebrowser
     function ChildStub(id, rootDir, fileServer, noReload = true) {
+        if(noReload && typeof noReload=='object'){
+            this.setParent(noReload);
+        }
         FileBrowser.apply(this, arguments);
         this.childStubs = {};
     }
@@ -1444,15 +1492,15 @@
     };
     //Overrides
     ChildStub.prototype.getScrollingElements = function() {
-        if (this.root.parent().hasClass('fileview')) return null;
+        if (this.parentStub) return null;
         return this.superChildStub.getScrollingElements.call(this);
     };
-    ChildStub.prototype.handleScroll = function(i, e) {
+    ChildStub.prototype.handleScroll = function(element, e) {
         var b = (FileUtils.activeFileBrowser == this);
         this.superChildStub.handleScroll.apply(this, arguments);
         if (b) return true;
         for (var i in this.childStubs) {
-            if (this.childStubs[i].handleScroll(i, e))
+            if (this.childStubs[i].handleScroll(element, e))
                 return true;
         }
     };
@@ -1485,8 +1533,8 @@
     };
     ChildStub.prototype.setParent = function(browser) {
         //todo move all this to a single object
-        if (this.menuClickHandler !== browser.menuClickHandler)
-            this.menuClickHandler = browser.menuClickHandler;
+        if (this.handler !== browser.handler)
+            this.handler = browser.handler;
         if (browser.childFolderDropdown != this.folderDropdown) {
             this.folderDropdown = browser.childFolderDropdown;
         }
@@ -1520,7 +1568,6 @@
         for (var b = this.pageStart; b < this.pageEnd; b++) {
             var name = this.hier[b];
             if (!FileUtils.isDirectory(name)) continue;
-            if (FileUtils.ignoreFolder(name)) continue;
             counter.increment();
             funcs.push(name);
         }
@@ -1547,7 +1594,7 @@
         next();
     };
     ChildStub.prototype.foldersToIgnore = Utils.parseList(appConfig.expandAllFilter);
-    ChildStub.prototype.foldAll = function(callback) {
+    ChildStub.prototype.foldAll = function() {
         var self = this;
         for (var a in self.childStubs) {
             self.childStubs[a].foldAll();
@@ -1585,21 +1632,20 @@
         var finalTop = rootTop + top;
         var scrollParent = this.root[0];
         do {
-            if ($(scrollParent).css('overflow-y') != 'hidden' && scrollParent.scrollHeight > scrollParent.clientHeight) {
+            var overY = $(scrollParent).css('overflow-y');
+            if (overY != 'hidden' && overY != 'visible' && scrollParent.scrollHeight > scrollParent.clientHeight) {
                 if (scrollParent.scrollHeight - scrollParent.scrollTop > finalTop) {
                     break;
                 }
                 else {
-                    //nested scroll
+                    //scrollParent.scrollTop = scrollParent.scrollHeight
                 }
             }
             scrollParent = scrollParent.parentElement;
         } while (scrollParent);
-
         if (scrollParent) {
             var baseTop = scrollParent.getBoundingClientRect().top;
             var baseBottom = scrollParent.getBoundingClientRect().bottom;
-
             if (finalTop < baseTop + 100 || finalTop > baseBottom - 100) {
                 var med = window.innerHeight / 2;
                 var targetTop = Math.max(med, baseTop + 20);
@@ -1627,10 +1673,10 @@
     };
     ChildStub.prototype.goto = function(path, cb, isFolder) {
         if (!path) return;
-        var segments = FileUtils.normalize(path + (isFolder ? "/" : ""));
+        var segments = normalize(path + (isFolder ? "/" : ""));
         if (segments.startsWith(this.rootDir)) {
             var relative = segments.substring(this.rootDir.length);
-            if (!relative) return false;
+            if (!relative)return false;
             segments = relative.split("/");
             var file = segments.pop();
             var next = function(stub, err) {
@@ -1657,7 +1703,7 @@
     ChildStub.prototype.foldFolder = function(name) {
         var el = this.getElement(name);
         if (el) {
-            var icon = el.find("i").eq(0);
+            var icon = el.find(".type-icon");
             icon.text("folder");
         }
         this.childStubs[name].stub.hide();
@@ -1672,23 +1718,19 @@
         if (el.length < 1) {
             throw ('Not child folder ' + name + ' of ' + this.rootDir + new Error().stack);
         }
-        var icon = el.find("i").eq(0);
+        var icon = el.find(".type-icon");
         icon.text("folder_open");
         if (!this.childStubs[name]) {
             var childStub = el.after("<ul></ul>").next();
             childStub.addClass("fileview");
-            this.childStubs[name] = new ChildStub(childStub, this.childFilePath(name), this.fileServer, true);
-
-            this.childStubs[name].setParent(this);
+            this.childStubs[name] = new ChildStub(childStub, this.childFilePath(name), this.fileServer, this);
             this.childStubs[name].reload(false, callback2);
         }
         else {
             this.childStubs[name].stub.show();
-            if (callback) setTimeout(callback2, 1);
+            if (callback) setImmediate(callback2);
             else callback2();
         }
-        //el[0].childStub.stub.css("top", this.getItemTop(this.hier.indexOf(c)));
-        //this.updateVisibleItems(false)
     };
     ChildStub.prototype.onCtxMenuClick = function(id, filename, el) {
         switch (id) {
@@ -1744,12 +1786,12 @@
         ChildStub.prototype.menuItems["childStub-folder-dropdown"],
         ChildStub.prototype.menuItems["nested-folder-dropdown"]
     );
-    ChildStub.prototype.menuItems["childStub-folder-dropdown"]["open-tree"] = "Return to ListView";
+    ChildStub.prototype.menuItems["nested-create-dropdown"]["open-tree"] = "Return to ListView";
 
-    Object.assign(
-        ChildStub.prototype.menuItems["nested-create-dropdown"],
-        ChildStub.prototype.menuItems["nested-folder-dropdown"]
-    );
+    // Object.assign(
+    //     ChildStub.prototype.menuItems["nested-create-dropdown"],
+    //     ChildStub.prototype.menuItems["nested-folder-dropdown"]
+    // );
     Object.assign(
         ChildStub.prototype.menuItems["childStub-file-dropdown"],
         ChildStub.prototype.menuItems["nested-file-dropdown"]
@@ -1830,7 +1872,7 @@
         });
     };
     Hierarchy.prototype.menuItems = Object.create(ChildStub.prototype.menuItems);
-    ChildStub.prototype.findFile = function(text, timeout, callback) {
+    Hierarchy.prototype.findFile = function(text, timeout, callback) {
         var self = this;
         self.clearChildStubs();
         var filterId = self.filterId = (self.filterId || 0) + 1;
@@ -1851,7 +1893,7 @@
             //implemented also.
             //We could make the folders hidden at
             //renderView though.
-            var hasFiles = c.hier.some(function(el, i) {
+            var hasFiles = c.hier.some(function(el) {
                 return !(FileUtils.isDirectory(el));
             });
             c.hier.forEach(function(e) {
@@ -1875,7 +1917,6 @@
             }
             cb();
         }, 2);
-        var count = 0;
         if (timeout) {
             setTimeout(function() {
                 self.stopFind();
@@ -1946,4 +1987,4 @@
     global.FileBrowser = FileBrowser;
     global.NestedBrowser = ChildStub;
     global.Hierarchy = Hierarchy;
-})(Modules);
+})/*_EndDefine*/

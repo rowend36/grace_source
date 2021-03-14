@@ -1,4 +1,4 @@
-(function(global) {
+_Define(function(global) {
     var OverlayTokenizer = global.OverlayTokenizer;
 
     function RangeRenderer(session) {
@@ -103,7 +103,7 @@
                 start = range.start.column - Math.max(0, free_space - this.clipText.length);
                 var lineEl = document.createElement('div');
                 lineEl.className = 'ace_line ace_marker-layer';
-                var gutter = (range.start.row + 1 + "        ").substring(0, gutterW);
+                var gutter = (range.start.row + 1 + "              ").substring(0, gutterW);
                 var gutterEl = document.createElement('span');
                 gutterEl.appendChild(document.createTextNode(gutter));
                 gutterEl.setAttribute('id', "line-number");
@@ -239,4 +239,4 @@
 
     }).apply(RangeRenderer.prototype)
     global.RangeRenderer = RangeRenderer;
-})(Modules);
+})/*_EndDefine*/

@@ -1,4 +1,4 @@
-(function(global){
+_Define(function(global){
     function OverlayTokenizer(tokenizer, ranges, mainTokenizer) {
         //the only necessary argument
         this.tokenizer = tokenizer;
@@ -21,6 +21,7 @@
             return tokens;
         };
         this.multiplex = function(row, tokens1, intersect) {
+            if (!tokens1.length) return tokens1;
             if (!intersect) {
                 for (var rangeID in this.ranges) {
                     var range = this.ranges[rangeID];
@@ -140,4 +141,4 @@
         };
     }).apply(OverlayTokenizer.prototype);
     global.OverlayTokenizer = OverlayTokenizer;
-})(Modules);
+})/*_EndDefine*/

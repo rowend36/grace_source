@@ -1,13 +1,14 @@
-(function(global) {
+_Define(function(global) {
     var appEvents = global.AppEvents;
     var editorConfig = {};
-    var config = require('ace/config');
+    var config = global.libConfig;
     var Functions = global.Functions;
     var docs = global.docs;
     var Utils = global.Utils;
     var Doc = global.Doc;
     var MultiEditor = global.MultiEditor;
     var FocusManager = global.FocusManager;
+
     function getSettingsEditor() {
         return multiEditor;
     }
@@ -93,31 +94,33 @@
                 editor: edit
             }).defaultPrevented)
             return;
-        if (Doc.forSession(edit.session))
-            Doc.closeSession(edit.session);
-        edit.setSession(null);
-        FocusManager.hintChangeFocus();
-        edit.destroy();
-        if(isOrphan)return;
-        editors = editors.filter(Utils.filter(edit));
+        editors = editors.filter(Utils.except(edit));
         if (edit === __editor) {
             __editor = null;
             setEditor(editors[0]);
         }
+        if (Doc.forSession(edit.session))
+            Doc.closeSession(edit.session);
+        edit.setSession(null);
+        FocusManager.focusIfKeyboard(__editor.textInput.getElement());
+        edit.destroy();
+        if (isOrphan) return;
+        
     }
 
     function autofadeScrollBars(editor) {
+        //everything here should be configurable
         var fadeTimeout;
 
+        function doFade() {
+            editor.renderer.scrollBarV.setVisible(false);
+            fadeTimeout = null;
+        }
         var fadeScroll = function(e) {
             if (fadeTimeout) {
                 clearTimeout(fadeTimeout);
-            }
-            else editor.renderer.scrollBarV.setVisible(true);
-            fadeTimeout = setTimeout(function() {
-                editor.renderer.scrollBarV.setVisible(false);
-                fadeTimeout = null;
-            }, e ? 2000 : 1000);
+            } else editor.renderer.scrollBarV.setVisible(true);
+            fadeTimeout = setTimeout(doFade, e ? 3000 : 1000);
         };
         var stop = function(e) {
             e.stopPropagation();
@@ -125,7 +128,11 @@
         ['ontouchstart', 'ontouchmove', 'ontouchend', 'onmousemove'].forEach(function(f) {
             editor.renderer.scrollBarV.element[f] = stop;
         });
-        editor.renderer.scrollBarV.$minWidth = editor.renderer.scrollBarV.getWidth();
+        //no resizing viewport
+        editor.renderer.scrollBarV.$minWidth = 25;
+        editor.renderer.scrollBarV.width = 25;
+        editor.renderer.scrollBarV.element.style.width = 25 + "px";
+        //editor.renderer.scrollBarV.inner.style.width = 30+"px";
         editor.session.on("changeScrollTop", fadeScroll);
         editor.on("changeSession", function(s) {
             s.oldSession && s.oldSession.off('changeScrollTop', fadeScroll);
@@ -141,30 +148,44 @@
         container.appendChild(el);
         var editor = ace.edit(el);
         autofadeScrollBars(editor);
-        editor.on("cut", Functions.copy);
         editor.on("copy", Functions.copy);
-        //hack to get clipboard content
+        //hack to get native clipboard content
         editor.on("paste", Functions.copy);
         editor.setAutoScrollEditorIntoView(false);
         editor.$blockScrolling = Infinity; //prevents ace from logging annoying warnings
         multiEditor.add(editor);
+
+        for (var i = 0, end = defaultCommands.length; i < end; i++) {
+            if (orphan && defaultCommands[i].mainOnly) continue;
+            editor.commands.addCommand(defaultCommands[i]);
+        }
         if (orphan) return editor;
 
-        for (var j in defaultCommands) {
-            editor.commands.addCommand(defaultCommands[j])
-        }
         editors.push(editor);
         editor.renderer.on("themeLoaded", function(e) {
             if (editor == editors[0]) {
                 global.setTheme(e.theme);
             }
         });
-        appEvents.trigger('createEditor', { editor: editor });
+        editor.renderer.on('changeCharacterSize', function() {
+            if (editor == editors[0]) {
+                multiEditor.setOption("fontSize", editor.getFontSize());
+            }
+        })
+        appEvents.trigger('createEditor', {
+            editor: editor
+        });
         return editor;
     }
     var defaultCommands = [];
-    function addCommands(commands) {
+
+    function addCommands(commands, mainOnly) {
         if (!Array.isArray(commands)) commands = [commands];
+        if (mainOnly) {
+            commands.forEach(function(e) {
+                e.mainOnly = true
+            });
+        }
         defaultCommands.push.apply(defaultCommands, commands);
         for (var i in editors) {
             for (var j in commands)
@@ -172,7 +193,7 @@
         }
     };
     var api = {};
-    api.init = function() {}
+    api.init = Utils.noop;
     api._editors = editors;
 
     api.getSettingsEditor = getSettingsEditor;
@@ -187,4 +208,4 @@
     api.closeEditor = closeEditor;
     global.Editors = api;
     global.getEditor = getEditor;
-})(Modules);
+}) /*_EndDefine*/

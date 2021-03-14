@@ -1,9 +1,10 @@
-(function(global) {
+_Define(function(global) {
     var FileUtils = global.FileUtils;
     var Doc = global.Doc;
     var docs = global.docs;
     var Editors = global.Editors;
     var appConfig = global.appConfig;
+    var getActiveDoc = global.getActiveDoc;
     function createSettingsMenu(el) {
         var OptionsPanel = ace.require("ace/ext/options").OptionPanel;
         var SettingsPanel = new OptionsPanel(null, el[0]);
@@ -39,13 +40,13 @@
                 "Encoding": {
                     type: "select",
                     onchange: function(val) {
-                        Doc.setEncoding(appConfig.currentDoc,val);
+                        Doc.setEncoding(getActiveDoc().id,val);
                     },
                     getValue: function() {
-                        return docs[appConfig.currentDoc].encoding || 'utf8';
+                        return getActiveDoc().encoding || 'utf8';
                     },
                     get items(){
-                        return FileUtils.availableEncodings(docs[appConfig.currentDoc].getFileServer());
+                        return FileUtils.availableEncodings(getActiveDoc().getFileServer());
                     }
                 },
                 "Read Only": sessionOption({
@@ -96,4 +97,4 @@
         return SettingsPanel;
     }
     global.createSettingsMenu = createSettingsMenu;
-})(Modules);
+})/*_EndDefine*/

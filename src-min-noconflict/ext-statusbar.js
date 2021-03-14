@@ -9,9 +9,9 @@ var StatusBar = function(editor, parentNode) {
     this.element.style.cssText = "display: inline-block;";
     parentNode.appendChild(this.element);
 
-    var statusUpdate = this.statusUpdate = lang.delayedCall(function() {
+    var statusUpdate = (this.statusUpdate = lang.delayedCall(function() {
         this.updateStatus(this.editor);
-    }.bind(this)).schedule.bind(null, 100);
+    }.bind(this))).schedule.bind(null, 100);
     this.editor = editor;
     this.editor.on("changeStatus", statusUpdate);
     this.editor.on("changeSelection", statusUpdate);
@@ -20,6 +20,7 @@ var StatusBar = function(editor, parentNode) {
 
 (function() {
     this.setEditor = function(edit) {
+        this.statusUpdate.cancel();
         this.editor.off("changeStatus", this.statusUpdate);
         this.editor.off("changeSelection", this.statusUpdate);
         this.editor.off("keyboardActivity", this.statusUpdate);

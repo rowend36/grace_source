@@ -1,4 +1,4 @@
-(function(global) {
+_Define(function(global) {
     var Utils = global.Utils;
     var DelayedStorage = function(backend,delay) {
         var __queue = {};
@@ -57,4 +57,4 @@
             __queue = {};
         };
     };
-})(Modules);
+})/*_EndDefine*/

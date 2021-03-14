@@ -160,22 +160,23 @@ var supportedModes = {
     ABC:         ["abc"],
     ActionScript:["as"],
     ADA:         ["ada|adb"],
+    Alda:        ["alda"],
     Apache_Conf: ["^htaccess|^htgroups|^htpasswd|^conf|htaccess|htgroups|htpasswd"],
+    Apex:        ["apex|cls|trigger|tgr"],
+    AQL:         ["aql"],
     AsciiDoc:    ["asciidoc|adoc"],
     ASL:         ["dsl|asl"],
     Assembly_x86:["asm|a"],
     AutoHotKey:  ["ahk"],
-    Apex:        ["apex|cls|trigger|tgr"],
-    AQL:         ["aql"],
     BatchFile:   ["bat|cmd"],
     C_Cpp:       ["cpp|c|cc|cxx|h|hh|hpp|ino"],
     C9Search:    ["c9search_results"],
-    Crystal:     ["cr"],
     Cirru:       ["cirru|cr"],
     Clojure:     ["clj|cljs"],
     Cobol:       ["CBL|COB"],
     coffee:      ["coffee|cf|cson|^Cakefile"],
     ColdFusion:  ["cfm"],
+    Crystal:     ["cr"],
     CSharp:      ["cs"],
     Csound_Document: ["csd"],
     Csound_Orchestra: ["orc"],
@@ -221,8 +222,9 @@ var supportedModes = {
     Jack:        ["jack"],
     Jade:        ["jade|pug"],
     Java:        ["java"],
-    JavaScript:  ["js|jsm|jsx"],
+    JavaScript:  ["js|jsm"],
     JSON:        ["json"],
+    JSON5:       ["json5"],
     JSONiq:      ["jq"],
     JSP:         ["jsp"],
     JSSM:        ["jssm|jssm_state"],
@@ -244,30 +246,34 @@ var supportedModes = {
     Mask:        ["mask"],
     MATLAB:      ["matlab"],
     Maze:        ["mz"],
+    MediaWiki:   ["wiki|mediawiki"],
     MEL:         ["mel"],
     MIXAL:       ["mixal"],
     MUSHCode:    ["mc|mush"],
     MySQL:       ["mysql"],
     Nginx:       ["nginx|conf"],
-    Nix:         ["nix"],
     Nim:         ["nim"],
+    Nix:         ["nix"],
     NSIS:        ["nsi|nsh"],
+    Nunjucks:    ["nunjucks|nunjs|nj|njk"],
     ObjectiveC:  ["m|mm"],
     OCaml:       ["ml|mli"],
     Pascal:      ["pas|p"],
     Perl:        ["pl|pm"],
     Perl6:       ["p6|pl6|pm6"],
     pgSQL:       ["pgsql"],
-    PHP_Laravel_blade: ["blade.php"],
     PHP:         ["php|inc|phtml|shtml|php3|php4|php5|phps|phpt|aw|ctp|module"],
-    Puppet:      ["epp|pp"],
+    PHP_Laravel_blade: ["blade.php"],
     Pig:         ["pig"],
     Powershell:  ["ps1"],
     Praat:       ["praat|praatscript|psc|proc"],
+    Prisma:      ["prisma"],
     Prolog:      ["plg|prolog"],
     Properties:  ["properties"],
     Protobuf:    ["proto"],
+    Puppet:      ["epp|pp"],
     Python:      ["py"],
+    QML:         ["qml"],
     R:           ["r"],
     Razor:       ["cshtml|asp"],
     RDoc:        ["Rd"],
@@ -365,7 +371,7 @@ var themeData = [
     ["Solarized Light"],
     ["TextMate"       ],
     ["Tomorrow"       ],
-    ["XCode"          ],
+    ["Xcode"          ],
     ["Kuroir"],
     ["KatzenMilch"],
     ["SQL Server"           ,"sqlserver"               , "light"],
@@ -382,6 +388,7 @@ var themeData = [
     ["Merbivore Soft"       ,"merbivore_soft"          ,  "dark"],
     ["Mono Industrial"      ,"mono_industrial"         ,  "dark"],
     ["Monokai"              ,"monokai"                 ,  "dark"],
+    ["Nord Dark"            ,"nord_dark"               ,  "dark"],
     ["Pastel on dark"       ,"pastel_on_dark"          ,  "dark"],
     ["Solarized Dark"       ,"solarized_dark"          ,  "dark"],
     ["Terminal"             ,"terminal"                ,  "dark"],
@@ -449,7 +456,8 @@ var optionGroups = {
                 { caption : "Ace", value : null },
                 { caption : "Vim", value : "ace/keyboard/vim" },
                 { caption : "Emacs", value : "ace/keyboard/emacs" },
-                { caption : "Sublime", value : "ace/keyboard/sublime" }
+                { caption : "Sublime", value : "ace/keyboard/sublime" },
+                { caption : "VSCode", value : "ace/keyboard/vscode" }
             ]
         },
         "Soft Wrap": {
@@ -473,6 +481,7 @@ var optionGroups = {
         "Soft Tabs": [{
             path: "useSoftTabs"
         }, {
+            ariaLabel: "Tab Size",
             path: "tabSize",
             type: "number",
             values: [2, 3, 4, 8, 16]
@@ -496,6 +505,9 @@ var optionGroups = {
         },
         "Enable Behaviours": {
             path: "behavioursEnabled"
+        },
+        "Wrap with Quotes": {
+            path: "wrapBehaviousEnabled"
         },
         "Full Line Selection": {
             type: "checkbox",
@@ -553,11 +565,12 @@ var optionGroups = {
         "Show Indent Guides": {
             path: "displayIndentGuides"
         },
-        "Persistent Scrollbar": [{
+        "Persistent HScrollbar": {
             path: "hScrollBarAlwaysVisible"
-        }, {
+        },
+        "Persistent VScrollbar": {
             path: "vScrollBarAlwaysVisible"
-        }],
+        },
         "Animate scrolling": {
             path: "animatedScroll"
         },
@@ -576,6 +589,7 @@ var optionGroups = {
         "Show Print Margin": [{
             path: "showPrintMargin"
         }, {
+            ariaLabel: "Print Margin",
             type: "number",
             path: "printMarginColumn"
         }],
@@ -624,7 +638,7 @@ var OptionPanel = function(editor,element) {
     this.render = function() {
         if(!this.editor)return false
         this.container.innerHTML = "";
-        buildDom(["ul", {id: "controls"}, Object.keys(optionGroups).map(function(key){
+        buildDom(["ul", {id: "controls",role:"presentation"}, Object.keys(optionGroups).map(function(key){
             return this.renderOptionGroup(optionGroups[key],key);
         },this),  ["li",{ style: "padding:10px;text-align:right" }, "version " + config.version]
         ], this.container);
@@ -666,7 +680,7 @@ var OptionPanel = function(editor,element) {
         }).map(function(item) {
             return this.renderOption(item.label, item);
         }, this);
-        return ["li",{id: name,class:"closed"},[this.renderOptionGroupHeader(name),["table",null,entries]]];
+        return ["li",{id: name,role:"presentation",class:"closed"},[this.renderOptionGroupHeader(name),["table",null,entries]]];
     };
     
     this.renderOptionControl = function(key, option) {
@@ -692,14 +706,17 @@ var OptionPanel = function(editor,element) {
             control = ["div",{ class: "buttonBar" }, option.items.map(function(item) {
                 return ["span", { 
                     value: item.value, 
-                    ace_selected_button: value == item.value, 
+                    ace_selected_button: value == item.value,
+                    "aria-pressed": value == item.value, 
                     onclick: function() {
                         self.setOption(option, item.value);
                         var nodes = this.parentNode.querySelectorAll("[ace_selected_button]");
                         for (var i = 0; i < nodes.length; i++) {
                             nodes[i].removeAttribute("ace_selected_button");
+                            nodes[i].setAttribute("aria-pressed",false);
                         }
                         this.setAttribute("ace_selected_button", true);
+                        this.setAttribute("aria-pressed", true);
                     } 
                 }, item.desc || item.caption || item.name];
             })];
@@ -707,6 +724,9 @@ var OptionPanel = function(editor,element) {
             control = ["input", {type: "number", value: value || option.defaultValue, style:"width:3em", oninput: function() {
                 self.setOption(option, parseInt(this.value));
             }}];
+            if(option.ariaLabel){
+                control[1]["aria-label"]=option.ariaLabel;
+            }
             if (option.defaults) {
                 control = [control,[
                     ["select", { class:"number",onchange: function() {

@@ -1,6 +1,7 @@
-(function(global) {
+_Define(function(global) {
     "use strict";
     var Utils = global.Utils;
+    var setImmediate = Utils.setImmediate;
     var normalize = global.FileUtils.normalize;
     var dirname = global.FileUtils.dirname;
     var filename = global.FileUtils.filename;
@@ -128,12 +129,12 @@
                 var res = item.res;
                 if (enc)
                     res = toString(item.res);
-                setTimeout(function() {
+                setImmediate(function() {
                     cb(null, res);
                 });
             }
             else if (enoents[path]) {
-                setTimeout(function() {
+                setImmediate(function() {
                     cb({
                         code: 'ENOENT',
                         message: 'ENOENT'
@@ -172,7 +173,7 @@
                         dir.fileList.push(filename(path));
                     }
                     save();
-                    setTimeout(cb, 0);
+                    setImmediate(cb);
                     return;
                 }
                 else if (item.willSave)
@@ -316,4 +317,4 @@
         cacheFs.isCached = true;
         return cacheFs;
     };
-})(Modules);
+});

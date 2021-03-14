@@ -1,4 +1,4 @@
-(function(global) {
+_Define(function(global) {
     "use strict";
     //manageState is a small utility to detect backpresses
     //in mobile devices
@@ -33,13 +33,13 @@
             return _location.hash == '#' + tag;
         };
         obj.ensure = function(tag, handled) {
-            if(back)back = false;
+            if (back) back = false;
             if (!obj.is(tag)) {
                 var a = oldhash;
                 oldhash = tag;
                 _history.pushState(null, "", "#" + tag);
                 if (!handled)
-                    obj.onChange(tag, a,true);
+                    obj.onChange(tag, a, true);
 
             }
         };
@@ -68,26 +68,26 @@
             //On webwiew, it behaves a bit differently
             //so noexit is only used in browsers
             obj.detach();
-            var back = function(){
+            var back = function() {
                 _history.back();
             };
             window.addEventListener("popstate", back);
-            if(now)
+            if (now)
                 back();
-            else return function(){
+            else return function() {
                 window.removeEventListener("popstate", back);
                 obj.attach();
             };
         };
-        
+
         function stateTracker(ev) {
             if (back === false) {
                 back = undefined;
-                oldhash && obj.ensure(oldhash,true);
+                oldhash && obj.ensure(oldhash, true);
                 return;
             }
             else back = undefined;
-            var hash = (""+_location.hash).substring(1);
+            var hash = ("" + _location.hash).substring(1);
             if (hash == oldhash)
                 return;
             if (obj.onChange(hash, oldhash)) {
@@ -103,62 +103,61 @@
             window.addEventListener('popstate', stateTracker);
         };
         //the current state
-        var oldhash = (""+_location.hash).substring(1);
+        var oldhash = ("" + _location.hash).substring(1);
         window.addEventListener('popstate', stateTracker);
         global.State = obj;
 
         return obj;
     };
-})(Modules);
-(function(global) {
-    global.AutoCloseable = (function(mngr) {
-        var ids = [];
-        var values = [];
-        var changeWatcher = function(newD, old, dir) {
-            if (mngr.isValidState(newD)) {
-                var index2 = ids.indexOf(newD);
-                for (var i = ids.length - 1; i > index2; i--) {
-                    var value = values.pop();
-                    var key = ids.pop();
-                    value.close();
-                }
-                return index2 > -1;
+}); /*_EndDefine*/
+_Define(function(global) {
+    var mngr = global.manageState(window);
+    var ids = [];
+    var values = [];
+    var changeWatcher = function(newD, old, dir) {
+        if (mngr.isValidState(newD)) {
+            var index2 = ids.indexOf(newD);
+            for (var i = ids.length - 1; i > index2; i--) {
+                var value = values.pop();
+                var key = ids.pop();
+                value.close();
             }
-        };
-        mngr.addListener(changeWatcher, function(state) {
-            return ids.indexOf(state) > -1;
-        });
-        return {
-            add: function(id, closeable) {
-                if (!closeable || !closeable.close) throw new Error('Error: expected a Closeable object, got' , closeable);
-                global.AutoCloseable.remove(id);
-                ids.push(id);
-                values.push(closeable);
-                mngr.ensure(id, true);
-            },
-            close: function(id) {
-                global.AutoCloseable.remove(id);
-                if (mngr.is(id)) {
-                    mngr.back();
-                }
-            },
-            remove: function(id) {
-                //useful if you want to prevent the
-                //closing of a particular closeable
-                //see closeTab main.js
-                var index;
-                while ((index = ids.indexOf(id)) > -1) {
-                    ids.splice(index, 1);
-                    values.splice(index, 1);
-                }
-            },
-            //used by modals
-            onOpenEnd: function() {
-                global.AutoCloseable.add(""+this.id, this);
-            },
-            onCloseEnd: function() {
-                global.AutoCloseable.close(""+this.id);
+            return index2 > -1;
+        }
+    };
+    mngr.addListener(changeWatcher, function(state) {
+        return ids.indexOf(state) > -1;
+    });
+    global.AutoCloseable = {
+        add: function(id, closeable) {
+            if (!closeable || !closeable.close) throw new Error('Error: expected a Closeable object, got', closeable);
+            global.AutoCloseable.remove(id);
+            ids.push(id);
+            values.push(closeable);
+            mngr.ensure(id, true);
+        },
+        close: function(id) {
+            global.AutoCloseable.remove(id);
+            if (mngr.is(id)) {
+                mngr.back();
             }
-        };
-    })(global.manageState(window));
-})(Modules);
+        },
+        remove: function(id) {
+            //useful if you want to prevent the
+            //closing of a particular closeable
+            //see closeTab main.js
+            var index;
+            while ((index = ids.indexOf(id)) > -1) {
+                ids.splice(index, 1);
+                values.splice(index, 1);
+            }
+        },
+        //used by modals
+        onOpenEnd: function() {
+            global.AutoCloseable.add("" + this.id, this);
+        },
+        onCloseEnd: function() {
+            global.AutoCloseable.close("" + this.id);
+        }
+    };
+}) /*_EndDefine*/ ;

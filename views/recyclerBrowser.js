@@ -1,4 +1,4 @@
-(function(global) {
+_Define(function(global) {
     "use strict";
     var FileBrowser = global.FileBrowser;
     var Hierarchy = global.Hierarchy;
@@ -11,7 +11,7 @@
     var Utils = global.Utils;
     var ScrollSaver = global.ScrollSaver;
     var NestedRenderer = global.NestedRenderer;
-    var normalize = global.FileUtils.normalize;
+    var isDirectory = global.FileUtils.isDirectory;
 
     function RecyclerStub(id, rootDir, fileServer, noReload, renderer) {
         //INITIAL IDEA
@@ -127,9 +127,9 @@
                 render: function() {
                     this.view.css('top', this.y + "px");
                 },
-                offset: this.backButton ? this.backButton.height() : 0,
+                offset: this.backButton ? this.itemHeight : 0,
                 compute: function() {
-                    return this.view.height() - this.offset;
+                    return getHeight(this.view,this) - this.offset;
                 },
                 detach: function(index) {
                     this.visible = false;
@@ -145,6 +145,7 @@
         view.index = index;
         view.hidden = false;
         if (!view.view) {
+            view.visible = false;
             //view will be rendered in Viewholder.bindView()
             return;
         }
@@ -162,8 +163,15 @@
         stub.tree = new RecyclerChildStub(stub.root, stub.rootDir, stub.fileServer, true);
         stub.tree.cache = stub.cache.back || stub.cache;
         stub.tree.cache.container = stub.tree.root[0];
+    };
+    function getHeight($el,item){
+        //hack for wrong height
+        var height = $el.height();
+        if(height==0 && !item.visible || item.hidden){
+            return 54;
+        }
+        return height;
     }
-
 
     function FileItemHolder(browser) {
         RecyclerViewHolder.apply(this, [browser.cache, browser.renderer, browser.itemHeight]);
@@ -177,7 +185,7 @@
     FileItemHolder.prototype.constructor = FileItemHolder;
     /*Overrides*/
     FileItemHolder.prototype.compute = function() {
-        return (this.hidden ? 0 : this.height) + (this.widget ? this.widget.height() : 0);
+        return (this.hidden ? 0 : this.height) + (this.widget?getHeight(this.widget,this):0);
     };
     Object.defineProperty(FileItemHolder.prototype, "0", {
         get: function() {
@@ -202,6 +210,15 @@
         if (this.bound && !this.view && !this.hidden) {
             this.bound.removeClass("destroyed");
             this.view = this.bound;
+            var cbs = this.browser.childStubs;
+            //override for buggy typeicon
+            var filename = this.attr('filename');
+            if (isDirectory(filename)) {
+                if (cbs && cbs[filename] && !cbs[filename].renderer.hidden) {
+                    this.view.find(".type-icon").text('folder_open');
+                }
+                else this.view.find(".type-icon").text('folder');
+            }
             if (this.widget)
                 arguments[2] = this.widget[0];
             arguments[3] = true;
@@ -227,11 +244,7 @@
         var filename = this.browser.hier[this.index];
 
         this.browser.superClass.renderView.apply(this.browser, [this.index, this.view]);
-        var cbs = this.browser.childStubs;
         //override for buggy typeicon
-        if (cbs && cbs[filename] && !cbs[filename].renderer.hidden) {
-            view.find(".type-icon").text('folder_open');
-        }
 
         for (var i in this.attrs) {
             view.attr(i, this.attrs[i]);
@@ -239,14 +252,23 @@
         for (i in this.classes) {
             view.addClass(this.classes[i]);
         }
+        if (isDirectory(filename)) {
+            var cbs = this.browser.childStubs;
+            if (cbs && cbs[filename] && !cbs[filename].renderer.hidden) {
+                view.find(".type-icon").text('folder_open');
+            }
+            else view.find(".type-icon").text('folder');
+        }
     };
     FileItemHolder.prototype.find = function(el) {
+        //origin of buggy type-icon
+        if (el === ".type-icon") return this.view ? this.view.find(el) : $("nothing");
         if (!this.bound) {
             this.bound = this.view;
             if (!this.view) {
                 this.bound = this.cache.pop();
                 this.view = this.bound;
-                this.bindView()
+                this.bindView();
                 this.view.addClass("destroyed");
                 this.view = null;
             }
@@ -317,15 +339,15 @@
         if (this.view) {
             this.view.removeClass(text);
         }
-        else if (this.bound)
+        else if (this.bound && text !== 'destroyed' /*Only I have the power to do that*/ )
             this.bound.removeClass(text);
-        
+
         var index = this.classes.indexOf(text);
         index > -1 && this.classes.splice(index, 1);
         if (text == 'destroyed') {
             this.show();
         }
-    }
+    };
 
     function RecyclerNavBehaviour(stub) {
         this.stub = stub;
@@ -333,6 +355,7 @@
     RecyclerNavBehaviour.prototype = {
         getPrev: function(current, root, dir, $default) {
             var element = this.stub.parentStub.getElement(this.stub.parentStub.filename(this.stub.rootDir));
+            if(!element)return null;
             if (!element.view) {
                 element.find("");
                 element.bound.removeClass('destroyed');
@@ -340,8 +363,11 @@
             return (element.view || element.bound)[0];
         },
         getNext: function(current, root, dir, $default) {
-            var index = this.stub.parentStub.hier.indexOf(this.stub.parentStub.filename(this.stub.rootDir));
-            var element = this.stub.parentStub.childViews[index + 1];
+            var parent = this.stub.parentStub;
+            var index = parent.hier.indexOf(parent.filename(this.stub.rootDir));
+            var element = parent.childViews[index + 1];
+            //ensure nextElement to parent is visible
+            if(!element)return null;
             if (!element.view) {
                 element.find("");
                 element.bound.removeClass('destroyed');
@@ -349,13 +375,58 @@
             return (element.view || element.bound)[0];
         },
         detect: function() {
-            return this.stub.root[0]
+            return this.stub.root[0];
         },
         horizontal: true
-    }
+    };
 
+    /*var NestedBCache = new RecyclerViewCache(function() {
+        var childStub = $(document.createElement('ul'));
+        childStub.addClass("fileview");
+        childStub.addClass("fileview-recycler");
+        return childStub;
+    });
+    var TempNode = document.createElement('ul');
+    TempNode.className = "fileview";
+
+    function ChildStubRenderer() {
+        ChildStubRenderer.super(this, arguments);
+    }
+    Utils.inherits(ChildStubRenderer, NestedRenderer);
+    ChildStubRenderer.prototype.detach = function() {
+        this.super.detach.apply(this, arguments);
+        if (this.stub && this.owner) {
+            this.navBehaviour = this.stub.navBehaviour;
+            this.stub.navBehaviour = null;
+            NestedBCache.push(this.stub);
+            this.owner.removeEvents();
+            this.owner.cache.container = null;
+            this.stub = null;
+            //used by handleScroll
+            this.owner.root = this.owner.stub = this;
+        }
+    };
+    ChildStubRenderer.prototype.render = function() {
+        if (!this.stub) {
+            this.stub = this.owner.root = this.owner.stub = NestedBCache.pop(this.owner.getParent().root[0]);
+            this.owner.cache.container = this.stub[0];
+            this.stub.navBehaviour = this.navBehaviour;
+            this.owner.attachEvents();
+        }
+        this.super.render.apply(this, arguments);
+    };
+    ChildStubRenderer.prototype.css = function(display) {
+        if (display !== 'display') {
+            throw 'Error: outside api';
+        }
+        return this.stub ? 'none' : 'block';
+    };
+*/
     function RecyclerChildStub(id, rootDir, fileServer, noReload = true, renderer = null) {
         this.childStubs = {};
+        if(noReload && typeof noReload=='object'){
+            this.setParent(noReload);
+        }
         RecyclerStub.apply(this, arguments);
 
     }
@@ -380,26 +451,21 @@
         if (el.length < 1) {
             throw ('Not child folder ' + name + ' of ' + this.rootDir + new Error().stack);
         }
-        if (el.view) {
-            //prevent binding the view
-            var icon = el.find("i").eq(0);
-            icon.text("folder_open");
-        }
+        var icon = el.find(".type-icon");
+        icon.text("folder_open");
         if (!this.childStubs[name]) {
-            var childStub = $(document.createElement('ul'));
-            childStub.addClass("fileview");
             //will be redone in render
-            this.root[0].appendChild(childStub[0]);
-
+            //var childStub = NestedBCache.pop(TempNode);
+            var childStub = $(document.createElement('ul'));
+            childStub.addClass('fileview');
             var renderer = new NestedRenderer(childStub, this.renderer, this.root[0]);
             this.renderer.register(this.renderer.views.indexOf(el) + 1, renderer);
 
-            this.childStubs[name] = new RecyclerChildStub(childStub, this.childFilePath(name), this.fileServer, true, renderer);
-            childStub.detach();
+            this.childStubs[name] = new RecyclerChildStub(childStub, this.childFilePath(name), this.fileServer, this, renderer);
             childStub[0].navBehaviour = new RecyclerNavBehaviour(this.childStubs[name]);
+            //renderer.owner = this.childStubs[name];
             this.childStubs[name].cache = this.cache.clone(this.childStubs[name].root[0]);
             this.childStubs[name].renderer.onBeforeRender = this.onChildRender.bind(this.childStubs[name]);
-            this.childStubs[name].setParent(this);
             this.childStubs[name].reload(false, callback2);
         }
         else {
@@ -443,4 +509,4 @@
     global.RFileBrowser = RecyclerStub;
     global.RHierarchy = RecyclerHierarchy;
     global.RNestedBrowser = RecyclerChildStub;
-})(Modules)
+});/*_EndDefine*/

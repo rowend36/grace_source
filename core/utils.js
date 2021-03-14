@@ -1,5 +1,6 @@
-(function(global) {
-    function CircularBffer(size = 200) {
+_Define(function(global) {
+    function CircularBffer(size) {
+        if (size === undefined) size = 50;
         var buffer = Array(size);
         var index = 0;
         var overflow = true;
@@ -17,36 +18,32 @@
                     var before = buffer.slice(0, index);
                     var after = buffer.slice(index, size);
                     return after.concat(before);
-                }
-                else {
+                } else {
                     return buffer.slice(0, index)
                 }
             },
-            reset: function() {
+            reset: function(obj) {
                 overflow = false;
-                index = 0;
+                if (obj) {
+                    buffer = obj;
+                    index = buffer.length;
+                    size = Math.max(index, size);
+                } else {
+                    index = 0;
+                }
             }
         };
     }
 
-    function wrapFunc(func, name, log) {
-        return (function() {
-            log(name + " called with \nthis:", print(this, 1, 2) , "\nargs:" , printArray(arguments, 2, 3));
-            var result = func.apply(this, arguments);
-            log(name + "-->" , print(result));
-            return result;
-        });
-    }
-    function parseList(list_text){
-        var stripSpace = /\s*(.*[^\s])\s*/;
+
+    function parseList(list_text) {
         var result = [];
         if (list_text) {
-            var list = list_text.split(",");
+            var stripSpace = /^\s*|\s*$/;
+            list_text = list_text.replace(stripSpace, "");
+            var list = list_text.split(/\s+|\s*,\s*/);
             for (var index in list) {
-                var item = stripSpace.exec(list[index]);
-                if (item) {
-                    result.push(item[1]);
-                }
+                if (list[index]) result.push(list[index]);
             }
         }
         return result;
@@ -63,10 +60,10 @@
         var end = Math.min(5, obj.length);
         var arr = {};
         for (var i = 0; i < end; i++) {
-            arr[i] = print(obj[i],(step-1)||1);
+            arr[i] = print(obj[i], (step - 1) || 1);
         }
         for (i = mid; i < obj.length; i++) {
-            arr[i] = print(obj[i],(step-1)||1);
+            arr[i] = print(obj[i], (step - 1) || 1);
         }
         return arr;
     }
@@ -78,20 +75,15 @@
         if (typeof obj == 'boolean') return '<' + obj + '>';
         else if (typeof obj == 'function') {
             return "function" + (obj.name || "<anonymous>") + "()";
-        }
-        else if (obj.jquery) {
+        } else if (obj.jquery) {
             return "$:(" + obj.selector + ")->" + print(obj[0], 1) + "[" + obj.length + "]";
-        }
-        else if (obj.DOCUMENT_NODE) {
+        } else if (obj.DOCUMENT_NODE) {
             return "[" + obj.tagName + "] ." + obj.className + " #" + obj.id;
-        }
-        else if (step < 1  || obj === window) {
-            return ((obj+"").substr(0, 25));
-        }
-        else if (Array.isArray(obj)) {
+        } else if (step < 1 || obj === window) {
+            return ((typeof obj.toString == "function" ? obj.toString() : "[Object]").substr(0, 50));
+        } else if (Array.isArray(obj)) {
             return printArray(obj, step);
-        }
-        else {
+        } else {
             var clone = {};
             for (var i in obj) {
                 clone[i] = print(obj[i], step - 1);
@@ -100,6 +92,18 @@
         }
     }
 
+    function wrapFunc(func, name, log) {
+        return (function() {
+            log(name + " called with", {
+                "this": print(this, 1, 2),
+                "args": printArray(arguments, 2, 3),
+                "stack": new Error().stack.split("\n")
+            });
+            var result = func.apply(this, arguments);
+            log(name + "-->", print(result));
+            return result;
+        });
+    }
 
     function wrap(obj, include, exclude, log) {
         log = log || window.console.debug;
@@ -112,13 +116,13 @@
     var trackFunc = function(start, end, name, func) {
         return function() {
             var preResult;
-            if(start){
-                preResult = start(name,this, arguments);
-                if(preResult && preResult.override)return preResult.result;
+            if (start) {
+                preResult = start(name, this, arguments);
+                if (preResult && preResult.override) return preResult.result;
             }
             var result = func.apply(this, arguments);
-            if(end){
-                preResult = end(name,this, arguments,result, preResult);
+            if (end) {
+                preResult = end(name, this, arguments, result, preResult);
                 if (preResult) return preResult;
             }
             return result;
@@ -140,36 +144,14 @@
         for (var i in mixins) {
             Object.assign(prop.prototype, mixins[i].prototype);
         }
-        Object.assign(prop.prototype,a);
+        Object.assign(prop.prototype, a);
         prop.prototype.super = superClass.prototype;
         prop.super = superClass.apply.bind(superClass);
     }
 
-    function throttle(func, wait) {
-        //fixed interval spread
-        //and immediate execution
-        var last = 0,
-            timeout;
-        var context, args;
-        var later = function() {
-            timeout = null;
-            last = new Date().getTime()
-            func.apply(context, args)
-        }
-        return function() {
-            context = this
-            args = arguments;
-            var now = new Date().getTime()
-            if (now - last > wait) {
-                later()
-            }
-            else if (!timeout) {
-                setTimeout(later, wait - (now - last));
-            }
-        }
-    }
 
     function delay(func, wait) {
+        //cancellable function
         var timeout, ctx, args;
         var later = function() {
             timeout = null;
@@ -194,59 +176,104 @@
         }
         return call;
     }
-    function asyncEach(list,each,finish,parallel,unfinished,cancellable){
-        var i=0;
-        var resume,cancel,waiting,cancelled;
+
+    function throttle(func, wait) {
+        //like delay but allows immediate execution
+        //if calls are infrequent, useful for buttons,etc
+        var last = 0,
+            timeout;
+        var context, args;
+        var later = function() {
+            last = new Date().getTime()
+            timeout = null;
+            func.apply(context, args)
+            context = args = null;
+        }
+        return function() {
+            context = this
+            args = arguments;
+            if (timeout) return;
+            var now = new Date().getTime()
+            if (now - last > wait) {
+                later()
+            } else {
+                timeout = setTimeout(later, wait - (now - last));
+            }
+        }
+    }
+
+    function debounce(func, wait) {
+        //like delay except each call cancels the previous
+        //useful but op is might be suspended indefinitely
+        var timeout;
+        return function() {
+            var context = this,
+                args = arguments;
+            var later = function() {
+                timeout = null;
+                func.apply(context, args);
+            }
+            if (timeout) {
+                clearTimeout(timeout);
+            }
+            timeout = setTimeout(later, wait);
+        }
+    }
+
+    function asyncEach(list, each, finish, parallel, unfinished, cancellable) {
+        var i = 0;
+        var resume, cancel, waiting, cancelled;
         parallel = parallel || 1;
-        if(isNaN(parallel))throw 'Error';
-        if(unfinished){
+        if (isNaN(parallel)) throw new Error("Invalid Parameter for parallel:" + parallel);
+        if (unfinished) {
             resume = function(finished) {
-                if(finished)unfinished = false;
+                if (finished) unfinished = false;
                 var a = waiting;
                 waiting = 0;
-                while(a--){
+                while (a--) {
                     next();
                 }
             }
             waiting = 0;
         }
-        if(cancellable){
-            cancel = function(e){
-                unfinished = false;
-                list = [];
-                cancelled = e||true;
+        if (cancellable) {
+            cancel = function(e) {
+                if (!cancelled) {
+                    unfinished = false;
+                    list = [];
+                    cancelled = e || true;
+                    next();
+                }
             }
         }
-        var next = function(){
-            if(i>=list.length){
-                if(unfinished){
+        var next = function() {
+            if (i >= list.length) {
+                if (unfinished) {
                     waiting++;
-                }
-                else if(finish && (--parallel)==0){
+                } else if (finish && (--parallel) == 0) {
                     finish(cancelled);
-                    finished = null;
+                    finish = null;
+                } else if (parallel < 0) {
+                    console.warn('Counter error: you might be calling next twice or calling both next and cancel');
                 }
-            }
-            else{
+            } else {
                 var item = list[i];
                 each(item, i++, next, cancel);
             }
         }
-        for(var j=parallel;j>0;j--){
+        for (var j = parallel; j > 0; j--) {
             next();
         }
         return resume;
     }
-    var toSizeString = function(size,nameType){
-        
-        var sizes = (nameType=="full"?["bytes","kilobytes","megabytes","gigabytes","terabytes"]:
-        ["bytes","kb","Mb","Gb","Tb"])
+    var toSizeString = function(size, nameType) {
+        var sizes = (nameType == "full" ? ["bytes", "kilobytes", "megabytes", "gigabytes", "terabytes"] : ["bytes", "kb", "Mb", "Gb", "Tb"])
         var i = 0;
-        while(size>1024){
+        while (size > 1024) {
             i++;
-            size/=1024.0;
+            size /= 1024.0;
         }
-        return (Math.round(size*100)/100.0)+" "+sizes[i]
+        return (Math.round(size * 100) / 100.0) + " " + sizes[i]
     }
     var createCounter = function(cb) {
         var counter = {};
@@ -262,30 +289,17 @@
             if (count === 0 && cb) {
                 if (errors.length < 1) cb();
                 else cb(errors);
-            }
-            else if (counter.count < 0) {
+            } else if (counter.count < 0) {
                 throw new Error("Counter error less than 0");
             }
         };
         return counter;
     }
 
-    function debounce(func, wait) {
-        var timeout;
-        return function() {
-            var context = this,
-                args = arguments;
-            var later = function() {
-                timeout = null;
-                func.apply(context, args);
-            }
-            if (timeout) {
-                clearTimeout(timeout);
-            }
-            timeout = setTimeout(later, wait);
-        }
-    }
-    var times = { "": 1 };
+
+    var times = {
+        "": 1
+    };
     times["milli"] = times["millisecond"] = times["ms"] = times["millisec"] = times[""]
     times["sec"] = times["second"] = times["s"] = times[""] * 1000;
     times["min"] = times["minute"] = times["m"] = times["s"] * 60;
@@ -296,6 +310,7 @@
     times["kb"] = times["kilobyte"] = times["kib"] = times["k"] = times["b"] * 1024;
     times["mb"] = times["megabyte"] = times["m"] = times["kb"] * 1024;
     times["gb"] = times["gigabyte"] = times["g"] = times["mb"] * 1024;
+
     function parseTime(text) {
         var re = /\s*(\d+(?:\.\d+)?)\s*([A-Za-z]*),*/gi;
         var match = re.exec(text);
@@ -310,16 +325,53 @@
         }
         return time;
     }
+
+    function mergeList(original, update, copy, compare) {
+        var list = copy ? original.slice(0) : original;
+        var last = 0;
+        var changed;
+        for (var i = 0; i < update.length; i++) {
+            var pos = list.indexOf(update[i], last);
+            if (pos < 0) {
+                for (; last < list.length; last++) {
+                    if (compare ? compare(original[last], update[i]) > 0 : original[last] > update[i]) {
+                        break;
+                    }
+                }
+                list.splice(last, 0, update[i]);
+                last = last + 1;
+            } else last = pos + 1;
+        }
+        return list;
+    }
+
+    function setImmediate(func, args) {
+        setTimeout(func, 0);
+    }
+
+    function createSingleService(func) {
+        var service_ = function() {
+            if (service_.cancel) {
+                service_.cancel();
+                service_.cancel = null;
+            }
+            func.apply(this, arguments);
+        }
+        service_.cancel = null;
+        return service_;
+    }
     var id_count = 0;
     global.Utils = {
         CBuffer: CircularBffer,
         repeat: genSpaces,
+        single: createSingleService,
+        noop: function() {},
         assert: function(cond, e) {
             if (!(cond)) throw new Error(e || 'AssertError');
             return true;
         },
         genID: function(s) {
-            return s + "" + ("" + new Date().getTime()).substring(2) + (((++id_count) % 90)+10);
+            return s + "" + ("" + new Date().getTime()).substring(2) + (((++id_count) % 90) + 10);
         },
         getCreationDate: function(id, s) {
             s = s || "m";
@@ -329,15 +381,26 @@
             var forwardDate = parseInt(l + m);
             return new Date((forwardDate > today) ? forwardDate - 100000000000 : forwardDate);
         },
+        print: print,
         inspect: function() {
-            window.console.debug(print.apply(null, arguments))
+            window.console.debug(print.apply(null, arguments.length == 1 || typeof arguments[1] == "number" ? arguments : [arguments]));
         },
-        filter: function(l) {
+        mergeList: mergeList,
+        except: function(l) {
             return function(e) {
                 return l !== e;
             }
         },
-        extend: extend,
+        setImmediate: setImmediate,
+        not: function(func) {
+            return function() {
+                return !func.apply(this, arguments);
+            }
+        },
+        inherits: extend,
+        toChars: function(str) {
+            return Array.prototype.map.call(str, (e, i) => e.charCodeAt(0)).toString();
+        },
         createCounter: createCounter,
         parseTime: parseTime,
         toSize: toSizeString,
@@ -353,4 +416,4 @@
             return s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
         },
     };
-})(Modules);
+}) /*_EndDefine*/

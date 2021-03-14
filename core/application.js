@@ -1,4 +1,4 @@
-(function(global) {
+_Define(function(global) {
     "use strict";
     var TAG = "Application";
     if (!window[TAG]) return;
@@ -6,9 +6,17 @@
     var handler = {};
     window[TAG] = handler;
     var accessKey = app.requestAccessKey();
+    var config = global.registerAll({
+        "runInNewProcess": false
+    }, "run");
+
+    var request = global.request;
+    var requestBuffer = global.requestBuffer;
     var appStorage = global.appStorage;
     var appEvents = global.AppEvents;
     var FileUtils = global.FileUtils;
+    var normalizeEncoding = FileUtils.normalizeEncoding;
+    var setImmediate = global.Utils.setImmediate;
     //requires Doc addDoc
     Env.isWebView = true;
     Env.isLocalHost = false;
@@ -17,7 +25,7 @@
     Env.newWindow = function(path) {
         global.Doc.tempSave();
         appStorage.__doSync && appStorage.__doSync();
-        app.runFile(path, false, accessKey);
+        app.runFile(path, config.runInNewProcess, accessKey);
     };
     handler._onNewIntent = function(inte) {
         var intent = JSON.parse(inte);
@@ -25,12 +33,12 @@
         global.addDoc(intent.name || "", intent.value || "", intent.path || "");
     };
     handler._pause = function() {
-        if (window.Grace && window.Grace.loaded)
-            global.Doc.tempSave();
+        appEvents.trigger('app-paused');
         appStorage.__doSync && appStorage.__doSync();
     };
     handler._resume = function() {
         //if(window.Grace && window.Grace.loaded)
+        appEvents.trigger('app-resumed');
     };
     handler._notifyIntent = function() {
         appEvents.on("app-loaded", function() {
@@ -56,9 +64,9 @@
     function createCallback(func) {
         var c = handler._callbacks;
         if (!func) return 0;
-        var id = count++;
+        var id = ++count;
         while (c[id]) {
-            id = count++;
+            id = ++count;
         }
         c[id] = function(err, res) {
             delete c[id];
@@ -71,6 +79,7 @@
     }
 
     function clearLastCallback(err) {
+        var c = handler._callbacks;
         var app_e = app.getError(accessKey);
         var error = app_e ? toNodeError(app_e) : err;
         if (c[count]) {
@@ -87,18 +96,15 @@
     }
 
     function encodeBufferToBytes(buffer) {
-        return Base64.encode(new Uint8Array(buffer.buffer || buffer));
+        var res = Base64.encode(new Uint8Array(buffer.buffer || buffer));
+        return res;
     }
-    var HEX_ARRAY = [0,1,2,3,4,5,6,7,8,9];
-    HEX_ARRAY.A=10;
-    HEX_ARRAY.B=11;
-    HEX_ARRAY.C=12;
-    HEX_ARRAY.D=13;
-    HEX_ARRAY.E=14;
-    HEX_ARRAY.F=15;
+
     function decodeBytesToBuffer(base64) {
-        return Base64.decode(base64);
+        var res = Base64.decode(base64);
+        return res;
     }
+
     function asyncify(app, func, baseIndex) {
         return function() {
             var callback, index = arguments.length - 1;
@@ -106,19 +112,17 @@
                 callback = arguments[index];
                 if (callback && typeof(callback) == "function") {
                     break;
-                }
-                else callback = null;
+                } else callback = null;
                 index--;
             }
             var result, error;
             try {
                 result = func.apply(app, callback ? Array.prototype.splice.apply(arguments, [0, index]) : arguments);
-            }
-            catch (e) {
+            } catch (e) {
                 error = e;
             }
             if (callback) {
-                setTimeout(function() {
+                setImmediate(function() {
                     callback(error, result);
                 });
             }
@@ -133,9 +137,12 @@
         "Unknown encoding": 'ENOTENCODING',
         "does not exist": "ENOENT",
         "Operation failed": "EACCES",
+        "System Busy": "EMFILE",
+        " can not be null": "ENULLVALUE",
+        "Resource closed": "ECLOSED",
         "FileNotFoundException": 'ENOENT',
         "AccessDeniedException": "EACCES",
-        "DirectoryNotEmptyException":"ENOTEMEPTY",
+        "DirectoryNotEmptyException": "ENOTEMEPTY",
         "FileAlreadyExistsException": "EEXIST",
         "NoSuchFileException": "ENOENT",
         "NotDirectoryException": "ENOTDIR",
@@ -153,9 +160,8 @@
         }
         if (code) {
             err.code = err.message = code;
-        }
-        else {
-            console.error("unknown error",new Error(e));
+        } else {
+            console.debug("Unknown error", e.origin);
             err.code = err.message = 'EUNKNOWN';
         }
         return err;
@@ -167,8 +173,66 @@
         throw error;
     }
 
+    function ReadableStream(fd) {
+        this.close = function() {
+            app.closeReadableStream(fd, accessKey);
+        };
+        this.read = function(cb) {
+            count++;
+            try {
+                app.readStreamAsync(fd, createCallback(cb && function(e, res) {
+                    if (!e) {
+                        if (res)
+                            res = decodeBytesToBuffer(res);
+                        else res = null;
+                    }
+                    cb(e, res);
+                }), accessKey);
+            } catch (err) {
+                clearLastCallback(err);
+            }
+        };
+        this.readSync = function() {
+            try {
+                var res = app.readStream(fd, accessKey);
+                if (res)
+                    res = decodeBytesToBuffer(res);
+                else res = null;
+                return res;
+            } catch (err) {
+                throwError(err);
+            }
+        };
+    }
+
+    function WritableStream(fd) {
+        this.close = function() {
+            app.closeWritableStream(fd, accessKey);
+        };
+        this.write = function(data, cb) {
+            count++;
+            try {
+                app.writeStreamAsync(fd, encodeBufferToBytes(data), createCallback(cb), accessKey);
+            } catch (err) {
+                clearLastCallback(err);
+            }
+        };
+        this.writeSync = function(data) {
+            try {
+                return app.writeStream(fd, encodeBufferToBytes(data), accessKey);
+            } catch (err) {
+                throwError(err);
+            }
+        };
+    }
     var AppFileServer = function(path) {
         if (!path) path = "/sdcard/";
+        this.openReadableStream = function(path) {
+            return new ReadableStream(app.openReadableStream(path, accessKey));
+        };
+        this.openWritableStream = function(path) {
+            return new WritableStream(app.openWritableStream(path, accessKey));
+        };
         this.readFileSync = function(path, opts) {
             try {
                 var encoding;
@@ -181,8 +245,7 @@
                     return decodeBytesToBuffer(data);
                 }
                 return app.getFile(path, encoding, accessKey);
-            }
-            catch (err) {
+            } catch (err) {
                 throwError(err);
             }
         };
@@ -196,98 +259,109 @@
                 if (FileUtils.isBuffer(content)) {
                     content = encodeBufferToBytes(content);
                     return app.saveBytes(path, content, accessKey);
-                }
-                else return app.saveFile(path, content, encoding || 'utf-8', accessKey);
-            }
-            catch (err) {
+                } else return app.saveFile(path, content, encoding || 'utf-8', accessKey);
+            } catch (err) {
                 throwError(err);
             }
         };
         this.readdirSync = function(path) {
             try {
                 return JSON.parse(app.getFiles(path, accessKey));
-            }
-            catch (err) {
+            } catch (err) {
                 throwError(err);
             }
         };
         this.statSync = function(path, isLstat) {
             try {
                 return FileUtils.createStats(JSON.parse(app.stat(path, !!isLstat, accessKey)));
-            }
-            catch (err) {
+            } catch (err) {
                 throwError(err);
             }
         };
         this.lstatSync = function(path) {
-            return this.statSync(path,true);
+            return this.statSync(path, true);
         };
         this.copyFileSync = function(path, dest, overwrite) {
             try {
                 return app.copyFile(path, dest, overwrite, accessKey);
-            }
-            catch (err) {
+            } catch (err) {
                 throwError(error);
             }
         };
         this.moveFileSync = function(path, dest, overwrite) {
             try {
                 return app.moveFile(path, dest, overwrite, accessKey);
-            }
-            catch (err) {
+            } catch (err) {
                 throwError(error);
             }
         };
         this.mkdirSync = function(path, opts) {
             try {
                 return app.newFolder(path, accessKey);
-            }
-            catch (err) {
+            } catch (err) {
                 throwError(err);
             }
         };
         this.renameSync = function(path, dest) {
             try {
                 return app.rename(path, dest, accessKey);
-            }
-            catch (err) {
+            } catch (err) {
                 throwError(err);
             }
         };
         var deleteSync = function(path) {
             try {
                 return app.delete(path, accessKey);
-            }
-            catch (err) {
+            } catch (err) {
                 throwError(err);
             }
         };
         this.unlinkSync = this.rmdirSync = deleteSync;
-
         this.readFile = function(path, opts, callback) {
-            count++; //for clearLastCallback
-            try {
-                var encoding;
-                if (opts) {
-                    if (!callback && typeof(opts) == "function") {
-                        callback = opts;
+            var encoding;
+            if (opts) {
+                if (!callback && typeof(opts) == "function") {
+                    callback = opts;
+                } else if (isString(opts)) encoding = opts;
+                else encoding = opts.encoding;
+            }
+            if (encoding && normalizeEncoding(encoding) !== "utf8") {
+                count++; //for clearLastCallback
+                try {
+                    app.getFileAsync(path, encoding, createCallback(callback), accessKey);
+                } catch (err) {
+                    clearLastCallback(err);
+                }
+                return;
+            }
+            (encoding ? request : requestBuffer)(this.href + path, path, function(e, r) {
+                if (!e) return callback(null, r);
+                var stat;
+                try {
+                    stat = this.statSync(path);
+                } catch (err) {
+                    return callback(err);
+                }
+                if (stat.type == "dir") {
+                    return callback({
+                        code: "EISDIR",
+                        message: "EISDIR"
+                    });
+                }
+                if (encoding) {
+                    app.getFileAsync(path, encoding, createCallback(callback), accessKey);
+                } else {
+                    count++;
+                    try {
+                        app.getBytesAsync(path, createCallback(callback && function(e, r) {
+                            if (!e) r = decodeBytesToBuffer(r);
+                            callback(e, r);
+                        }), accessKey);
+                    } catch (err) {
+                        clearLastCallback(err);
                     }
-                    else if (isString(opts)) encoding = opts;
-                    else encoding = opts.encoding;
                 }
-                if (!encoding) {
-                    var cb = callback;
-                    callback = cb && function(e, res) {
-                        if (e) return cb(e, res);
-                        cb(e, decodeBytesToBuffer(res));
-                    };
-                    app.getBytesAsync(path, createCallback(callback), accessKey);
-                }
-                else app.getFileAsync(path, encoding, createCallback(callback), accessKey);
-            }
-            catch (err) {
-                clearLastCallback(err);
-            }
+            }.bind(this), 3, 3);
         };
         this.writeFile = function(path, content, opts, callback) {
             count++;
@@ -296,17 +370,14 @@
                 if (opts) {
                     if (!callback && typeof(opts) == "function") {
                         callback = opts;
-                    }
-                    else if (isString(opts)) encoding = opts;
+                    } else if (isString(opts)) encoding = opts;
                     else encoding = opts.encoding;
                 }
                 if (FileUtils.isBuffer(content)) {
                     content = encodeBufferToBytes(content);
                     app.saveBytesAsync(path, content, createCallback(callback), accessKey);
-                }
-                else app.saveFileAsync(path, content, encoding || "utf-8", createCallback(callback), accessKey);
-            }
-            catch (err) {
+                } else app.saveFileAsync(path, content, encoding || "utf-8", createCallback(callback), accessKey);
+            } catch (err) {
                 clearLastCallback(err);
             }
         };
@@ -319,8 +390,7 @@
                     }
                 }
                 var res = app.getFilesAsync(path, createCallback(callback ? jsonCallback(callback) : null), accessKey);
-            }
-            catch (err) {
+            } catch (err) {
                 clearLastCallback(err);
             }
         };
@@ -333,8 +403,7 @@
             count++;
             try {
                 app.copyFileAsync(path, dest, !!overwrite, createCallback(callback), accessKey);
-            }
-            catch (err) {
+            } catch (err) {
                 clearLastCallback(err);
             }
         };
@@ -342,8 +411,7 @@
             count++;
             try {
                 app.moveFileAsync(path, dest, !!overwrite, createCallback(callback), accessKey);
-            }
-            catch (err) {
+            } catch (err) {
                 clearLastCallback(err);
             }
         };
@@ -360,8 +428,7 @@
         this.getEncodings = function() {
             try {
                 return JSON.parse(app.getEncodings(accessKey));
-            }
-            catch (err) {
+            } catch (err) {
                 throwError(err);
             }
         };
@@ -374,24 +441,19 @@
         this.symlinkSync = function(path, dest) {
             try {
                 return app.symlink(path, dest, accessKey);
-            }
-            catch (err) {
+            } catch (err) {
                 throwError(err);
             }
         };
         this.readlinkSync = function(path) {
             try {
                 return app.readlink(path, accessKey);
-            }
-            catch (err) {
+            } catch (err) {
                 throwError(err);
             }
         };
         this.symlink = asyncify(this, this.symlinkSync, 1);
         this.readlink = asyncify(this, this.readlinkSync, 1);
-
-        
-
     };
     FileUtils.registerFileServer('application', "Default FileSystem", function(conf) {
         return (window.afs = new AppFileServer(conf && conf.root));
@@ -401,4 +463,4 @@
         value: '/sdcard/',
         type: "text"
     }]);
-})(Modules);
+}); /*_EndDefine*/

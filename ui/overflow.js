@@ -1,25 +1,29 @@
-(function(global) {
+_Define(function(global) {
     "use strict";
     var FocusManager = global.FocusManager;
     var KeyListener = global.KeyListener;
     var Utils = global.Utils;
-    global.manageState(window);
     var AutoCloseable = global.AutoCloseable;
+    var Navigation = global.Navigation;
 
-    function Overflow(btn, ctx, keepFocus = true, align = "right") {
+    function Overflow(keepFocus = true, align = "right") {
+        var anchor;
         var id = Utils.genID("o");
         var childElems = {};
         var nav = [];
         var root, current;
-        var self = this || ctx || {};
-        var index;
+        var self = this;
 
+        function getElement() {
+            return childElems[nav.join(">")];
+        }
 
         function showOverflow(name, parent, event) {
             if (!current[name]) {
                 return;
             }
             if (current == root && !inRecreate) {
+                anchor = parent;
                 addOverlay();
                 AutoCloseable.add(id, closeable);
             }
@@ -38,9 +42,23 @@
             }
             document.body.appendChild(elem);
             Overflow.positionContainer(elem, parent, document.body, event, align);
-            elem.style.zIndex = (index = ++Overflow.count) + 1100;
+            elem.style.zIndex = (++Overflow.count) + 1100;
             $(elem).fadeIn();
-            global.Navigation.addRoot(elem, hideOverflow);
+            Navigation.addRoot(elem, self.close);
+        }
+
+        function hideOverflow(e) {
+            var b = getElement();
+            $(b).fadeOut();
+            Navigation.removeRoot(b);
+            --Overflow.count;
+            nav.pop();
+            current = currentTarget() || root;
+            if (nav.length==0 && !inRecreate) {
+                removeOverlay();
+                AutoCloseable.close(id);
+                self.ondismiss && self.ondismiss(e);
+            }
         }
 
         var overlay;
@@ -83,9 +101,7 @@
 
         function handleBodyClick(e) {
             e.stopPropagation();
-            //if (index < Overflow.count)
-            //return;
-            if (!current) {
+            if (nav.length==0) {
                 //Should never happen but
                 //just out of paranoia
                 removeOverlay();
@@ -96,35 +112,6 @@
             var parent = closest(e.target);
             while (current != root && getElement() != parent) {
                 hideOverflow(e);
-            }
-        }
-
-        function closest(el, child) {
-            var childEl;
-            while (el) {
-                if (el.getAttribute('id') == id) {
-                    return child ? childEl && childEl.children[0] : el;
-                }
-                childEl = el;
-                el = el.parentElement;
-            }
-        }
-
-        function getElement() {
-            return childElems[nav.join(">")];
-        }
-
-        function hideOverflow(e) {
-            var b = getElement();
-            $(b).fadeOut();
-            global.Navigation.removeRoot(b);
-            index = --Overflow.count;
-            nav.pop();
-            current = currentTarget() || root;
-            if (!nav.length && !inRecreate) {
-                removeOverlay();
-                AutoCloseable.close(id);
-                self.ondismiss && self.ondismiss(e);
             }
         }
 
@@ -139,38 +126,32 @@
             var data = current[id2];
             if (self.onclick && self.onclick(e, id2, span, data)) {
                 //do nothing
-            }
-            else if (data.onclick) {
+            } else if (data.onclick) {
                 data.onclick(e, id2, span);
             }
             if (id2 == 'back') {
                 hideOverflow();
-            }
-            else if (data.childHier) {
+            } else if (data.childHier) {
                 FocusManager.hintNoChangeFocus();
-                showOverflow(id2, data.rebase ? btn : span, true);
-            }
-            else if (data.close !== false) {
+                showOverflow(id2, data.rebase ? anchor : span, true);
+            } else if (data.close !== false) {
                 while (nav[0]) {
                     hideOverflow();
                 }
             }
         }
-        if (btn) {
-            if (keepFocus)
-                FocusManager.trap($(btn), true);
-            btn.onclick = function(e) {
-                if (root) {
-                    if (!nav.length)
-                        showOverflow("root", btn);
-                    else {
-                        closeable.close();
-                    }
+
+        function closest(el, child) {
+            var childEl;
+            while (el) {
+                if (el.getAttribute('id') == id) {
+                    return child ? childEl && childEl.children[0] : el;
                 }
-                e.stopPropagation();
-                e.preventDefault();
-            };
+                childEl = el;
+                el = el.parentElement;
+            }
         }
+        //one backButton clears all
         var closeable = {
             close: function() {
                 while (nav[0]) {
@@ -178,95 +159,118 @@
                 }
             }
         };
+        //prevent calling ondissmiss while recreating
         var inRecreate;
-        return Object.assign(self, {
-            show: function(el, shift) {
-                btn = el;
-                showOverflow('root', btn, shift);
-            },
-            hide: closeable.close,
-            onOverlayClick: function(e) {
-                var parent = closest(document.elementFromPoint(e.clientX, e.clientY));
-                while (current != root && getElement() != parent) {
-                    hideOverflow(e);
-                }
-            },
-            update: function(w) {
-                var el = childElems.root;
-                if (w) {
-                    root = {
-                        root: {
-                            childHier: w
-                        }
-                    };
-                }
-                current = current || root;
-                if (el) {
-                    var elem = Overflow.createElement(w||root.root.childHier, id);
-                    el.innerHTML = elem.innerHTML;
-                }
-            },
-            setHierarchy: function(w, changed) {
-                var store = [].concat(nav);
-                if (nav.length) {
-                    inRecreate = true;
-                    while (nav.length) {
-                        hideOverflow();
+        
+        self.show = function(el, shift) {
+            showOverflow('root', el, shift);
+        };
+        self.hide = closeable.close;
+        self.onOverlayClick = function(e) {
+            var parent = closest(document.elementFromPoint(e.clientX, e.clientY));
+            while (current != root && getElement() != parent) {
+                hideOverflow(e);
+            }
+        };
+        //closeable interface for navigation
+        self.close = hideOverflow;
+        self.update = function(w) {
+            var el = childElems.root;
+            while (nav.length > 1) {
+                hideOverflow();
+            }
+            if (w) {
+                root = {
+                    root: {
+                        childHier: w
                     }
-                }
-                if (w) {
-                    root = {
-                        root: {
-                            childHier: w
-                        }
-                    };
-                }
-                current = root;
-                for (var i in childElems) {
-                    if (!changed || changed.test(i)) {
-                        childElems[i].onclick = null;
-                        childElems[i].remove();
-                        delete childElems[i];
-                    }
-                }
-                if (inRecreate) {
-                    for (var j = 0; current[store[j]] && j < store.length; j++) {
-                        showOverflow(store[j], j < 1 ? btn : $(getElement()).find("#" + store[j])[0]);
-                    }
-                    inRecreate = false;
-                    if (nav.length === 0) {
-                        //impossible
-                        self.ondismiss && self.ondismiss();
-                        AutoCloseable.close(id);
-                        removeOverlay();
-                    }
+                };
+            }
+            current = currentTarget() || root;
+
+            if (el) {
+                var elem = Overflow.createElement(w || root.root.childHier, id);
+                //could be more efficient, the entire overflow could be more efficient
+                el.innerHTML = elem.innerHTML;
+                if (getElement() == el) {
+                    Overflow.positionContainer(el, anchor, document.body, false, align);
                 }
             }
-        });
+        };
+        self.createTrigger = function(btn) {
+            if (keepFocus)
+                FocusManager.trap($(btn), true);
+            btn.addEventListener("click", function(e) {
+                if (root) {
+                    if (nav.length<1)
+                        showOverflow("root", btn);
+                    else {
+                        closeable.close();
+                    }
+                }
+                e.stopPropagation();
+            });
+        };
+        self.setHierarchy = function(w, changed) {
+            var store = [].concat(nav);
+            if (nav.length) {
+                inRecreate = true;
+                while (nav.length) {
+                    hideOverflow();
+                }
+            }
+            if (w) {
+                root = {
+                    root: {
+                        childHier: w
+                    }
+                };
+            }
+            current = root;
+            for (var i in childElems) {
+                if (!changed || changed.test(i)) {
+                    childElems[i].onclick = null;
+                    childElems[i].remove();
+                    delete childElems[i];
+                }
+            }
+            if (inRecreate) {
+                for (var j = 0; current[store[j]] && j < store.length; j++) {
+                    showOverflow(store[j], j < 1 ? anchor : $(getElement()).find("#" + store[j])[0]);
+                }
+                inRecreate = false;
+                if (nav.length === 0) {
+                    //impossible
+                    self.ondismiss && self.ondismiss();
+                    AutoCloseable.close(id);
+                    removeOverlay();
+                }
+            }
+        };
     }
     Overflow.count = 0;
     Overflow.createElement = function(hier, id) {
         var menu = document.createElement("ul");
+        var hasCaret = false;
         menu.setAttribute("id", id);
         menu.className = "dropdown-content fileview-dropdown align-center";
-        var sorted = []
+        var sorted = [];
         for (var i in hier) {
             if (hier[i])
-                sorted.push(i)
+                sorted.push(i);
         }
         sorted = sorted.sort(function(a, b) {
             var t = hier[a].sortIndex || 0;
             var l = hier[b].sortIndex || 0;
-            return hier[a].icon && !hier[b].icon ? -1 : l > t ? -1 : l == t ? 0 : 1;
+            return l > t ? -1 : l < t ? 1 : (hier[b].icon ? 1 : 0) - (hier[b].icon ? 1 : 0);
         });
         for (var j in sorted) {
-            var i = sorted[j]
+            var i = sorted[j];
             var item = document.createElement("li");
             item.className = hier[i].className || "";
-            if(hier[i].isHeader){
+            if (hier[i].isHeader) {
                 item.innerHTML = hier[i].caption;
-            }
-            else{
+            } else {
                 var a = document.createElement("a");
                 if (hier[i].icon) {
                     var icon = document.createElement('span');
@@ -279,19 +283,20 @@
                 a.setAttribute("id", i);
                 a.innerHTML += hier[i].caption || hier[i];
                 if (hier[i].childHier || hier[i].hasChild) {
+                    hasCaret = true;
                     var caret = document.createElement("span");
                     caret.className = "dropdown-caret";
                     caret.innerHTML = "<span class='material-icons'>play_arrow</span>";
-                    a.style.paddingRight = "20px";
                     a.appendChild(caret);
                 }
                 item.appendChild(a);
             }
             menu.appendChild(item);
         }
+        if (hasCaret) menu.className += " dropdown-has-caret";
         return menu;
-    }
-    Overflow.defaultAlignment = "right"
+    };
+    Overflow.defaultAlignment = "right";
     Overflow.positionContainer = function(el, relativeTo, inside, shiftFull, align, vPos) {
         align = align || Overflow.defaultAlignment;
         var rect = relativeTo.getBoundingClientRect();
@@ -304,62 +309,52 @@
         var h = $(el).height() + 20; //I cant tell how jquery does it
         var maxH = inside.clientHeight;
 
-
         var top;
         var canBeAbove = y - offset > h + 10;
         var canBeBelow = maxH - y > h + 15;
         if (vPos == "below" || (vPos != "above" && (maxH - y) > (y - offset))) {
             if (canBeBelow) {
                 top = y + 5;
-            }
-            else if (maxH - y > 250) {
+            } else if (maxH - y > 250) {
                 h = maxH - y - 25;
                 $(el).css('height', h);
                 top = y + 5;
-            }
-            else if (canBeAbove) {
+            } else if (canBeAbove) {
                 top = y - h - offset - 10;
-            }
-            else {
-                if (h > maxH) {
+            } else {
+                if (h > maxH - 10) {
                     h = maxH - 20;
                     $(el).css('height', h);
                     top = 10;
-                }
-                else top = maxH - h - 10;
+                } else top = maxH - h - 10;
             }
-        }
-        else if (canBeAbove) {
+        } else if (canBeAbove) {
             top = y - h - offset - 10;
-        }
-        else if (canBeBelow) {
+        } else if (canBeBelow) {
             top = y + 5;
-        }
-        else {
-            if (h > maxH) {
+        } else {
+            if (h > maxH - 10) {
                 h = maxH - 20;
                 $(el).css('height', h);
                 top = 10;
-            }
-            else top = maxH - h - 10;
+            } else top = maxH - h - 10;
         }
-        if (top > maxH / 3) {
+        if (top*1.5 > maxH) {
             el.style.bottom = maxH - top - h + "px";
             el.style.top = "auto";
-        }
-        else {
+        } else {
             el.style.top = top + "px";
             el.style.bottom = "auto";
         }
         var maxW = inside.clientWidth;
         var w = $(el).width();
+
         if (shiftFull) {
-            if (maxW - rect.right > w / 2 + 10) {
+            if ((rect.right > (w / 2 + 10)) && (maxW - rect.right > (w / 2 + 10))) {
                 el.style.right = maxW - rect.right - w / 2 + "px";
                 el.style.left = "auto";
                 return;
-            }
-            else {
+            } else {
                 //a way to do shiftFull
                 //1 fade other element
                 //2 border
@@ -368,12 +363,10 @@
         if (align == "right" || (align == "mobile" && window.innerWidth > 400)) {
             el.style.right = maxW - Math.max(w + 10, rect.right - 10) + "px";
             el.style.left = "auto";
-        }
-        else if (align == "left") {
+        } else if (align == "left") {
             el.style.left = Math.min(rect.left + 10, maxW - w - 10) + "px";
             el.style.right = "auto";
-        }
-        else {
+        } else {
             var space = align == "full" ? 20 : align == "mobile" ? Math.min(20, (maxW - w) / 2) : (maxW - w) / 2;
             //full
             el.style.right = space + "px";
@@ -382,8 +375,8 @@
 
     };
     global.Overflow = Overflow;
-})(Modules);
-(function(global) {
+}); /*_EndDefine*/
+_Define(function(global) {
     var Overflow = global.Overflow;
     Overflow.openSelect = function(ev, select) {
         if (ev) {
@@ -398,7 +391,7 @@
                 caption: opts[i].innerHTML
             });
         }
-        var dropdown = new Overflow(null, null, null, "mobile");
+        var dropdown = new Overflow(false, "mobile");
         dropdown.setHierarchy(items);
         dropdown.show(select);
         dropdown.onclick = function(ev, id, element, item) {
@@ -408,30 +401,29 @@
             dropdown.setHierarchy(null);
         };
     };
-})(Modules);
-(function(global) {
+}); /*_EndDefine*/
+_Define(function(global) {
     var menuItems = {
         'more': false
     };
 
     var otherItems = {
 
-    }
+    };
     var otherClick = {
+        icon: "more_vert",
         caption: "More",
         childHier: otherItems,
         sortIndex: 100,
-    }
-    var menu = global.MainMenu = new global.Overflow($("#action_bar .dropdown-trigger")[0], null, true);
+    };
+    var menu = global.MainMenu = new global.Overflow(true);
     menu.setHierarchy(menuItems);
     menu.addOption = function(optionId, option, others) {
         if (menuItems[optionId]) {
             menuItems[optionId] = option;
-        }
-        else if (otherItems[optionId]) {
+        } else if (otherItems[optionId]) {
             otherItems[optionId] = option;
-        }
-        else {
+        } else {
             var hier = menuItems;
             if (others === undefined) others = Object.keys(menuItems).length > 6;
             if (others) {
@@ -440,9 +432,18 @@
             hier[optionId] = option;
         }
         if (Object.keys(otherItems).length > 0) {
-            menuItems.more = otherClick
+            menuItems.more = otherClick;
         }
         menu.setHierarchy(menuItems);
+    };
+    menu.extendOption = function(optionId, option) {
+        if (menuItems[optionId] && menuItems[optionId].childHier) {
+            Object.assign(menuItems[optionId].childHier, option);
+            menu.addOption(optionId, menuItems[optionId]);
+        } else if (otherItems[optionId] && otherItems[optionId].childHier) {
+            Object.assign(otherItems[optionId].childHier, option);
+            menu.addOption(optionId, otherItems[optionId]);
+        } else menu.addOption(optionId, option);
     };
     menu.removeOption = function(optionId) {
         if (menuItems[optionId])
@@ -450,9 +451,9 @@
         if (menuItems.others[optionId]) {
             delete menuItems.others[optionId];
             if (Object.keys(otherItems).length < 1) {
-                menuItems.more = false
+                menuItems.more = false;
             }
         }
         menu.setHierarchy(menuItems);
     };
-})(Modules)
+}); /*_EndDefine*/

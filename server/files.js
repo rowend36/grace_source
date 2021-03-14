@@ -39,10 +39,8 @@ var createCounter = function(callback) {
     };
     counter.increment = function(name) {
         counter.count++;
-        console.log("-" + counter.count + "->" + name);
     }
     counter.decrement = function(name) {
-        console.log("<-" + counter.count + "-" + name);
         counter.count--;
         //console.log(counter.count);
         if (counter.count === 0 && counter.callback) {
@@ -241,7 +239,6 @@ var copyFolder = exports.copyFolder = function(from, to, callback, allowOver, ov
                     return;
                 }
                 let pos = path.relative(d, path.join(c, path.basename(to)));
-                console.log(pos);
                 if (!(pos.startsWith(".." + path.sep) || pos == "..")) {
                     counter.error({ from: from, to: to, code: 'Cannot copy into subdirectory' });
                     counter.decrement(from);

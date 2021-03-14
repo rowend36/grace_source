@@ -1,25 +1,93 @@
 <!DOCTYPE html>
+
 <html>
 
 <head>
     <meta name="viewport" content="width=device-width, user-scalable=no initial-scale=1.0" />
     <meta charset='utf-8' />
     <link rel="shortcut icon" href="./favicon.ico">
-    <link rel="stylesheet" href="./libs/css/materialize.min.css">
+    <link rel="stylesheet" href="./libs/css/materialize-slim.css">
     <link rel="stylesheet" href="./main.css">
-    <script type="text/javascript" src="./libs/js/eruda.min.js"></script>
-    <script src="./tests/snippets.js" type="text/javascript" charset="utf-8"></script>
-    <script>
-        //Snippets.detectGlobals.exec(window);
-        eruda.init([]);
-    </script>
+    <link rel='stylesheet' href="./libs/css/coding-fonts.css">
+    <!--<oscript type="text/javascript" charset="utf-8">-->
+    <!--    var start = new Date().getTime();-->
+    <!--    function timeline(tag){-->
+    <!--        var now = new Date().getTime();-->
+    <!--        if(tag){-->
+    <!--            console.log(tag,now-start+"ms");-->
+    <!--        }-->
 </head>
 
 <body class="editor-primary">
+    <div class='splash-screen'>
+        <span>grace</span>
+    </div>
+    <!--        start = now;-->
+    <!--    }-->
+    <!--</script>-->
+    <script type="text/javascript" src="./libs/js/eruda.min.js"></script>
+    <!--<oscript src="./tests/snippets.js" type="text/javascript" charset="utf-8"></script>-->
+    <script>
+        //Snippets.detectGlobals.exec(window);
+        if(window.eruda)eruda.init([]);
+        //timeline('Load Eruda');
+    </script>
+    <script type="text/javascript" src="./libs/js/jquery-2.2.0.min.js"></script>
+    <script type="text/javascript" src="./libs/js/polyfill.js"></script>
+    <script type="text/javascript" src="./libs/js/materialize.js"></script>
+    <script type="text/javascript" src="./libs/js/base64.js"></script>
+    <script type="text/javascript" src="./libs/js/markdown-it.js"></script>
+
+
+    <script type="text/javascript" src="./src-min-noconflict/ace.js"></script>
+    <script type="text/javascript" src="./src-min-noconflict/ext-themelist.js"></script>
+    <script type="text/javascript" src="./src-min-noconflict/ext-modelist.js"></script>
+    <script type="text/javascript" src="./src-min-noconflict/ext-completions.js"></script>
+
+
+    <script type="text/javascript" src="./libs/js/diff_match_patch.js"></script>
+    <script type="text/javascript" src="./core/environment.js"></script>
+    <script type="text/javascript" src="./core/recovery.js"></script>
+    <script type="text/javascript" src="./core/utils.js"></script>
+    <script type="text/javascript" src="./core/events.js"></script>
+    <script type="text/javascript" src="./core/statemanager.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./ui/notification.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./core/fileutils.js"></script>
+    <script type="text/javascript" src="./core/requests.js"></script>
+    <script type="text/javascript" src="./core/application.js"></script>
+
+    <script type="text/javascript" src="./tabbable.js"></script>
+    <script type="text/javascript" src="./core/focusmanager.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./core/navigation.js"></script>
+    <script type="text/javascript" src="./core/fileservers.js"></script>
+    
+    <script type="text/javascript" src="./core/document.js"></script>
+    <script type="text/javascript" src="./core/checkpoints.js"></script>
+    <script type="text/javascript" src="./core/clipboard.js" charset="utf-8"></script>
+
+    <script type="text/javascript" src="./ui/linearlayout.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./ui/overflow.js"></script>
+    <script type="text/javascript" src="./ui/form.js"></script>
+    <script type="text/javascript" src="./ui/itemlist.js"></script>
+    <script type="text/javascript" src="./views/tabs.js"></script>
+
+    <!--todo load this views asynchronously since they are not immediately used!-->
+    <script type="text/javascript" src="./ui/sidenav.js"></script>
+
+    <script type="text/javascript" src="./core/bootlist.js"></script>
+    <script type="text/javascript" src="./tools/format/format.js"></script>
+    <script type="text/javascript" src="./editor/multiEditor.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./editor/editors.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./editor/viewPagers.js" charset="utf-8"></script>
+
+    <script type="text/javascript" src="./prefs/key_binding.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./prefs/load_settings.js" charset="utf-8"></script>
+
+    <script type="text/javascript" src="core/currentDoc.js" charset="utf-8"></script>
 
     <div id="side-menu" class="clipboard-empty container sidenav">
 
-        <ul id="selector" class="ui tabs" data-nav-behaviour="tabs">
+        <ul id="selector" class="nav-main tabs" data-nav-behaviour="tabs">
 
             <li class="tab">
                 <a href="#hierarchy_tab">
@@ -39,11 +107,11 @@
         </ul>
 
         <div id="hierarchy_tab">
-            <span class="header toggleBelow" tabIndex=0>Open Documents<span class="material-icons">keyboard_arrow_down</span></span>
+            <span class="header toggleBelow" tabIndex=0>Open Documents<button class="material-icons">keyboard_arrow_up</button></span>
             <ul id="opendocs" class="fileview">
 
             </ul>
-            <span class="header toggleBelow" tabIndex=0>Find file<span class="material-icons">keyboard_arrow_down</span></span>
+            <span class="header toggleBelow" tabIndex=0>Find file<button class="material-icons">keyboard_arrow_up</button></span>
             <div class="find_file edge_box-2 h-50">
                 <div class="fill_box p-5"><input type="text" name="search_text" id="search_text" value="" /></div>
                 <button id="find_file_btn" class="side-1 material-icons">search</button>
@@ -79,10 +147,10 @@
                 <button id='toggleReplace' class="left material-icons">keyboard_arrow_down</button>
                 <button id="toggleRegex" class="right ace_button">.*</button>
                 <button id="caseSensitive" class="right ace_button">Aa</button>
-                <button id="toggleWholeWord" class="right ace_button checked">[Abc]</button>
+                <button id="toggleWholeWord" class="right ace_button">[ab]</button>
             </div>
             <h6 id="searchInfo"></h6>
-            <div id="loading"><span>Searching...</span><br/><button id="searchStop" class='btn red center'>Stop</button></div>
+            <div id="loading"><span>Searching...</span><br /><button id="searchStop" class='btn red center'>Stop</button></div>
             <div id="searchResults">
 
             </div>
@@ -96,9 +164,9 @@
 
     </div>
 
-    <div class="sidenav-pushable ui" id="action_bar">
+    <div class="sidenav-pushable nav-main" id="action_bar">
         <button class="sidenav-trigger abs-left" data-target="side-menu">
-            <i class="material-icons big menu-icon" >menu</i>
+            <i class="material-icons big menu-icon">menu</i>
         </button>
         <div id="status-text">
             <span id="status-filename" class="clipper">Open a file</span>
@@ -131,66 +199,8 @@
     <button id="runButton" class="btn-floating btn btn-large waves-effect waves-light">
         <i class="material-icons">play_arrow</i>
     </button>
-    <script type="text/javascript" src="./libs/js/jquery-2.2.0.min.js"></script>
-    <script type="text/javascript" src="./libs/js/polyfill.js"></script>
-    <script type="text/javascript" src="./libs/js/materialize.js"></script>
-    <script type="text/javascript" src="./libs/js/base64.js"></script>
-    <script type="text/javascript" src="./libs/js/markdown-it.js"></script>
-
-
-    <script type="text/javascript" src="./src-min-noconflict/ace.js"></script>
-    <script type="text/javascript" src="./src-min-noconflict/ext-themelist.js"></script>
-    <script type="text/javascript" src="./src-min-noconflict/ext-language_tools.js"></script>
-    <script type="text/javascript" src="./src-min-noconflict/ext-tern.js"></script>
-    <link rel="stylesheet" href="./src-min-noconflict/ext-tern.css">
-    <script type="text/javascript" src="./src-min-noconflict/ext-html_beautify.js"></script>
-    <script type="text/javascript" src="./src-min-noconflict/ext-modelist.js"></script>
-
-
-    <script type="text/javascript" src="./core/environment.js"></script>
-    <script type="text/javascript" src="./core/utils.js"></script>
-    <script type="text/javascript" src="./core/events.js"></script>
-    <script type="text/javascript" src="./core/statemanager.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./core/fileutils.js"></script>
-    <script type="text/javascript" src="./core/application.js"></script>
-
-    <script type="text/javascript" src="./tabbable.js"></script>
-    <script type="text/javascript" src="./core/focusmanager.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./ui/notification.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./core/navigation.js"></script>
-    <script type="text/javascript" src="./core/fileservers.js"></script>
-    <script type="text/javascript" src="./core/storage/databasestorage.js"></script>
-    <!--Implemented in application-->
-    <!--<script type="text/javascript" src="./core/delayedstorage.js"></script>-->
-    <script type="text/javascript" src="./core/document.js"></script>
-    <script type="text/javascript" src="./core/clipboard.js" charset="utf-8"></script>
-
-    <script type="text/javascript" src="./ui/linearlayout.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./ui/overflow.js"></script>
-    <script type="text/javascript" src="./ui/form.js"></script>
-    <script type="text/javascript" src="./ui/itemlist.js"></script>
-    <script type="text/javascript" src="./views/tabs.js"></script>
     <script type="text/javascript" src="./views/charbar.js" charset="utf-8"></script>
-
-    <!--todo load this views asynchronously since they are not immediately used!-->
-    <script type="text/javascript" src="./ui/sidenav.js"></script>
-
-
-    <script type="text/javascript" src="./editor/multiEditor.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./editor/editors.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./editor/viewPagers.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./editor/autocompletion.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./prefs/key_binding.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./prefs/load_settings.js" charset="utf-8"></script>
-
-    <script src="core/bootlist.js" type="text/javascript" charset="utf-8"></script>
-    <script src="main.js" type="text/javascript" charset="utf-8"></script>
-    <script type="text/javascript" src="./tests/test_fs.js"></script>
-    <script type="text/javascript" src="./core/cachefileserver.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./libs/js/isomorphic-git.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./libs/js/isomorphic-http.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./tools/interactive_merge.js"></script>
-    <script type="text/javascript" src="./tools/git.js"></script>
+    <script type="text/javascript" src="main.js" charset="utf-8"></script>
 
 </body>
 

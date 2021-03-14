@@ -9,7 +9,7 @@ var iconv = require("iconv-lite");
 var app = express();
 var proxy = require("./cors-proxy-es5/middleware.js");
 app.use(body());
-const sendHtml = function(res, html) {
+var sendHtml = function(res, html) {
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Content-Length', Buffer.byteLength(html));
     res.end(html);
@@ -38,7 +38,7 @@ function doError(err, res) {
 }
 app.post("/files", function(req, res) {
     try {
-        (req.body.appendSlash ? files.getFiles : fs.readdir)(req.body.dir, function(err, files) {
+        (req.body.appendSlash ? files.getFiles : fs.readdir)(req.body.path, function(err, files) {
             if (err) {
                 return doError(err, res);
             }
@@ -175,7 +175,7 @@ app.post("/delete", function(req, res) {
 });
 //args file
 app.post("/open", function(req, res) {
-    fs.lstat(req.body.file, function(e, stat) {
+    fs.lstat(req.body.path, function(e, stat) {
         if (e) {
             return doError(e, res);
         }
@@ -187,7 +187,7 @@ app.post("/open", function(req, res) {
         else {
             var encoding = req.body.encoding;
             if (!encoding || Buffer.isEncoding(encoding)){
-                fs.readFile(req.body.file, encoding, function(e, str) {
+                fs.readFile(req.body.path, encoding, function(e, str) {
                     if (e) {
                         return doError(e, res);
                     }
@@ -195,7 +195,7 @@ app.post("/open", function(req, res) {
                 });
             }
             else if(iconv.encodingExists(encoding)){
-                fs.readFile(req.body.file,null, function(e, buf) {
+                fs.readFile(req.body.path,null, function(e, buf) {
                     if (e) {
                         return doError(e, res);
                     }

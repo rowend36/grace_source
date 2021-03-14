@@ -1,4 +1,4 @@
-(function(global) {
+_Define(function(global) {
     var Editors = global.Editors;
     var defaultProvider = function(editor, range) {
         var begin = range ? range.start.row : 0;
@@ -54,4 +54,4 @@
         name: "fix missing semicolons",
         exec: fixMissingSemicolons
     });
-})(Modules);
+})/*_EndDefine*/
