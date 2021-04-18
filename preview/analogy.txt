@@ -1,0 +1,5 @@
+Here, we want to be able to preview with ease but still leave
+compilation steps to terminal, that leaves us with
+-html
+-js
+-markdown

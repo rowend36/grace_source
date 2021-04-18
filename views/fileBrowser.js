@@ -24,7 +24,7 @@ _Define(function(global) {
     var Overflow = global.Overflow;
     var FindFileServer = global.FindFileServer;
     var Notify = global.Notify;
-    var Doc = global.Doc;
+    var Docs = global.Docs;
     var Utils = global.Utils;
     var setImmediate = global.Utils.setImmediate;
     var sort = FileUtils.sort;
@@ -726,12 +726,12 @@ _Define(function(global) {
         });
         if (ev.defaultPrevented)
             return;
-        var b = !forceNew && Doc.forPath(path, self.fileServer);
+        var b = !forceNew && Docs.forPath(path, self.fileServer);
         if (b) {
-            Doc.swapDoc(b.id);
+            Docs.swapDoc(b.id);
         }
         else {
-            Doc.openDoc(path, self.fileServer);
+            Docs.openDoc(path, self.fileServer);
         }
     };
 
@@ -806,7 +806,7 @@ _Define(function(global) {
             if (!err) {
                 self.fileNameToSelect = b;
                 self.reload(true);
-                Doc.rename(path, dest, self.fileServer);
+                Docs.rename(path, dest, self.fileServer);
             }
             else Notify.error('Rename failed');
         });
@@ -823,8 +823,8 @@ _Define(function(global) {
         if (this.hier.indexOf(b) > -1 || this.hier.indexOf(b + "/") > -1)
             return "File Already Exists";
         var path = this.childFilePath(name);
-        if (Doc.forPath(path, this.fileServer)) {
-            Doc.swapDoc(Doc.forPath(path, this.fileServer).id);
+        if (Docs.forPath(path, this.fileServer)) {
+            Docs.swapDoc(Docs.forPath(path, this.fileServer).id);
             return "File Already Exists in Tabs";
         }
     };

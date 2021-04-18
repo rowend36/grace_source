@@ -45,8 +45,7 @@ app.post("/files", function(req, res) {
             res.json(files);
             res.end();
         });
-    }
-    catch (e) {
+    } catch (e) {
         doError(e);
     }
 });
@@ -55,8 +54,7 @@ app.post("/new", function(req, res) {
     fs.mkdir(req.body.path, function(e) {
         if (e) {
             return doError(e, res);
-        }
-        else {
+        } else {
             res.send(200)
         }
     })
@@ -66,8 +64,7 @@ app.post("/copy", function(req, res) {
     files.copyFile(req.body.path, req.body.dest, function(err) {
         if (err) {
             return doError(err, res);
-        }
-        else {
+        } else {
             res.send(200);
         }
     }, req.body.overwrite);
@@ -79,8 +76,7 @@ app.post("/info", function(req, res) {
     fs[req.body.isLstat ? "lstat" : "stat"](path, function(err, st) {
         if (err) {
             return doError(err, res);
-        }
-        else {
+        } else {
             var stat = {
                 size: st.size,
                 mode: st.mode,
@@ -100,19 +96,46 @@ app.post("/copy-folder", function(req, res) {
     files.copyFolder(req.body.path, req.body.dest, function(err) {
         if (err) {
             return doError(err, res);
-        }
-        else {
+        } else {
             res.send(200);
         }
-    }, req.body.overwrite, req.body.forcelist)
+    }, req.body.overwrite, req.body.forcelist);
+});
+const crypto = require('crypto');
+app.post("/fastGetOid", function(req, res) {
+    const filename = req.body.path;
+    fs.stat(filename, function(e, stat) {
+        if (e && e.code != 'ENOENT') {
+            doError(e, res);
+        } else if (e){
+            res.send(null);
+            return;
+        } 
+        const hash = crypto.createHash('sha1');
+        let input;
+        try {
+            input = fs.createReadStream(filename);
+        } catch (e) {
+            res.send(null);
+            return;
+        }
+        hash.update("blob " + stat.size + "\x00");
+        input.on('readable', function() {
+            const data = input.read();
+            if (data)
+                hash.update(data);
+            else {
+                res.send(hash.digest('hex'));
+            }
+        });
+    });
 });
 //args path dest overwrite forcelist
 app.post("/move", function(req, res) {
     files.moveFile(req.body.path, req.body.dest, function(e) {
         if (e) {
             return doError(e, res);
-        }
-        else {
+        } else {
             res.status(200);
             res.end();
         }
@@ -123,8 +146,7 @@ app.post("/rename", function(req, res) {
     files.moveFile(req.body.path, req.body.dest, function(e) {
         if (e) {
             return doError(e, res);
-        }
-        else {
+        } else {
             res.status(200);
             res.end();
         }
@@ -153,13 +175,11 @@ app.post("/delete", function(req, res) {
     fs.stat(req.body.path, function(e, s) {
         if (e) {
             return doError(e, res);
-        }
-        else {
+        } else {
             let callback = function(e) {
                 if (e) {
                     return doError(e, res);
-                }
-                else {
+                } else {
                     res.status(200);
                     res.end();
                 }
@@ -167,9 +187,7 @@ app.post("/delete", function(req, res) {
             }
             if (s.isDirectory()) {
                 files.deleteFolder(req.body.path, callback)
-            }
-
-            else fs.unlink(req.body.path, callback)
+            } else fs.unlink(req.body.path, callback)
         }
     });
 });
@@ -178,35 +196,33 @@ app.post("/open", function(req, res) {
     fs.lstat(req.body.path, function(e, stat) {
         if (e) {
             return doError(e, res);
-        }
-        else if (!stat || stat.size > Math.min(req.body.maxSize || 5000000, 15000000)) {
+        } else if (!stat || stat.size > Math.min(req.body.maxSize || 5000000, 15000000)) {
             return doError({
                 code: "ETOOLARGE"
             }, res);
-        }
-        else {
+        } else {
             var encoding = req.body.encoding;
-            if (!encoding || Buffer.isEncoding(encoding)){
+            if (!encoding || Buffer.isEncoding(encoding)) {
                 fs.readFile(req.body.path, encoding, function(e, str) {
                     if (e) {
                         return doError(e, res);
                     }
                     res.send(str);
                 });
-            }
-            else if(iconv.encodingExists(encoding)){
-                fs.readFile(req.body.path,null, function(e, buf) {
+            } else if (iconv.encodingExists(encoding)) {
+                fs.readFile(req.body.path, null, function(e, buf) {
                     if (e) {
                         return doError(e, res);
                     }
-                    var str = iconv.decode(buf,encoding,{ stripBom: req.body.stripBom!=true });
+                    var str = iconv.decode(buf, encoding, {
+                        stripBom: req.body.stripBom != true
+                    });
                     res.send(str);
                 });
-            }
-            else{
+            } else {
                 doError({
                     code: 'ENOTENCODING'
-                },res);
+                }, res);
             }
         }
     });
@@ -255,28 +271,25 @@ app.post("/save", function(req, res) {
         if (!ended) {
             ended = true;
             if (e) {
-                console.error('Error saving form '+JSON.stringify(e))
+                console.error('Error saving form ' + JSON.stringify(e))
                 doError(e, res);
-            }
-            else {
+            } else {
                 res.status(200);
                 res.end();
             }
-        }
-        else {
+        } else {
             console.error(['End called twice', e]);
         }
     }
     var batch = new Batch(3, function(stream, path, encoding) {
         try {
-            if(encoding && encoding!="undefined" && encoding!="null"){
-                if(!iconv.encodingExists(encoding)){
+            if (encoding && encoding != "undefined" && encoding != "null") {
+                if (!iconv.encodingExists(encoding)) {
                     stream.resume();
                     return end({
-                        code:'ENOTENCODING'
+                        code: 'ENOTENCODING'
                     });
-                }
-                else {
+                } else {
                     stream = stream.pipe(iconv.decodeStream("utf8")).pipe(iconv.encodeStream(encoding));
                 }
             }
@@ -290,8 +303,7 @@ app.post("/save", function(req, res) {
                 end();
             });
             stream.pipe(fd);
-        }
-        catch (e) {
+        } catch (e) {
             end(e);
         }
     });

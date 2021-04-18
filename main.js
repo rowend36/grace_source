@@ -1,6 +1,6 @@
 _Define(function(global) {
     "use strict";
-    var Doc = global.Doc;
+    var Docs = global.Docs;
     var setBreakpoint = global.Recovery.setBreakpoint;
     var clearBreakpoint = global.Recovery.removeBreakpoint;
     var State = global.State;
@@ -8,6 +8,7 @@ _Define(function(global) {
     var LinearLayout = global.LinearLayout;
     var Functions = global.Functions;
     var docs = global.docs;
+    var Doc = global.Doc;
     var Editors = global.Editors;
     var Utils = global.Utils;
     var SettingsDoc = global.SettingsDoc;
@@ -58,7 +59,7 @@ _Define(function(global) {
             //can try to reopen previously closed docs
             if (!appConfig.disableBackButtonTabSwitch && DocsTab.hasTab(doc)) {
                 if (doc != DocsTab.active)
-                    Doc.swapDoc(doc);
+                    Docs.swapDoc(doc);
                 return true;
             }
             return false;
@@ -90,7 +91,7 @@ _Define(function(global) {
     function swapTab() {
         if (lastTab < 0)
             return;
-        Doc.swapDoc(lastTab);
+        Docs.swapDoc(lastTab);
     }
 
     var viewRoot, SidenavLeft, Menu;
@@ -349,7 +350,7 @@ _Define(function(global) {
         if (DocsTab.active == id)
             return false;
         lastTab = DocsTab.active;
-        //apps can set active Doc
+        //apps can set active Docs
         var handled = appEvents.trigger('changeTab', {
             oldTab: lastTab,
             tab: id
@@ -384,7 +385,7 @@ _Define(function(global) {
         }
         if (!doc) return false;
         if (doc.dirty) {
-            Notify.ask(Doc.getName(doc.id) + " has unsaved changes. Close without saving?", function() {
+            Notify.ask(Docs.getName(doc.id) + " has unsaved changes. Close without saving?", function() {
                 close();
             });
             return false;
@@ -557,9 +558,9 @@ _Define(function(global) {
             currentTab = window.location.href.substring(href + 2);
         }
         //Docs
-        Doc.initialize(DocsTab, currentTab);
+        Docs.initialize(DocsTab, currentTab);
         var newDoc;
-        if (Doc.numDocs() < 1) {
+        if (Docs.numDocs() < 1) {
             newDoc = new Doc('Welcome to Grace Editor');
             addDoc(newDoc, "", "", "", null, false);
         }
@@ -582,14 +583,14 @@ _Define(function(global) {
         appEvents.triggerForever('app-loaded');
         appEvents.on("documents-loaded", function() {
             FileUtils.loadServers();
-            if (newDoc && Doc.numDocs() > 1) {
+            if (newDoc && Docs.numDocs() > 1) {
                 if (newDoc.getValue() == 'Welcome to Grace Editor') {
                     if (newDoc.getRevision() === 0) {
                         closeDoc(newDoc.id);
                     }
                 }
             }
-            Doc.refreshDocs();
+            Docs.refreshDocs();
         });
     }
     $(document).ready(bootEditor);

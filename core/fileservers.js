@@ -168,6 +168,11 @@ _Define(function(global) {
                 appendSlash: true
             }, callback);
         };
+        this.fastGetOid = function(path, callback) {
+            request(server+"/fastGetOid",{
+                path: path
+            },callback);
+        };
         this.readdir = function(path, callback) {
             request(server + "/files", {
                 path: path

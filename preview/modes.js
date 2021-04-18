@@ -1,13 +1,13 @@
 _Define(function(global) {
     var docs = global.docs;
     var Utils = global.Utils;
-    var Doc = global.Doc;
+    var Docs = global.Docs;
     var FileUtils = global.FileUtils;
     var Editors = global.Editors;
     var getEditor = global.getEditor;
     var checkBox = global.styleCheckbox;
     var getActiveDoc = global.getActiveDoc || function() {
-        return Doc.forSession(getEditor().session);
+        return Docs.forSession(getEditor().session);
     };
     var Functions = global.Functions;
     var appStorage = global.appStorage;
@@ -68,7 +68,7 @@ _Define(function(global) {
             path = runPath;
         else {
             if (typeof(editor) == ace.Editor) {
-                doc = Doc.forSession(editor.session);
+                doc = Docs.forSession(editor.session);
             }
             else {
                 doc = getActiveDoc();
@@ -219,7 +219,7 @@ _Define(function(global) {
         id: "md",
         name: "Markdown",
         run: function(path) {
-            var doc = Doc.forPath(path);
+            var doc = Docs.forPath(path);
             if (doc) this.wrapRun(doc.getValue());
             else FileUtils.getDoc(path, null, this.wrapRun, true);
         },
@@ -242,7 +242,7 @@ _Define(function(global) {
         run: function(path) { //, errors, runMode, args, realpath, doc) {
             if (path.indexOf("localhost") < 0 && path.indexOf(":") < 0 && !schemes.test(path)) {
                 var fs;
-                var doc = Doc.forPath(path);
+                var doc = Docs.forPath(path);
                 if (doc) fs = doc.getFileServer();
                 else fs = FileUtils.defaultServer;
                 path = FileUtils.join(fs.href, path);
@@ -252,7 +252,7 @@ _Define(function(global) {
         reload: function(preview, path, live) {
             var a = getActiveDoc();
             if (live) {
-                Doc.saveDocs(a.id, function() {
+                Docs.saveDocs(a.id, function() {
                     preview.contentWindow.location.reload();
                 });
             }
@@ -302,7 +302,7 @@ _Define(function(global) {
         name: "Script",
         scriptStub: "",
         run: function(path) {
-            var doc = Doc.forPath(path);
+            var doc = Docs.forPath(path);
             if (doc) this.wrapRun(doc.getValue());
             else FileUtils.getDoc(path, null, this.wrapRun, true);
         },

@@ -1,0 +1,153 @@
+/*region*diffs*/
+
+.acediff-gutter{
+    background-color: #222222;
+}
+
+.acediff-container {
+    height: 100%;
+    width: 100%;
+    overflow-y: hidden;
+    font-size: 0;
+    overflow-x: scroll;
+    white-space: nowrap;
+}
+
+.acediff-container .acediff-gutter,
+.acediff-editor {
+    height: 100%;
+    display: inline-block;
+    overflow: hidden;
+    position: relative;
+    margin: 0;
+    padding: 0;
+}
+
+.acediff-editor {
+    width: 45%;
+    min-width: 250px;
+}
+
+.acediff-container .acediff-gutter {
+    font-size: 20px;
+    width: 40px;
+}
+
+@media only screen and (min-width: 800px) {
+    .acediff-container .acediff-gutter {
+        width: 5%;
+    }
+    .acediff-three-pane .acediff-editor {
+        min-width: 30%;
+        width: 30%;
+    }
+}
+
+.acediff-diff.targetOnly {
+    height: 0px !important;
+    border-top: 1px solid #036daa;
+    border-bottom: 0px;
+    position: absolute;
+}
+
+.acediff-connector {
+    fill: #004d7a;
+    stroke: #003554;
+}
+
+.acediff-copy-left {
+    float: right;
+}
+
+.acediff-copy-right,
+.acediff-copy-left {
+    position: relative;
+}
+
+.acediff-copy-right div {
+    color: #ffffff;
+    position: absolute;
+    margin: -3px 2px;
+    cursor: pointer;
+}
+
+.acediff-copy-right div:hover {
+    color: #004ea0;
+}
+
+.acediff-copy-left div {
+    color: #ffffff;
+    position: absolute;
+    right: 0px;
+    margin: -3px 2px;
+    cursor: pointer;
+}
+
+.acediff-copy-left div:hover {
+    color: #c98100;
+}
+
+.acediff-gutter-removed {
+    text-align: left;
+    color: red;
+}
+
+.acediff-gutter-added .ace_fold-widget,
+.acediff-gutter-removed .ace_fold-widget {
+    margin-left: auto;
+    float: right;
+}
+
+.acediff-gutter-added {
+    color: green;
+}
+
+.acediff-inline {
+    display: block;
+    box-sizing: border-box;
+    border: 1px solid grey;
+    position: absolute;
+}
+
+.acediff-inline.fading {
+    border-right: 5px solid transparent;
+    border-top-style: dashed;
+    border-bottom-style: dashed;
+}
+
+.acediff-conflict {
+    background-color: #9921ab;
+    border-top: 1px solid #036daa;
+    border-bottom: 1px solid #036daa;
+    position: absolute;
+    z-index: 4;
+}
+
+.acediff-content-removed .acediff-inline {
+    background: rgb(255, 0, 0);
+    opacity: 0.7;
+}
+
+.acediff-swapped .acediff-gutter-removed {
+    border-right: 1px solid red;
+}
+
+.acediff-content-added .acediff-inline {
+    background: rgb(0, 255, 0);
+    opacity: 0.5;
+}
+
+.acediff-added {
+    opacity: 0.4;
+    position: absolute;
+    background: rgb(0, 255, 0);
+}
+
+.acediff-removed {
+    opacity: 0.4;
+    position: absolute;
+    background: red;
+}
+
+
+/*endregion*/

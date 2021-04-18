@@ -17,13 +17,13 @@ _Define(function(global) {
     var FileUtils = global.FileUtils;
     var normalizeEncoding = FileUtils.normalizeEncoding;
     var setImmediate = global.Utils.setImmediate;
-    //requires Doc addDoc
+    //requires Docs addDoc
     Env.isWebView = true;
     Env.isLocalHost = false;
     Env._server = null;
     Env.canLocalHost = true;
     Env.newWindow = function(path) {
-        global.Doc.tempSave();
+        global.Docs.tempSave();
         appStorage.__doSync && appStorage.__doSync();
         app.runFile(path, config.runInNewProcess, accessKey);
     };

@@ -1,0 +1,56 @@
+<html>
+
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+
+    <title>Testing Diff</title>
+    <link rel="stylesheet" href="diff.css" title="" type="" />
+    <script src="../src-min-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
+    <script src="../libs/js/diff_match_patch.js" type="text/javascript" charset="utf-8"></script>
+    <script src="../libs/js/eruda.min.js" type="text/javascript" charset="utf-8"></script>
+    <script src="ace-diff3.js" type="text/javascript" charset="utf-8"></script>
+    <script type="text/javascript" charset="utf-8">
+        var Modules = window;
+    </script>
+    <script src="../core/utils.js" type="text/javascript" charset="utf-8"></script>
+</head>
+
+<body>
+    <style type="text/css" media="all">
+    
+        
+    </style>
+    <div id='acediff-container'>
+    
+    </div>
+    <script>
+        eruda.init([]);
+        var a = Object.keys(localStorage).filter(e => e.match(/m\d+/));
+        //todo profile,addfolds,and lock scrolling
+        var differ = new AceDiff.diff(document.getElementById('acediff-container'),{
+            mode: 'ace/mode/javascript',
+            lockScrolling: true,
+            showConnectors: true,
+            showCopyArrows: true,
+            alignLines: false,
+            // threeWay: false,
+            center: {
+                content: document.body.innerHTML
+            },
+            right: {
+                content: document.body.innerHTML.replace(/a(\w+)/g, "$1b")
+            },
+            left: {
+                content: document.body.innerHTML.replace(/b(\w+)/g, "$1a")
+            }
+        });
+        differ.diff();
+        /*setTimeout(function(){
+            differ.destroy();
+        },5000)*/
+
+        //differ.render();
+    </script>
+</body>
+
+</html>

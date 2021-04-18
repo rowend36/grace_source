@@ -1,6 +1,6 @@
 _Define(function(global) {
     var Utils = global.Utils;
-    var Doc = global.Doc;
+    var Docs = global.Docs;
     var SplitManager = global.SplitManager;
     var watchTheme = global.watchTheme;
     var AutoCloseable = global.AutoCloseable;

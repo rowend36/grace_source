@@ -1,0 +1,313 @@
+_Define(function(global) {
+    var Docs = global.Docs;
+    var Functions = global.Functions;
+    var Notify = global.Notify;
+    var docs = global.docs;
+    var FileUtils = global.FileUtils;
+    var Editors = global.Editors;
+    var getEditor = global.getEditor;
+    var addDoc = global.addDoc;
+    var SettingsDoc = global.SettingsDoc;
+    var FocusManager = global.FocusManager;
+    var State = global.State;
+    var appConfig = global.appConfig;
+    var DocsTab;
+    var currentDoc;
+    /*
+     * @method switchToDoc
+     * Switch to a document
+     * @param {String} name Path to the document
+     * @param {Object} [pos] Selection start or cursor position
+     * @param {Object} [end] Selection end
+     * @param {EditSession|String|Boolean|undefined} [autoload] How to handle path not found
+     * @param {Function} [callback]
+     * @param {FileServer} [server] The server to use in loading the file 
+     * @related Docs#openDoc
+     * @related FileUtils#getDoc
+     */
+    Functions.switchToDoc = function(name, pos, end, autoload, cb, server) {
+        var c;
+        if (autoload && (typeof autoload == 'object')) {
+            c = Docs.forSession(autoload);
+        }
+        if (!c)
+            c = Docs.forPath(name, server) || Docs.forPath("/" + name, server);
+        if (!c) {
+            var servers;
+            if (server) {
+                servers = [server];
+            } else {
+                servers = [FileUtils.getProject().fileServer];
+                if (docs[currentDoc] && docs[currentDoc].getFileServer() != servers[0]) {
+                    servers.unshift(docs[currentDoc].getFileServer());
+                }
+            }
+            if (autoload && autoload!==true) {
+                if (typeof autoload !== 'string') autoload = autoload.getValue();
+                c = docs[addDoc(null, autoload, name, null, {
+                    fileServer: servers[0].id,
+                    encoding: FileUtils.encodingFor(name, servers[0])
+                })];
+                c.setDirty();
+                c.refresh();
+            } else {
+                if (c === false) return;
+                var getFile = function() {
+                    var server = servers.pop();
+                    if (!server) return;
+                    Docs.openDoc("/" + name, server, open);
+                };
+                var open = function(err, doc) {
+                    if (doc)
+                        Functions.switchToDoc(doc.getPath(), pos, end, null, cb);
+                    else getFile();
+                };
+                if (autoload) getFile();
+                else Notify.ask("Open " + name, getFile);
+                return;
+            }
+        }
+        if (!(global.SplitEditors && global.SplitEditors.hasEditor(c))) {
+            Docs.swapDoc(c.id);
+        } else State.ensure(appConfig.disableBackButtonTabSwitch ? "tabs" : c.id);
+        if (pos) {
+            var doc = getEditor();
+            doc.gotoLine(pos.row, pos.column || 0); //this will make sure that the line is expanded
+            doc.getSession().unfold(pos); //gotoLine is supposed to unfold but its not working properly.. this ensures it gets unfolded
+            if (end) {
+                var sel = doc.getSelection();
+                sel.setSelectionRange({
+                    start: pos,
+                    end: end
+                });
+            }
+        }
+        cb && cb(c.session);
+    };
+
+    function save(e) {
+        if (docs[currentDoc].isTemp()) {
+            FocusManager.hintChangeFocus();
+            FileUtils.saveAs(currentDoc);
+        } else {
+            Docs.saveDocs(currentDoc);
+        }
+    }
+
+    function setDoc(id) {
+        currentDoc = id;
+        if (docs[id]) {
+            currentDoc = id;
+            if (docs[id] != Docs.forSession(getEditor().session))
+                Editors.setSession(docs[id]);
+            return true;
+        }
+        return false;
+    }
+
+
+    global.DocumentCommands = [{
+        name: "newFile",
+        bindKey: {
+            win: "Ctrl-N",
+            mac: "Command-Alt-N"
+        },
+        exec: Functions.newFile
+    }, {
+        name: 'Undo All Changes',
+        exec: function() {
+            docs[currentDoc].saveCheckpoint('redo');
+            docs[currentDoc].abortChanges();
+            Notify.info('Automatic checkpoint added');
+        }
+    }, {
+        name: 'Redo All Changes',
+        exec: function() {
+            docs[currentDoc].redoChanges();
+        }
+    }, {
+        name: 'Save Checkpoint',
+        exec: function(editor, args) {
+            doc.$clearRevertStack();
+
+            function save(name) {
+                var obj = docs[currentDoc].saveCheckpoint(name);
+                if (obj.key) Notify.info('Saved');
+                if (args && args.cb) args.cb(obj.key);
+            }
+            if (args && args.name) {
+                save(args.name);
+            } else Notify.prompt('Enter name', save, "checkpoint", null, doc.$loadCheckpoints().map(function(e) {
+                return e.name;
+            }));
+        },
+    }, {
+        name: 'Goto Checkpoint',
+        exec: function(editor, args) {
+            doc.$clearRevertStack();
+
+            function restore(name) {
+                var res = docs[currentDoc].gotoCheckpoint(name);
+                if (args && args.cb) args.cb(res);
+            }
+            var warning = "";
+            if (!doc.stateID)
+                Notify.warn("Current state not saved");
+            if (args && args.name) {
+                restore(name);
+            } else Notify.prompt('Enter name', restore, "checkpoint", doc.$loadCheckpoints().map(function(e) {
+                return e.name;
+            }));
+        }
+    }, {
+        name: 'Toggle Checkpoint',
+        exec: function() {
+            var name = "auto-checkpoint-";
+            var lastBlob = doc.stateID == "cp-" + name + 1 || Docs.hasBlob(currentDoc, "cp-" + name + 1) ? 1 : 2;
+            docs[currentDoc].saveCheckpoint(name + (3 - lastBlob));
+            docs[currentDoc].gotoCheckpoint(name + lastBlob);
+            docs[currentDoc].deleteCheckpoint(name + lastBlob);
+            console.log(docs[currentDoc].checkpoints);
+        }
+    }, {
+        name: 'Goto Checkpoint and Delete',
+        exec: function(editor, args) {
+            doc.$clearRevertStack();
+
+            function restore(name) {
+                var res = docs[currentDoc].gotoCheckpoint(name);
+                docs[currentDoc].deleteCheckpoint(name);
+                if (args && args.cb) args.cb(res);
+            }
+            var warning = "";
+            if (args && args.name) {
+                restore(name);
+            } else {
+                if (!doc.stateID)
+                    Notify.warn("Current state not saved");
+                Notify.prompt('Enter name', restore, "checkpoint", doc.$loadCheckpoints().map(function(e) {
+                    return e.name;
+                }));
+            }
+        }
+    }, {
+        name: 'Delete Checkpoint',
+        exec: function(editor, args) {
+            doc.$clearRevertStack();
+
+            function restore(name) {
+                docs[currentDoc].deleteCheckpoint(name);
+                if (args && args.cb) args.cb(res);
+            }
+            var warning = "";
+            if (args && args.name) {
+                restore(name);
+            } else Notify.prompt('Enter name', restore, docs[currentDoc].stateID, doc.$loadCheckpoints().map(function(e) {
+                return e.name;
+            }));
+        }
+    }, {
+        name: 'Return from Checkpoint',
+        bindKey: 'Ctrl-Alt-J',
+        exec: function() {
+            docs[currentDoc].returnFromCheckpoint();
+        }
+    }, {
+        name: "save",
+        bindKey: {
+            win: "Ctrl-S",
+            mac: "Command-S"
+        },
+        exec: save
+    }, {
+        name: "saveAs",
+        bindKey: {
+            win: "Ctrl-Shift-S",
+            mac: "Command-Shift-S"
+        },
+        exec: function(editor) {
+            FileUtils.saveAs(currentDoc);
+        }
+    }];
+
+    //Overflow menu
+    var menuItems = {
+        "save": {
+            icon: "save",
+            caption: "Save",
+            close: true,
+            onclick: function() {
+                save();
+            }
+        },
+        "refresh": {
+            icon: "refresh",
+            caption: "Refresh file",
+            close: true,
+            onclick: function() {
+                docs[currentDoc].refresh(function(doc) {
+                    if (doc && !doc.dirty)
+                        Notify.info('refreshed');
+                });
+            }
+        },
+        "find": {
+            icon: "search",
+            caption: "Find",
+            childHier: {
+                "find-in-file": {
+                    caption: "Find in File",
+                    close: true,
+                    onclick: function() {
+                        getEditor().execCommand("find");
+                    }
+                },
+                "goto-file": {
+                    caption: "Goto Line",
+                    close: true,
+                    onclick: function() {
+                        getEditor().execCommand("gotoline");
+                    }
+                },
+                "find-refs": {
+                    caption: "Find References",
+                    close: true,
+                    onclick: function() {
+                        getEditor().execCommand("ternFindRefs");
+                    }
+                },
+                "rename": {
+                    caption: "Rename Variable",
+                    close: true,
+                    onclick: function() {
+                        getEditor().execCommand("ternRename");
+                    }
+                }
+
+            }
+        },
+        "tooling": {
+            icon: "edit",
+            caption: "Tools",
+            childHier: {
+                "beautify": {
+                    caption: "Beautify",
+                    close: true,
+                    onclick: function() {
+                        getEditor().execCommand('beautify');
+                    }
+                }
+            }
+        },
+    };
+    var menu = global.MainMenu;
+    for (var i in menuItems) {
+        menu.addOption(i, menuItems[i]);
+    }
+
+    Editors.addCommands(global.DocumentCommands);
+    global.getActiveDoc = function() {
+        return docs[currentDoc];
+    };
+    global.setDoc = setDoc;
+}) /*_EndDefine*/ ;

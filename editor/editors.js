@@ -5,7 +5,7 @@ _Define(function(global) {
     var Functions = global.Functions;
     var docs = global.docs;
     var Utils = global.Utils;
-    var Doc = global.Doc;
+    var Docs = global.Docs;
     var MultiEditor = global.MultiEditor;
     var FocusManager = global.FocusManager;
 
@@ -41,7 +41,7 @@ _Define(function(global) {
             oldEditor: oldEditor,
             editor: pluginEditor || e
         });
-        Doc.swapDoc(tabId);
+        Docs.swapDoc(tabId);
     }
 
     function setEditor(e) {
@@ -53,9 +53,9 @@ _Define(function(global) {
         var oldEditor = __editor;
         __editor = e;
         multiEditor.editor = e;
-        var doc = Doc.forSession(e.session);
+        var doc = Docs.forSession(e.session);
         if (doc) {
-            Doc.swapDoc(doc.id);
+            Docs.swapDoc(doc.id);
         }
         appEvents.trigger('changeEditor', {
             oldEditor: oldEditor,
@@ -67,10 +67,10 @@ _Define(function(global) {
         var editor = __editor;
         var session = doc.session;
         if (editors.length > 1) {
-            var oldDoc = Doc.forSession(editor.session);
+            var oldDoc = Docs.forSession(editor.session);
             //session is clone
             if (oldDoc && oldDoc.session != editor.session) {
-                Doc.closeSession(editor.session);
+                Docs.closeSession(editor.session);
             }
             if (getEditor(session)) {
                 //create clone
@@ -99,8 +99,8 @@ _Define(function(global) {
             __editor = null;
             setEditor(editors[0]);
         }
-        if (Doc.forSession(edit.session))
-            Doc.closeSession(edit.session);
+        if (Docs.forSession(edit.session))
+            Docs.closeSession(edit.session);
         edit.setSession(null);
         FocusManager.focusIfKeyboard(__editor.textInput.getElement());
         edit.destroy();

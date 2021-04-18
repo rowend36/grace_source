@@ -12,6 +12,7 @@ _Define(function(global) {
     var Notify = global.Notify;
     var register = global.register;
     var configure = global.configure;
+    /*Dynamic dependencies Form,Docs,Doc,docs,FileBrowser*/
     var appConfig = global.registerAll({
         "projectFileServer": "",
         "defaultEncoding": "utf8",
@@ -36,7 +37,7 @@ _Define(function(global) {
 
     var viewToServer = getObj("viewToServer");
     var serverCreationParams = getObj("serverCreationParams");
-    //requires Doc,docs;
+    //requires Docs,docs;
 
 
     function test(a, b, next, i, custom) {
@@ -670,9 +671,9 @@ _Define(function(global) {
             });
         },
         getDocFromEvent: function(ev, callback, forceNew, justText) {
-            var Doc = global.Doc;
+            var Docs = global.Docs;
             var doc;
-            if (!forceNew && (doc = Doc.forPath(ev.filepath, ev.browser.fileServer))) {
+            if (!forceNew && (doc = Docs.forPath(ev.filepath, ev.browser.fileServer))) {
                 Utils.setImmediate(function() {
                     callback(justText ? doc.getValue() : doc);
                 });
@@ -845,16 +846,16 @@ _Define(function(global) {
             }
             if (allowNew) {
                 FileUtils.beforeClose('new-file', end);
-                browser.newFile(global.Doc.getName(doc));
+                browser.newFile(global.Docs.getName(doc));
             }
         },
         saveAs: function(doc) {
             saveMode = true;
             saveID = doc;
             var onSave = function(event) {
-                var Doc = global.Doc;
+                var Docs = global.Docs;
                 var save = function() {
-                    Doc.saveAs(saveID, event.filepath, event.browser.fileServer);
+                    Docs.saveAs(saveID, event.filepath, event.browser.fileServer);
                     FileUtils.exitSaveMode();
                 };
                 if (event.id == "new-file") save();

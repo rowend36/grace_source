@@ -1,0 +1,12 @@
+A beautiful git implementation spoilt by performance issues.
+As a result, a jgit implementation is in the works.
+
+
+Merging was taken over because
+we want to handle conflicts
+
+Checkout because there is a bug
+
+To speed things up, we make the crc2 checksum a native op
+
+This means most read file operations become unnecessary

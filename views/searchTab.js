@@ -32,7 +32,7 @@ _Define(function(global) {
     var Utils = global.Utils;
     var setImmediate = Utils.setImmediate;
     var docs = global.docs;
-    var Doc = global.Doc;
+    var Docs = global.Docs;
     var FileUtils = global.FileUtils;
     var closeDoc = global.closeDoc;
     var MAX_FILE_SIZE = Utils.parseSize('10mb');
@@ -44,6 +44,7 @@ _Define(function(global) {
     var genQuickFilter = FileUtils.genQuickFilter;
     var SearchResults = global.SearchResults;
     var SearchReplace = global.SearchReplace;
+    var Doc = global.Doc;
     var SearchTab = function(el) {
         var self = this;
         var project;
@@ -206,7 +207,7 @@ _Define(function(global) {
         var searchTimeout;
 
         var beginSearch = function(filename, useServer) {
-            var doc = Doc.forPath(filename, (useServer === false) ? undefined : (project && project.fileServer));
+            var doc = Docs.forPath(filename, (useServer === false) ? undefined : (project && project.fileServer));
             if (doc) {
                 showSearching(filename, 'Searching');
                 var ranges = self.search.findAll(doc.session);
@@ -420,7 +421,7 @@ _Define(function(global) {
                     doc.searchWillClear = true;
                 }
             };
-            var has = Doc.forPath(path, fileServer);
+            var has = Docs.forPath(path, fileServer);
             if (has) callback(has, null, true);
             FileUtils.getDoc(path, fileServer, callback);
         }
@@ -437,7 +438,7 @@ _Define(function(global) {
                 possibleNewSearch();
                 renderResults(doc, ranges);
             };
-            if ((doc = Doc.forPath(path, fileServer))) {
+            if ((doc = Docs.forPath(path, fileServer))) {
                 search();
                 return;
             }

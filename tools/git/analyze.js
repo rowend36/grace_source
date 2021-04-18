@@ -1,9 +1,15 @@
+/*jshint esversion: 8,esnext:false*/
 _Define(function(global){
     var TREE=git.TREE, WORKDIR=git.WORKDIR, STAGE=git.STAGE;
     const flat =
         typeof Array.prototype.flat === 'undefined' ?
         entries => entries.reduce((acc, x) => acc.concat(x), []) :
         entries => entries.flat();
+    /*Checks whether it is safe to checkout
+     a ref, isomorphic git implementation is kinda buggy
+     Basically, we want to be sure all files that are uncommitted
+     will not need to be changed
+    */
     async function analyze({
         fs,
         cache,
@@ -12,7 +18,7 @@ _Define(function(global){
         gitdir,
         ref,
         force,
-        filepaths,
+        filepaths
     }) {
         let count = 0;
         return git.walk({
@@ -20,8 +26,8 @@ _Define(function(global){
             cache,
             dir,
             gitdir,
-            trees: [TREE({ ref }), WORKDIR(), STAGE()],
-            map: async function(fullpath, [commit, workdir, stage]) {;
+            trees: [TREE({ ref }), WORKDIR(),TREE({ref:'HEAD'})],
+            map: async function(fullpath, [commit, workdir, stage]) {
                 if (fullpath === '.') return;
                 // match against base paths
                 if (filepaths && !filepaths.some(base => worthWalking(fullpath, base))) {

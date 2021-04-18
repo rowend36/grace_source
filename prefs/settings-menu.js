@@ -1,6 +1,6 @@
 _Define(function(global) {
     var FileUtils = global.FileUtils;
-    var Doc = global.Doc;
+    var Docs = global.Docs;
     var docs = global.docs;
     var Editors = global.Editors;
     var appConfig = global.appConfig;
@@ -40,7 +40,7 @@ _Define(function(global) {
                 "Encoding": {
                     type: "select",
                     onchange: function(val) {
-                        Doc.setEncoding(getActiveDoc().id,val);
+                        Docs.setEncoding(getActiveDoc().id,val);
                     },
                     getValue: function() {
                         return getActiveDoc().encoding || 'utf8';

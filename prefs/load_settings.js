@@ -1,4 +1,5 @@
 _Define(function(global) {
+    var Docs = global.Docs;
     var Doc = global.Doc;
     var allConfigs = global.allConfigs;
     var getInfo = global.getConfigInfo;
@@ -29,7 +30,7 @@ _Define(function(global) {
                 doc_settings[i][j] = values[j];
             }
         }
-        doc_settings.editor = Object.assign({}, editor.getOptions(), Doc.$defaults);
+        doc_settings.editor = Object.assign({}, editor.getOptions(), Docs.$defaults);
         doc_settings.resetAllValues = false;
         doc_settings.keyBindings = getBindings(editor, true);
         var a = JSON.stringify(doc_settings, keepUndefined);
@@ -225,7 +226,7 @@ _Define(function(global) {
 
     function SettingsDoc() {
         var t = arguments;
-        Doc.apply(this, ["", "config.json", "ace/mode/javascript", t[3], t[4], t[5]]);
+        Docs.apply(this, ["", "config.json", "ace/mode/javascript", t[3], t[4], t[5]]);
         if (editor && !t[3] /*id*/ ) {
             this.refresh(null, true);
         }
@@ -250,7 +251,7 @@ _Define(function(global) {
             }, function(val) {
                 val = insertComments(val);
                 if (editor) {
-                    Doc.setValue(doc, val, callback, force, ignoreDirty);
+                    Docs.setValue(doc, val, callback, force, ignoreDirty);
                 } else callback && callback(this);
             });
             return true;
@@ -269,7 +270,7 @@ _Define(function(global) {
         }
     }, true);
     SettingsDoc.prototype.factory = 'settings9';
-    Doc.registerFactory('settings9', SettingsDoc);
+    Docs.registerFactory('settings9', SettingsDoc);
     global.SettingsDoc = SettingsDoc;
     global.stripComments = stripComments;
     SettingsDoc.setEditor = function(edit) {

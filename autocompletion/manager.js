@@ -9,7 +9,7 @@ _Define(function(global) {
     var Tags = global.TagCompleter;
     var configure = global.configure;
     var docs = global.docs;
-    var Doc = global.Doc;
+    var Docs = global.Docs;
     var Functions = global.Functions;
     var Notify = global.Notify;
     var configEvents = global.configEvents;
@@ -210,7 +210,7 @@ _Define(function(global) {
     }
 
     function getFileName(s) {
-        var doc = Doc.forSession(s);
+        var doc = Docs.forSession(s);
         if (doc)
             return doc.getPath();
     }

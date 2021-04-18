@@ -10,7 +10,7 @@ _Define(function(global) {
     var themes = ace.require("ace/ext/themelist").themes.map(function(t) { return t.theme });
     
     var docs = global.docs;
-    var Doc = global.Doc;
+    var Docs = global.Docs;
     
     var appConfig = global.registerAll({
         'perEditorTheming': true,
@@ -58,7 +58,7 @@ _Define(function(global) {
     var editors;
     //there is only a single instance of this class
     //you need to remove its dependence 
-    //on Doc and use of appStorage to go around that
+    //on Docs and use of appStorage to go around that
     function EditorSettings(editor_list) {
         this.$options = ace.Editor.prototype.$options;
         this.editor = null;
@@ -90,7 +90,7 @@ _Define(function(global) {
                 val = sessionSettings[key];
             this.editor.session.setOption(key, val);
             if (isForSession) {
-                doc = Doc.forSession(this.editor.session);
+                doc = Docs.forSession(this.editor.session);
                 if (!doc)
                     return;
                 if (val === sessionSettings[key]) {
@@ -98,7 +98,7 @@ _Define(function(global) {
                 }
                 else doc.options[key] = val;
 
-                Doc.tempSave(doc.id);
+                Docs.tempSave(doc.id);
                 return;
             }
             else {
@@ -119,7 +119,7 @@ _Define(function(global) {
         else if (isForSession) {
             if(!options.hasOwnProperty(key))return;
             this.editor.setOption(key, val);
-            doc = Doc.forSession(this.editor.session);
+            doc = Docs.forSession(this.editor.session);
             if (!doc) return;
             if (val == options[key]) {
                 if (doc.editorOptions)
@@ -130,7 +130,7 @@ _Define(function(global) {
                     doc.editorOptions = {};
                 doc.editorOptions[key] = val;
             }
-            Doc.tempSave(doc.id);
+            Docs.tempSave(doc.id);
             return;
         }
         else {
@@ -279,6 +279,6 @@ _Define(function(global) {
         console.error('mode set in defaults');
         delete sessionSettings.mode;
     }
-    Doc.$defaults = sessionSettings;
+    Docs.$defaults = sessionSettings;
     global.MultiEditor = EditorSettings;
 })/*_EndDefine*/

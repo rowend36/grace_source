@@ -1,7 +1,7 @@
 _Define(function(global) {
     'use strict';
     var getMainEditor = global.getMainEditor;
-    var Doc = global.Doc;
+    var Docs = global.Docs;
     var DocsTab = global.DocsTab;
     var app = global.AppEvents;
     var nameTagColors = ['red', 'blue', 'green', 'purple', 'yellow', 'pink'];
@@ -19,7 +19,7 @@ _Define(function(global) {
 
     function showNameTag(edit) {
         if (!edit) return;
-        var session = Doc.forSession(edit.session);
+        var session = Docs.forSession(edit.session);
         if (!session) return;
         var nameTag = edit.container.getElementsByClassName(nameTagClass);
         if (nameTag.length) {
@@ -63,9 +63,9 @@ _Define(function(global) {
     function changeTab(e) {
         var anno = getMainEditor().colorAnnotation;
         if (anno) {
-            Doc.removeTabAnnotation(anno.tab, anno);
+            Docs.removeTabAnnotation(anno.tab, anno);
             anno.tab = e.tab;
-            Doc.addTabAnnotation(e.tab, anno);
+            Docs.addTabAnnotation(e.tab, anno);
         }
     }
 
@@ -88,10 +88,10 @@ _Define(function(global) {
             editor.color = getColor();
             createNameTag(editor, editor.color);
             editor.colorAnnotation = { tab: DocsTab.active, className: editor.color };
-            Doc.addTabAnnotation(DocsTab.active, editor.colorAnnotation);
+            Docs.addTabAnnotation(DocsTab.active, editor.colorAnnotation);
         },
         removeTag: function(editor) {
-            Doc.removeTabAnnotation(editor.colorAnnotation.tab, editor.colorAnnotation);
+            Docs.removeTabAnnotation(editor.colorAnnotation.tab, editor.colorAnnotation);
             editor.color = editor.colorAnnotation = null;
             editor.container.removeChild(editor.container.getElementsByClassName(nameTagClass)[0]);
         }
@@ -101,7 +101,7 @@ _Define(function(global) {
     'use strict';
     var app = global.AppEvents;
     var getEditor = global.getMainEditor;
-    var Doc = global.Doc;
+    var Docs = global.Docs;
     var Editors = global.Editors;
     var SplitManager = global.SplitManager;
     var FocusManager = global.FocusMamager;
@@ -128,7 +128,7 @@ _Define(function(global) {
         }
         var container = SplitManager.add($(edit.container), direction);
         var editor = Editors.createEditor(container);
-        var doc = Doc.forSession(edit.session);
+        var doc = Docs.forSession(edit.session);
         if (doc)
             editor.setSession(doc.cloneSession());
         splitEditors.push(editor);
@@ -197,7 +197,7 @@ _Define(function(global) {
         if (!doc) return;
         if (doc.clones && doc.clones.length > 0) {
             editor = getEditor();
-            if (doc == Doc.forSession(editor.session))
+            if (doc == Docs.forSession(editor.session))
                 removeSplitEditor(editor);
             else {
                 //Not all holders are assured to call
@@ -221,7 +221,7 @@ _Define(function(global) {
         hasEditor: function(doc) {
             /*Check if a document is open in any split*/
             /*Focus that editor if found*/
-            var curDoc = Doc.forSession(getEditor().session);
+            var curDoc = Docs.forSession(getEditor().session);
             if (curDoc == doc) return true;
             if (splitEditors.length < 2) return false;
             var editor = getEditor(doc.session);

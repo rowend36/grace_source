@@ -1,0 +1,63 @@
+How do you provide autocomplete for as many languages as possible
+Tried to do it in the simplest way possible
+First, narrow it down to c style languages
+In the simplest form, the completions are a list of data of any format, but some props
+are already used. Basically a flattened ast
+But for now, we'll just stop where we are, no point continuing
+Node = {
+    score:
+    caption: text displayed on list
+    signature: text that can identify the item\n pass information as to how to use it
+}
+Solution: use powerful regexp and/or tokenStreams
+
+Next, make completions nearer come first
+Node :={
+    locStart: int,
+    locEnd: int,
+    minScore: int,
+    getScore: fn(int cursorPosition)
+}
+if locStart and locEnd are provided, 
+getScore = fn(pos):
+            pos<locStart?
+                max(.minScore , .score + locStart - pos)
+            :pos>locEnd?
+                max(.minScore, .score - locEnd + pos)
+            : .score
+            
+            
+Next, we could add scoping to hide or at least unprefer fields outside our scope
+Node := {
+    scope: {start,end,parent,children}
+}
+-->Current Position
+Currently we can jump to definition and show arg  hints in a dumb ass way
+For most applications, turns out that is good enough
+Libraries are of course a different ball game
+
+From there, it is a bit easy to add parent information
+To do this, we unflatten the ast by adding parent and child nodes
+Node := {
+    parent: Node,
+    children: Node[]
+}
+
+This is where the specificity comes in, type 
+Next, we could add type information, basically signature but instead of text, we use the
+updated info in parent,children
+Node := {
+    type: Type,
+    isResolved: false|true,
+    resolve: fn()->fn|Node|Type
+}
+where Type is a Node or one of a couple types like
+String, Number, Object, Function etc
+Finally, we add operator information like
+{
+    "!op.": fn()->fn|Node,//property access
+    "!op(": fn()->fn|Node,//function call
+    "!op=": fn()->Node,//assignment
+}
+etc, Basically expression evaluation but done lazily
+    

@@ -4,7 +4,7 @@ _Define(function(global) {
     var getMode = global.modelist.getModeForPath;
     var supportedModes = ["java", "python", "javascript", "c_cpp", "tsx", "typescript", "jsx"];
     var RE = /[a-zA-Z\$\-\u00C0-\u1FFF\u2C00-\uD7FF][a-zA-Z_0-9\$\-\u00C0-\u1FFF\u2C00-\uD7FF\w]*/g;
-    var Doc = global.Doc;
+    var Docs = global.Docs;
     var getProject = global.FileUtils.getProject;
     var Utils = global.Utils;
     var relative = global.FileUtils.relative;
@@ -364,7 +364,7 @@ _Define(function(global) {
             words = {};
         },
         updateDoc: function(path) {
-            var doc = Doc.forPath(path);
+            var doc = Docs.forPath(path);
             if (doc) {
                 if (doc.$lastTagUpdate !== doc.getRevision()) {
                     doc.$lastTagUpdate = doc.getRevision();
@@ -375,7 +375,7 @@ _Define(function(global) {
         getCompletions: function(editor, session, pos, prefix, callback) {
             var mode = session.getMode().$id.split("/").pop();
             if (disabledModes[mode]) return;
-            var doc = Doc.forSession(session);
+            var doc = Docs.forSession(session);
             var paths = Object.keys(words);
             var path = doc && doc.getSavePath();
             if (path) {
