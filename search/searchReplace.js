@@ -183,4 +183,4 @@ _Define(function(global) {
         }
     };
     global.SearchReplace = SearchReplace;
-});
+}); /*_EndDefine*/

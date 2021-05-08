@@ -1,0 +1,12 @@
+var a ='hi';
+
+x       change close icon to circle
+-       get typescript to work 
+x        let tags supplement completers
+        stop showing unsaved docs
+        make doc persistence use files instead of sqlite
+        Make dropdowns look better
+        Finish up git
+        picture preview
+        
+        Debugging mught have to wait

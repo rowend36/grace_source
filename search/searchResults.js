@@ -302,4 +302,4 @@ _Define(function(global) {
         };
     }
     global.SearchResults = ResultsView;
-});
+}); /*_EndDefine*/

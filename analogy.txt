@@ -1,0 +1,20 @@
+Grace targets are limited to  
+1) Make long running ops microtasks, that way they can be scheduled or run in a different task
+2) Make a variety of autocompletion tools. Don't use a parser. Read code like a human. Is that even possible
+3) Maximize use of screen space
+4) Lint and beautify code where possible
+5) Reduce memory footprint where possible.
+
+Outside Grace scope
+1) Compilation
+2) Running code
+For those it assumes the user has a terminal. Use the terminal command.
+
+Gray Areas
+1) Git support
+2) File operations
+3) File servers
+
+Grace Module Behaviour
+- We absorb modules. Since we are not using npm, we keep bundle size down by manually stripping symbols from libraries.
+This keeps size small.
