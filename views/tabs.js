@@ -6,16 +6,14 @@ function PagerTab(el, container) {
         container.find($(this).attr('href')).hide();
     });
     var activeLink = tabs.filter(".active");
-    if (activeLink.length < 1)
-        activeLink = tabs.eq(0).addClass("active");
+    if (activeLink.length < 1) activeLink = tabs.eq(0).addClass("active");
     var active = container.find(activeLink.attr("href"));
     active.show();
     el.on("click", TAB, function(e) {
         e.stopPropagation();
         e.preventDefault();
         if (this == activeLink[0]) return;
-        if (self.beforeClick($(this), activeLink) === false)
-            return;
+        if (self.beforeClick($(this), activeLink) === false) return;
         activeLink.removeClass("active");
         activeLink = $(this);
         activeLink.addClass("active");
@@ -24,7 +22,7 @@ function PagerTab(el, container) {
         active.show();
         self.update();
     });
-    this.beforeClick = function(){};
+    this.beforeClick = function() {};
     this.getActivePage = function() {
         return active;
     };
@@ -48,15 +46,15 @@ function PagerTab(el, container) {
     this.select = function(id) {
         el.find(TAB).filter("[href=\"#" + id + "\"]").click();
     };
-    this.update = function(pane){
+    this.update = function(pane) {
         pane = pane || activeLink.attr("href");
-        var owner=this["owner-"+pane];
-        if(owner)owner.update();
+        var owner = this["owner-" + pane];
+        if (owner) owner.update();
     };
-    this.add = function(id, icon, before,owner) {
+    this.add = function(id, icon, before, owner) {
         var newTab = '<li class="tab center">\
                     <a href="#' + id + '">\
-                        <i class="material-icons" style="width:100%">' + icon + '</i>\
+                        <i class="material-icons">' + icon + '</i>\
                     </a>\
                 </li>';
         if (before) {
@@ -70,8 +68,8 @@ function PagerTab(el, container) {
         page.setAttribute("id", id);
         page.style.display = 'none';
         container[0].appendChild(page);
-        if(owner){
-            this["owner-#"+id]=owner;
+        if (owner) {
+            this["owner-#" + id] = owner;
         }
         return page;
     };
@@ -83,27 +81,19 @@ _Define(function(global) {
         var Utils = global.Utils;
         var State = global.State;
         var TAB = ".tab a";
-
         var self = this;
         var createTabAnnotations = function(anno) {
             var string = '<div id="tab-annotations" style="position:absolute;left:0;right:40px;height:\'\';top:0;">';
             for (var i in anno) {
-                string += '<div style="float:left;margin-bottom:20px;margin-left:2px;border-radius:50%;max-width:30px;padding:4px;" class="' + anno[i].className + '">' +
-                    (anno[i].content || "") + '</div>';
+                string += '<div style="float:left;margin-bottom:20px;margin-left:2px;border-radius:50%;max-width:30px;padding:4px;" class="' + anno[i].className + '">' + (anno[i].content || "") + '</div>';
             }
             return string + '</div>';
         };
         var createTabEl = function(id, name, annotations) {
-            return '<li draggable=true class="tab" data-file=' + id +
-                '><a href=#' + id + ' >' + name +
-                (annotations ? createTabAnnotations(annotations) : "") +
-                '<i class="material-icons close-icon">close</i></a></li>';
+            return '<li draggable=true class="tab" data-file=' + id + '><a href=#' + id + ' >' + name + (annotations ? createTabAnnotations(annotations) : "") + '<i class="material-icons close-icon">close</i></a></li>';
         };
         var createListEl = function(id, name, annotations) {
-            return '<li tabIndex=0 draggable=true class="file-item" data-file=' + id +
-                '><i class="material-icons">insert_drive_file</i>' +
-                '<span style="margin-left:10px">' + name +
-                '</span><span class="dropdown-btn">' +
+            return '<li tabIndex=0 draggable=true class="file-item" data-file=' + id + '><i class="material-icons">insert_drive_file</i>' + '<span style="margin-left:10px" class="filename">' + name + '</span><span class="dropdown-btn">' +
                 '<i class="material-icons">close</i></span></li>';
         };
         var setFadeCloseIcon = function() {
@@ -111,10 +101,9 @@ _Define(function(global) {
                 tabEl.find(".close-icon").hide();
                 $(this).find(".close-icon").fadeIn("fast");
             }).on("mouseleave", ".tab", function(ev) {
-                $(this).find(".close-icon").fadeOut("fast");
+                $(this).find(".close-icon").fadeOut("slow");
             });
         };
-
         setFadeCloseIcon();
         this.setSingleTabs = function(val) {
             if (val) {
@@ -123,29 +112,27 @@ _Define(function(global) {
                 tabEl.removeClass('singleTab');
             }
         };
-
         this.performClick = function(e) {
             e.stopPropagation();
             var id = $(this).attr("data-file");
             var target = $(e.target);
-            var isClose = target.hasClass("close-icon") ||
-                (target.closest(".dropdown-btn").length > 0) ||
-                target.hasClass("dropdown-btn");
+            var isClose = target.hasClass("close-icon");
             if (isClose) {
-                if (self.onClose /*|| self.onClose(id)===true*/ ) {
-                    self.onClose(id);
-                } else {
-                    self.removeTab(id, true);
-                }
-                return;
-            }
-            if (self.afterClick(id)) {
-                self.setActive(self.active, false, this.className.indexOf('tab') < 0);
-            }
+                e.preventDefault();
+                self.onClose(id);
+            } else self.setActive(id, true);
+        };
+        this.listClick = function(e) {
+            var id = $(this).attr("data-file");
+            var target = $(e.target);
+            var isClose = target.closest(".dropdown-btn").length > 0 || target.hasClass("dropdown-btn");
+            if (isClose) {
+                self.onClose(id);
+            } else self.setActive(id, true, true);
         };
         this.tabs = tabs;
         tabEl.on("click", ".tab", this.performClick);
-        listEl.on("click", "li", this.performClick);
+        listEl.on("click", "li", this.listClick);
         var persisted = false;
         this.toJSON = function() {
             return tabs.filter(this.getOwner).join(",");
@@ -157,7 +144,6 @@ _Define(function(global) {
             appStorage.setItem('tabs', this.toJSON());
             persisted = true;
         };
-
         var _populators = {};
         this.notifyPopulatorLoad = function() {
             //Doing this ensures that addTab and removeTab are not
@@ -170,8 +156,7 @@ _Define(function(global) {
             //actual elements
             if (!persisted) {
                 var t = appStorage.getItem("tabs");
-                if (t)
-                    this.fromJSON(t);
+                if (t) this.fromJSON(t);
                 /*setTimeout(function(){
                     this.recreate()
                 })*/
@@ -198,8 +183,7 @@ _Define(function(global) {
                     i++;
                 } else tabs.splice(i, 1);
             }
-            if (this.active)
-                this.setActive(this.active, false, true);
+            if (this.active) this.setActive(this.active, false, true);
         }
         this.setActive = function(id, click, scroll) {
             var el = tabEl.find(TAB).filter("[href=\"#" + id + "\"]");
@@ -210,14 +194,17 @@ _Define(function(global) {
                     menu.scrollLeft = Math.max(0, -menu.clientWidth / 2 + (child.clientWidth) / 2 + child.offsetLeft);
                 }
             }
-            if (click && !this.afterClick(id)) {
-                return;
+            if (click) {
+                var active = this.active;
+                this.active = id;
+                if(!this.afterClick(id,active)){
+                    this.active = active;
+                    return;
+                }
             }
-
             listEl.children(".activeTab").removeClass('activeTab');
             var list = listEl.children('[data-file="' + id + '"]');
             list.addClass('activeTab')
-            //this.active = id;
             tabEl.find(".active").removeClass('active');
             el.addClass('active');
             el.parent().addClass('active');
@@ -242,16 +229,14 @@ _Define(function(global) {
             }
         }
         this.insertTab = function(index, id, name, annotations, info) {
-            if (!index && index !== 0)
-                index = tabs.indexOf(this.active);
+            if (!index && index !== 0) index = tabs.indexOf(this.active);
             this.addTab(id, name, annotations, info);
             this.moveTab(index, id);
         }
         this.moveTab = function(index, id, relative) {
             var oldIndex = tabs.indexOf(id);
             Utils.assert(oldIndex > -1)
-            if (relative)
-                index = oldIndex + index;
+            if (relative) index = oldIndex + index;
             if (oldIndex == index) {
                 return;
             }
@@ -272,13 +257,11 @@ _Define(function(global) {
             } else {
                 listEl[0].appendChild(oldEl)
             }
-
             //--thank You for splice
             tabs.splice(index, 0, tabs.splice(oldIndex, 1)[0]);
             this.persist()
-
         }
-        this.removeTab = function(id, select) {
+        this.removeTab = function(id) {
             delete this.tempPopulators[id];
             var tab = tabEl.find(TAB).filter('[href="#' + id + '"]');
             tab.parent().remove();
@@ -286,12 +269,12 @@ _Define(function(global) {
             list.remove();
             var pos = tabs.indexOf(id);
             if (pos < 0) throw new Error('Item not a child');
+            tabs.splice(pos, 1);
             if (id == this.active) {
-                if (select && tabs.length > 1) {
-                    this.setActive(tabs[pos - 1] || tabs[pos + 1], true, false);
+                if (tabs.length > 0) {
+                    this.setActive(tabs[pos-1] || tabs[pos], true, false);
                 }
             }
-            tabs.splice(pos, 1);
             this.persist();
         }
         this.hasTab = function(id) {
@@ -303,10 +286,8 @@ _Define(function(global) {
         this.indexOf = function(id) {
             return tabs.indexOf(id);
         }
-
         this.addTab = function(id, name, annotations, info) {
-            if (this.hasTab(id))
-                return this.replaceTab(id, name, annotations);
+            if (this.hasTab(id)) return this.replaceTab(id, name, annotations);
             if (!this.getOwner(id)) {
                 this.tempPopulators[id] = {
                     name: name,
@@ -323,49 +304,43 @@ _Define(function(global) {
         }
         this.tempPopulators = {}
         this.setAnnotations = function(id, annotations) {
-            if(this.tempPopulators[id])
-                this.tempPopulators[id].annotations=annotations;
+            if (this.tempPopulators[id]) this.tempPopulators[id].annotations = annotations;
             var tabElement = tabEl.find(TAB).filter('[href="#' + id + '"]');
             tabElement.children('#tab-annotations').remove();
-            if (annotations && annotations.length)
-                tabElement.append(createTabAnnotations(annotations))
+            if (annotations && annotations.length) tabElement.append(createTabAnnotations(annotations))
         }
         this.getAnnotations = function(id) {
             return this.tempPopulators[id] && this.tempPopulators[id].annotations;
         }
-        this.addAnnotation = function(id,annotation){
-            if(!this.tempPopulators[id])
-                this.tempPopulators[id] = {};
-            if(!this.tempPopulators[id].annotations)
-                this.tempPopulators[id].annotations=[];
+        this.addAnnotation = function(id, annotation) {
+            if (!this.tempPopulators[id]) this.tempPopulators[id] = {};
+            if (!this.tempPopulators[id].annotations) this.tempPopulators[id].annotations = [];
             var i = this.tempPopulators[id].annotations;
-            if(i.indexOf(annotation)<0){
+            if (i.indexOf(annotation) < 0) {
                 i.push(annotation);
-                this.setAnnotations(id,i);
+                this.setAnnotations(id, i);
             }
         }
-        this.removeAnnotation = function(id,annotation){
-            if(this.tempPopulators[id] && this.tempPopulators[id].annotations){
+        this.removeAnnotation = function(id, annotation) {
+            if (this.tempPopulators[id] && this.tempPopulators[id].annotations) {
                 var a = this.tempPopulators[id].annotations;
                 var index = a.indexOf(annotation);
-                if(index>-1){
-                    a.splice(index,1);
-                    this.setAnnotations(id,a);
+                if (index > -1) {
+                    a.splice(index, 1);
+                    this.setAnnotations(id, a);
                 }
             }
         }
         this.setName = function(id, name) {
-            if(this.tempPopulators[id])
-                this.tempPopulators[id].name=name;
+            if (this.tempPopulators[id]) this.tempPopulators[id].name = name;
             this.replaceTab(id, name, (this.getOwner(id) || this).getAnnotations(id));
         }
         this.getName = function(id) {
-            return this.tempPopulators[id].name;
+            return this.tempPopulators[id] && this.tempPopulators[id].name;
         }
         this.getInfo = function(id) {
             return this.tempPopulators[id].info;
         }
-        
     }
 }); /*_EndDefine*/
 /*
@@ -386,6 +361,5 @@ if (false && hasParent != parent) {
     }
 }
 */
-
 //allows stuff like special editors
 //terminals etc to be used like sessions

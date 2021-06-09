@@ -149,6 +149,7 @@ _Define(function(global) {
             NameTags.removeTag(hostEditor);
             Editors.closeEditor(hostEditor);
             //unclickable(hostEditor.container);
+            console.log(splitEditors);
             if (splitEditors.length === 1) {
                 var mainEditor = host(getEditor());
                 //unclickable(mainEditor.container);

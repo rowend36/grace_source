@@ -5,9 +5,11 @@ _Define(function(global) {
     var SettingsDoc = global.SettingsDoc;
     var getEditor = global.getMainEditor;
     var defaultBindings = {
-        "showSettingsMenu": "Ctrl-,",
-        "goToNextError": "Alt-E",
-        "goToPreviousError": "Alt-Shift-E",
+        "gotoend": "Ctrl-End",
+        "goToNextError": "Alt-E|F4",
+        "goToPreviousError": "Alt-Shift-E|Shift-F4",
+        "Return from Checkpoint": "Ctrl-Alt-J",
+        "toggleSplitSelectionIntoLines": "Ctrl-Alt-L",
         "selectall": "Ctrl-A",
         "centerselection": null,
         "gotoline": "Ctrl-L",
@@ -29,7 +31,6 @@ _Define(function(global) {
         "selectup": "Shift-Up",
         "golineup": "Up",
         "selecttoend": "Ctrl-Shift-End",
-        "gotoend": "Ctrl-End",
         "selectdown": "Shift-Down",
         "golinedown": "Down",
         "selectwordleft": "Ctrl-Shift-Left",
@@ -118,49 +119,63 @@ _Define(function(global) {
         "save": "Ctrl-S",
         "saveAs": "Ctrl-Shift-S",
         "openClipboard": "Ctrl-Shift-V",
-        "ternJumpToDef": "Alt-.",
-        "ternJumpBack": "Alt-,",
-        "ternShowType": "Ctrl-I",
-        "ternFindRefs": "Ctrl-E",
-        "ternRename": "Ctrl-Shift-E",
-        "ternRefresh": "Alt-R",
         "run": "F7",
         "Add Split": "F10",
         "Add Split Vertical": "F9",
         "Remove Split": "F8"
     };
+
     global.registerValues({
-        "keyBindings": "Note: These bindings are overriden by the vim/emacs/sublime keymaps\nAlso some plugins like tern,emmet,etc might override the bindings.",
+        "keyBindings": "Configure ace commands. Note: These bindings are overriden by the vim/emacs/sublime/vscode keymaps. Also some plugins like emmet,etc might override the bindings with default bindings. This does not show their commands either. Use the command menu for that",
     });
+    //TODO create a keyboard handler and move keys to appConfig instead of json
     global.saveBindings = function(editor) {
         var bindings = {};
         var a = global.getBindings(editor);
         for (var i in a) {
             var binding = a[i];
-            if (binding && (!defaultBindings[i] || binding.toLowerCase() != defaultBindings[i].toLowerCase())) {
-                bindings[i] = binding;
-            }
+            //if it is unset ignore if no default
+            if (!i && !defaultBindings[i]) continue;
+            if (global.getConfigInfo('keyBindings.' + i) != 'no-user-config')
+                if (binding && (!defaultBindings[i] || binding.toLowerCase() != defaultBindings[i].toLowerCase())) {
+                    bindings[i] = binding;
+                }
         }
         appStorage.setItem("keyBindings", JSON.stringify(bindings));
     };
-    global.setBinding = function(command, value, editor) {
+    global.setBinding = function(command, value, editor, noSave, oldValue) {
         var a = editor.commands;
         var mappings = value.split("|");
         mappings.forEach(function(u) {
             var named = (editor.editor || editor).commands.commandKeyBinding;
             var key = u.toLowerCase();
-            if (named[key]) {
-                if (Array.isArray(named[key])) {
-                    named[key].push(command);
+            var prev = named[key];
+            if (prev) {
+                if (Array.isArray(prev)) {
+                    if (!command && (defaultBindings[oldValue]))//should we check nah, the user will
+                        command = "passKeysToBrowser";
+                    if (!command) {
+                        prev = prev.filter(function(e) {
+                            return e.name == oldValue || e == oldValue;
+                        });
+                        if (!prev.length) prev = "";
+                    } else if (prev.indexOf(command) < 0) prev.push(command);
+                } else if (command)
+                    if (prev != command && prev.name != command)
+                        prev = [prev, command];
+                    else if (prev == oldValue || prev.name == oldValue) {
+                    if (defaultBindings[oldValue])
+                        prev = "passKeysToBrowser";
+                    else prev = "";
                 }
-                else named[key] = [named[key], command];
-            }
-            else named[key] = command;
+            } else prev = command;
+            named[key] = prev;
         });
+        if (noSave) return;
         if (!saveBindings) saveBindings = Utils.delay(function() {
             global.saveBindings(getEditor());
             saveBindings = null;
-        },10000);
+        }, 3000);
         saveBindings();
     };
     global.restoreBindings = function(editor) {
@@ -168,7 +183,7 @@ _Define(function(global) {
         if (bindings) {
             bindings = JSON.parse(bindings);
             for (var i in bindings) {
-                global.setBinding(i, bindings[i], editor);
+                global.setBinding(i, bindings[i], editor, true, defaultBindings[i]);
             }
         }
     };
@@ -182,25 +197,25 @@ _Define(function(global) {
             if (!Array.isArray(item)) {
                 item = [item];
             }
-            j = item.length - 1;
+            var j = item.length - 1;
             var name = item[j];
             var binding;
             if (typeof name != "string") {
                 name = name.name;
             }
             binding = [i.split("-").map(function(e) {
-                return e[0].toUpperCase() + e.substring(1);
+                return e && (e[0].toUpperCase() + e.substring(1));
             }).join("-")];
-
-            if (bindings[name]) {
-                for (var k in binding) {
-                    var t = binding[k];
-                    if (("|" + bindings[name] + "|").indexOf(t) < 0) {
-                        bindings[name] += "|" + t;
+            if (global.getConfigInfo('keyBindings.' + name) !== 'no-user-config') {
+                if (bindings[name]) {
+                    for (var k in binding) {
+                        var t = binding[k];
+                        if (("|" + bindings[name] + "|").indexOf(t) < 0) {
+                            bindings[name] += "|" + t;
+                        }
                     }
-                }
+                } else bindings[name] = binding.join("|");
             }
-            else bindings[name] = binding.join("|");
             if (includeOverrides) {
                 for (var u = 0; u < j; u++) {
                     var other = item[u];
@@ -214,16 +229,16 @@ _Define(function(global) {
         }
         var b = editor.commands.byName;
         for (var o in b) {
-            if (!bindings.hasOwnProperty(o)) {
-                bindings[o] = "";
-            }
+            if (global.getConfigInfo('keyBindings.' + o) != 'no-user-config')
+                if (!bindings.hasOwnProperty(o)) {
+                    bindings[o] = "";
+                }
         }
-        
         sorted = {};
-        Object.keys(bindings).sort(function(a,b){
-            return !bindings[a] && bindings[b]?1:!bindings[b] && bindings[a]?-1:!(bindings[a]||bindings[b])?0:a.toLowerCase().localeCompare(b.toLowerCase());
-        }).forEach(function(t){
-            sorted[t]=bindings[t];
+        Object.keys(bindings).sort(function(a, b) {
+            return !bindings[a] && bindings[b] ? 1 : !bindings[b] && bindings[a] ? -1 : !(bindings[a] || bindings[b]) ? 0 : a.toLowerCase().localeCompare(b.toLowerCase());
+        }).forEach(function(t) {
+            sorted[t] = bindings[t];
         });
         if (includeOverrides) {
             sorted.$shadowed = overriden;
@@ -234,4 +249,4 @@ _Define(function(global) {
     appEvents.on("createEditor", function(e) {
         global.restoreBindings(e.editor);
     });
-})/*_EndDefine*/
+}) /*_EndDefine*/

@@ -4,49 +4,49 @@ _Define(function(global) {
     var errorClasses = "red";
     var AutoCloseable = global.AutoCloseable;
     var setImmediate = global.Utils.setImmediate;
+    var noop = global.Utils.noop;
+    var safeCall = global.Utils.withTry;
     var pending = [];
     var active = M.Toast._toasts;
+    var genID = global.Utils.genID;
+
     function doPending() {
-        if(pending.length>0) M.toast(pending.pop());
+        if (pending.length > 0) M.toast(pending.pop());
     }
     var suppressed = false;
-    var clearSuppressed = global.Utils.debounce(function(){
+    var clearSuppressed = global.Utils.debounce(function() {
         suppressed = false;
-    },200);
+    }, 200);
     var notify = function(text, duration, type) {
         var opts = {
             html: text,
             displayLength: duration,
             completeCallback: doPending,
         };
-        if (active.length < 2){
+        if (active.length < 2) {
             return M.toast(opts);
         }
-        if(pending.length>10){
+        if (pending.length > 10) {
             suppressed = M.toast({
-                html:'Output suppressed. Check console',
+                html: 'Output suppressed. Check console',
                 displayLength: Infinity,
                 completeCallback: clearSuppressed
             });
             pending.length = 0;
         }
-        if(suppressed){
+        if (suppressed) {
             clearSuppressed();
             console.log(text);
-        }
-        else pending.push(opts);
+        } else pending.push(opts);
     };
     var warn = function(text, duration) {
-        notify("<i class='orange-text material-icons toast-icon'>warning</i>" + text,
-            duration || (text.length > 100 ? 5000 : 2000), warningClasses);
+        notify("<i class='orange-text material-icons toast-icon'>warning</i>" + text, duration || (text.length > 100 ? 5000 : 2000), warningClasses);
     };
     var info = function(text, duration) {
-        notify("<i class='white-text material-icons toast-icon'>error</i>" + text,
-            duration || (text.length > 100 ? 5000 : 2000), infoClasses);
+        notify("<i class='white-text material-icons toast-icon'>error</i>" + text, duration || (text.length > 100 ? 5000 : 2000), infoClasses);
     };
     var error = function(text, duration) {
-        notify("<i class='red-text material-icons toast-icon'>error</i>" + text,
-            duration || (text.length > 100 ? 5000 : 2000), errorClasses);
+        notify("<i class='red-text material-icons toast-icon'>error</i>" + text, duration || (text.length > 100 ? 5000 : 2000), errorClasses);
     };
     var ask = function(text, yes, no) {
         var answer = confirm(text);
@@ -57,17 +57,15 @@ _Define(function(global) {
         }
     };
     var modal = function(opts, ondismiss) {
-        var header = "<div class='modal-content'>" +
-            '<div class="modal-header h-30">' +
-            opts.header +
-            "</div class='modal-content'>" +
-            opts.body +
-            "</div>" +
-            (opts.footers ? "<div class='modal-footer'>" + opts.footers.map(
-                function(e, i) {
-                    return "<button style='margin-right:10px' class='btn modal-" + e.toLowerCase().replace(/ /g, "_") + (1 == opts.footers.length ? " right" : " center") + "'>" + e + "</button>";
-                }).join("") + "</div>" : "");
-        var container = document.createElement("div");
+        ondismiss = ondismiss ? safeCall(ondismiss) : noop;
+        var header = [
+            '<h6 class="modal-header h-30">', opts.header,"</h6>",
+            '<div class="modal-content">',opts.body,"</div>",
+            (opts.footers ? "<div class='modal-footer'>" + opts.footers.map(function(e) {
+            return "<button style='margin-right:10px' class='btn modal-" + e.toLowerCase().replace(/ /g, "_") + (1 == opts.footers.length ? " right" : " center") + "'>" + e + "</button>";
+        }).join("") + "</div>" : "")].join("");
+        var container = document.createElement(opts.type||'div');
+        container.id = genID("a");
         global.watchTheme($(container));
         container.className = "modal modal-container";
         container.innerHTML += header;
@@ -75,25 +73,25 @@ _Define(function(global) {
         var modalEl = $(container);
         var options = {
             inDuration: 50,
-            outDuration: 50,
+            outDuration: 200,
             dismissible: opts.dismissible !== false
         };
         if (options.dismissible) {
             options.onCloseEnd = function() {
-                ondismiss && ondismiss();
+                ondismiss();
                 AutoCloseable.onCloseEnd.apply(this);
                 if (!opts.keepOnClose) {
                     modalEl.modal('destroy');
-                    modalEl.detach();
+                    modalEl.remove();
                 }
             };
             options.onOpenEnd = AutoCloseable.onOpenEnd;
         } else {
             options.onCloseEnd = function() {
-                ondismiss && ondismiss();
+                ondismiss();
                 if (!opts.keepOnClose) {
                     modalEl.modal('destroy');
-                    modalEl.detach();
+                    modalEl.remove();
                 }
             };
         }
@@ -119,13 +117,8 @@ _Define(function(global) {
     var ondismiss, completer, returnFocus;
     var createInputDialog = function(caption, onchang, getValue, ondismis, complete) {
         if (!inputDialog) {
-            var dialog = "<h6 class='modal-header'></h6>" +
-                "<div class='modal-content'>" +
-                "<input></input>" +
-                "</div><div class='modal-footer'>" +
-                "<a href='#!' class='modal-close waves-effect waves-green btn-flat'>Cancel</a>" +
-                "<a href='#!' class='modal-done waves-effect waves-green btn-flat'>Done</a>" +
-                "</div>";
+            var dialog = "<h6 class='modal-header'></h6>" + "<div class='modal-content'>" + "<input></input>" + "</div><div class='modal-footer'>" + "<a href='#!' class='modal-close waves-effect waves-green btn-flat'>Cancel</a>" +
+                "<a href='#!' class='modal-done waves-effect waves-green btn-flat'>Done</a>" + "</div>";
             var creator = document.createElement('div');
             creator.innerHTML = dialog;
             creator.className = 'modal';
@@ -162,7 +155,7 @@ _Define(function(global) {
             });
             Dropdown = new global.Overflow(true, "left");
             Dropdown.onclick = function(ev, id, element, item) {
-                input.value = item;
+                completer.update(input, item);
             };
             header = creator.getElementsByClassName('modal-header')[0];
             var save = creator.getElementsByClassName('modal-done')[0];
@@ -197,9 +190,7 @@ _Define(function(global) {
                         returnFocus();
                         Dropdown.hide();
                         isOpen = false;
-                        completer =
-                            ondismiss =
-                            onchange = null;
+                        completer = ondismiss = onchange = null;
                     }
                 },
                 onCloseEnd: AutoCloseable.onCloseEnd,
@@ -225,27 +216,27 @@ _Define(function(global) {
             }
         };
     };
-
-    var getText = function(text, func, defText, values) {
-        if (values) {
-            values = values.map(function(e) {
-                return e.toLowerCase();
-            }).sort()
+    var getText = function(text, func, defText, value_completer) {
+        if (Array.isArray(value_completer)) {
+            value_completer = value_completer.sort()
         }
         text = text.split("\n").join("</br>")
         var dialog = createInputDialog(text, func, function() {
             return defText;
-        }, func, values && {
-            complete: function(text) {
-                text = text.toLowerCase();
-                return values.filter(function(e) {
-                    return e.indexOf(text) > -1;
-                });
-            }
-        });
+        }, func, value_completer && (Array.isArray(value_completer) ? {
+                complete: function(text) {
+                    text = text.toLowerCase();
+                    return value_completer.filter(function(e) {
+                        return e.toLowerCase().indexOf(text) > -1;
+                    });
+                },
+                update: function(input, text) {
+                    return input.value=text;
+                }
+            } :
+            value_completer));
         dialog.show();
     };
-
     global.Notify = {
         notify: notify,
         error: error,

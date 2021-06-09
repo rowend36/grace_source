@@ -48,4 +48,4 @@ _Define(function(global) {
             }
         });
     };
-})/*_EndDefine*/
+});/*_EndDefine*/

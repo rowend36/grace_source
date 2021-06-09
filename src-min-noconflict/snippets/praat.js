@@ -1,12 +1,6 @@
-define("ace/snippets/praat",["require","exports","module"], function(require, exports, module) {
-"use strict";
-
-exports.snippetText =undefined;
-exports.scope = "praat";
-
-});
+ace.define("ace/snippets/praat",[],function(e,t,n){"use strict";t.snippetText=undefined,t.scope="praat"});
                 (function() {
-                    window.require(["ace/snippets/praat"], function(m) {
+                    ace.require(["ace/snippets/praat"], function(m) {
                         if (typeof module == "object" && typeof exports == "object" && module) {
                             module.exports = m;
                         }

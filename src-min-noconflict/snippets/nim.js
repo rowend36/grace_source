@@ -1,12 +1,6 @@
-define("ace/snippets/nim",["require","exports","module"], function(require, exports, module) {
-"use strict";
-
-exports.snippetText =undefined;
-exports.scope = "nim";
-
-});
+ace.define("ace/snippets/nim",[],function(e,t,n){"use strict";t.snippetText=undefined,t.scope="nim"});
                 (function() {
-                    window.require(["ace/snippets/nim"], function(m) {
+                    ace.require(["ace/snippets/nim"], function(m) {
                         if (typeof module == "object" && typeof exports == "object" && module) {
                             module.exports = m;
                         }

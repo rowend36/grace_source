@@ -453,12 +453,7 @@ _Define(function(global) {
                 renderlist[s].render(viewport, s, insertBefore);
             }
         }
-        var a = this;
-        var q = "-";
-        while (a.renderer) {
-            q += "-";
-            a = a.renderer;
-        }
+        
         this.changes = 0;
     };
     RecyclerRenderer.prototype.detach = function() {
@@ -503,6 +498,8 @@ _Define(function(global) {
         } else throw new Error(Errors.INVALID_INDEX.replace("{index}", index));
         this.invalidate(index - 1);
     };
+    /** @param {(number|RecyclerViewHolder)} start - The view whose height or display has changed. Pass -1 to invalidate the whole view
+    */
     RecyclerRenderer.prototype.invalidate = function(start) {
         if (typeof(start) == 'object') {
             start = this.views.indexOf(start);
@@ -543,6 +540,7 @@ _Define(function(global) {
         RecyclerRenderer.apply(this);
         this.stub = view;
         this.root = root;
+        root.appendChild(view[0]);
         this.stub.css('position', 'absolute');
     }
     NestedRenderer.prototype = Object.create(RecyclerRenderer.prototype);

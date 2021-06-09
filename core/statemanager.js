@@ -33,14 +33,15 @@ _Define(function(global) {
             return _location.hash == '#' + tag;
         };
         obj.ensure = function(tag, handled) {
-            if (back) back = false;
+            if (back){
+                back = false;
+            } 
             if (!obj.is(tag)) {
                 var a = oldhash;
                 oldhash = tag;
                 _history.pushState(null, "", "#" + tag);
                 if (!handled)
                     obj.onChange(tag, a, true);
-
             }
         };
         obj.removeListener = function(func) {
@@ -53,10 +54,12 @@ _Define(function(global) {
             if (preCheck)
                 func.preCheck = preCheck;
         };
-        obj.back = function(allowChange) {
+        obj.back = function() {
             if (back) return;
+            if (back == undefined){
+                _history.back();
+            }
             back = true;
-            _history.back();
         };
         obj.forward = function() {
             _history.forward();
@@ -80,20 +83,22 @@ _Define(function(global) {
             };
         };
 
-        function stateTracker(ev) {
+        function stateTracker() {
+            var hash = ("" + _location.hash).substring(1);
             if (back === false) {
-                back = undefined;
+                if(hash)
+                    back = undefined;
                 oldhash && obj.ensure(oldhash, true);
                 return;
             }
-            else back = undefined;
-            var hash = ("" + _location.hash).substring(1);
+            else if(back && hash){
+                back = undefined;   
+            }
             if (hash == oldhash)
                 return;
             if (obj.onChange(hash, oldhash)) {
                 oldhash = hash;
-            }
-            else obj.back();
+            } else obj.back();
         }
         obj.detach = function() {
             window.removeEventListener('popstate', stateTracker);
@@ -114,12 +119,12 @@ _Define(function(global) {
     var mngr = global.manageState(window);
     var ids = [];
     var values = [];
-    var changeWatcher = function(newD, old, dir) {
+    var changeWatcher = function(newD) {
         if (mngr.isValidState(newD)) {
             var index2 = ids.indexOf(newD);
             for (var i = ids.length - 1; i > index2; i--) {
                 var value = values.pop();
-                var key = ids.pop();
+                ids.pop();
                 value.close();
             }
             return index2 > -1;

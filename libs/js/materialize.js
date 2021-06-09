@@ -894,7 +894,22 @@ var $jscomp$this = this;
     };
     return q;
 });
-
+//TODO get rid of this bug bank
+var unsafeAnime = M.anime;
+M.anime = Object.assign(function(opts){
+  if(opts.complete){
+    var unsafe = opts.complete;
+    opts.complete = function(){
+      try{
+        unsafe.call(this,arguments);
+      }
+      catch(e){
+        console.error(e);
+      }
+    };
+  }
+  return unsafeAnime(opts);
+} ,M.anime);
 /*!
      * Waves v0.6.4
      * http://fian.my.id/Waves

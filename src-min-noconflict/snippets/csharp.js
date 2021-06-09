@@ -1,12 +1,6 @@
-define("ace/snippets/csharp",["require","exports","module"], function(require, exports, module) {
-"use strict";
-
-exports.snippetText =undefined;
-exports.scope = "csharp";
-
-});
+ace.define("ace/snippets/csharp",[],function(e,t,n){"use strict";t.snippetText=undefined,t.scope="csharp"});
                 (function() {
-                    window.require(["ace/snippets/csharp"], function(m) {
+                    ace.require(["ace/snippets/csharp"], function(m) {
                         if (typeof module == "object" && typeof exports == "object" && module) {
                             module.exports = m;
                         }

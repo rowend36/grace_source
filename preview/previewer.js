@@ -6,22 +6,23 @@ _Define(function(global) {
     var AutoCloseable = global.AutoCloseable;
 
     function createIcon(id, name) {
-        return "<button style='width:35px' id='" + id + "' class='material-icons'>" + name + "</button>";
+        return "<button style='width:35px' id='" + id + "' class='material-icons'>" + name +
+            "</button>";
     }
-    function loadConsole(win,loadOnly){
-        if(win.eruda){
-            if(!loadOnly){
+
+    function loadConsole(win, loadOnly) {
+        if (win.eruda) {
+            if (!loadOnly) {
                 win.eruda._devTools.toggle();
             }
             win.eruda._entryBtn.hide();
-        }
-        else{
+        } else {
             $.get({
                 url: "./libs/js/eruda.min.js",
                 success: function(res) {
                     var script = res;
                     win.eval(script);
-                    if (win.eruda){
+                    if (win.eruda) {
                         win.eruda.init(win.erudaPanes || []);
                         loadConsole(win);
                     }
@@ -29,12 +30,13 @@ _Define(function(global) {
             });
         }
     }
+
     function createNavBar(navBar, icons, prefix) {
         navBar.className = "editor-primary";
         navBar.style.position = "absolute";
         navBar.style.top = '0px';
         navBar.style.width = '100%';
-        var iconLeft = Math.min(4,icons.length)*35+5;
+        var iconLeft = Math.min(4, icons.length) * 35 + 5;
         var addressBar = document.createElement("div");
         addressBar.setAttribute("readOnly", true);
         addressBar.style.position = "absolute";
@@ -65,7 +67,8 @@ _Define(function(global) {
         iconContainer.style.whiteSpace = 'nowrap';
         iconContainer.style.maxWidth = "100%";
         for (var i in icons) {
-            $(iconContainer).append(createIcon((prefix || "") + icons[i].id, icons[i].icon));
+            $(iconContainer).append(createIcon((prefix || "") + icons[i].id, icons[i]
+            .icon));
         }
         navBar.appendChild(iconContainer);
         return {
@@ -100,7 +103,8 @@ _Define(function(global) {
     function inSafeJs(editor) {
         var pos = editor.getSelectionRange().end;
         if (editor.session.getTokenAt(pos.row, pos.column).type == "string") {
-            if (editor.session.getLength() > (pos.row + 5) && editor.session.getLine(pos.row).length > pos.column + 1)
+            if (editor.session.getLength() > (pos.row + 5) && editor.session.getLine(pos
+                    .row).length > pos.column + 1)
                 return true
         }
         return false
@@ -109,8 +113,7 @@ _Define(function(global) {
     function checkInCssHtmlOrString(editor) {
         if (!inJavascriptMode(editor)) { //|| inSafeJs(editor)) {
             return true;
-        }
-        else {
+        } else {
             return false;
         }
     }
@@ -120,7 +123,8 @@ _Define(function(global) {
         previewContainer.style.paddingTop = '35px';
 
         var navBar = createNavBar(
-            $(previewContainer).append("<div style='width:100%;height:35px'></div>").children().last()[0], [{
+            $(previewContainer).append("<div style='width:100%;height:35px'></div>")
+            .children().last()[0], [{
                 id: "backward",
                 icon: "keyboard_arrow_left"
             }, {
@@ -138,10 +142,10 @@ _Define(function(global) {
             }, {
                 id: "full",
                 icon: "fullscreen"
-            },{
+            }, {
                 id: "desktop",
                 icon: "computer"
-            },{
+            }, {
                 id: "zoom",
                 icon: "zoom_out"
             }], "preview-"
@@ -162,7 +166,7 @@ _Define(function(global) {
                     loadConsole(win);
                     break;
                 case "reload":
-                    win.location.reload();
+                    updatePreview(false);
                     break;
                 case "close":
                     hide();
@@ -171,7 +175,8 @@ _Define(function(global) {
                     $(previewContainer).toggleClass('preview-zoom');
                     break;
                 case "desktop":
-                    if(!$(previewContainer).toggleClass('preview-desktop').hasClass('preview-container')){
+                    if (!$(previewContainer).toggleClass('preview-desktop')
+                        .hasClass('preview-container')) {
                         $(previewContainer).removeClass('preview-zoom');
                     }
                     break;
@@ -179,8 +184,7 @@ _Define(function(global) {
                     if (isFull) {
                         show(false);
                         e.target.innerHTML = "fullscreen"
-                    }
-                    else {
+                    } else {
                         e.target.innerHTML = "fullscreen_exit"
                         show(true);
                     }
@@ -205,31 +209,29 @@ _Define(function(global) {
         }, 1000);
 
         function getSplitMode(container) {
-            return container.clientWidth > Math.min(container.clientHeight, 720) ? "horizontal" : "vertical";
+            return container.clientWidth > Math.min(container.clientHeight, 720) ?
+                "horizontal" : "vertical";
         }
 
         function updatePreview(live) {
             if (reloader) {
                 reloader.reload(preview, path, live);
-            }
-            else {
+            } else {
                 preview.src = path;
             }
-            
+
         }
 
         function setEditor(edit) {
             if (editor == edit) {
                 return;
-            }
-            else {
+            } else {
                 if (live) {
                     if (editor)
-                        stopLiveUpdate()
-                    editor = edit
-                    startLiveUpdate()
-                }
-                else {
+                        stopLiveUpdate();
+                    editor = edit;
+                    startLiveUpdate();
+                } else {
                     editor = edit;
                     updatePreview();
                 }
@@ -253,8 +255,7 @@ _Define(function(global) {
                     previewContainer.className = "preview";
                 previewContainer.parentNode.removeChild(previewContainer);
                 AutoCloseable.remove("preview");
-            }
-            else {
+            } else {
                 container = null;
                 SplitManager.remove($(previewContainer));
             }
@@ -284,16 +285,15 @@ _Define(function(global) {
             if (full === true) {
                 container = document.body;
                 previewContainer.className += " fullscreen";
-            }
-            else if (full) {
+            } else if (full) {
                 container = full;
-            }
-            else {
+            } else {
                 full = false;
-                container = SplitManager.add($(editor.container), splitMode || getSplitMode(editor.container));
+                container = SplitManager.add($(editor.container), splitMode ||
+                    getSplitMode(editor.container));
             }
-            if(full){
-                AutoCloseable.add("preview",{
+            if (full) {
+                AutoCloseable.add("preview", {
                     close: hide
                 });
             }
@@ -301,7 +301,7 @@ _Define(function(global) {
             container.appendChild(previewContainer);
             isFull = full;
         }
-        
+
         var API = {
             isHidden: function() {
                 return hidden;
@@ -331,4 +331,4 @@ _Define(function(global) {
         };
         return API;
     }
-});/*_EndDefine*/
+}); /*_EndDefine*/

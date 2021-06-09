@@ -197,7 +197,7 @@ app.post("/open", function(req, res) {
     fs.lstat(req.body.path, function(e, stat) {
         if (e) {
             return doError(e, res);
-        } else if (!stat || stat.size > Math.min(req.body.maxSize || 5000000, 15000000)) {
+        } else if (stat.size > (req.body.maxSize || 20000000)) {
             return doError({
                 code: "ETOOLARGE"
             }, res);

@@ -8,8 +8,7 @@ _Define(function(global) {
     var accessKey = app.requestAccessKey();
     var config = global.registerAll({
         "runInNewProcess": false
-    }, "run");
-
+    }, "execute");
     var request = global.request;
     var requestBuffer = global.requestBuffer;
     var appStorage = global.appStorage;
@@ -33,6 +32,7 @@ _Define(function(global) {
         global.addDoc(intent.name || "", intent.value || "", intent.path || "");
     };
     handler._pause = function() {
+        window.blur();
         appEvents.trigger('app-paused');
         appStorage.__doSync && appStorage.__doSync();
     };
@@ -44,19 +44,18 @@ _Define(function(global) {
         appEvents.on("app-loaded", function() {
             var intent = app.getIntent(accessKey);
             if (intent) {
+                global.Notify.info('Loading file..');
                 handler._onNewIntent(intent);
             }
         });
     };
     handler._notifyIntent();
-
     function isString(str) {
         return str.charAt;
     }
-
     handler._callbacks = {
         0: function(e) {
-            if (e) throw e;
+            if (e) console.error(e);
         }
     };
     var count = 0;
@@ -77,16 +76,28 @@ _Define(function(global) {
         };
         return id;
     }
+    handler.createCallback = function(func) {
+        var c = handler._callbacks;
+        if (!func) return 0;
+        var id = ++count;
+        while (c[id]) {
+            id = ++count;
+        }
+        c[id] = func;
+        return id;
+    };
+    handler.clearCallback = function(id) {
+        delete handler._callbacks[id];
+    };
 
     function clearLastCallback(err) {
         var c = handler._callbacks;
         var app_e = app.getError(accessKey);
-        var error = app_e ? toNodeError(app_e) : err;
+        var error = app_e || err.message;
         if (c[count]) {
             c[count](error);
         }
     }
-
 
     function jsonCallback(cb) {
         return function(e, res) {
@@ -161,7 +172,7 @@ _Define(function(global) {
         if (code) {
             err.code = err.message = code;
         } else {
-            console.debug("Unknown error", e.origin);
+            console.debug("Unknown error", err.origin);
             err.code = err.message = 'EUNKNOWN';
         }
         return err;
@@ -182,8 +193,7 @@ _Define(function(global) {
             try {
                 app.readStreamAsync(fd, createCallback(cb && function(e, res) {
                     if (!e) {
-                        if (res)
-                            res = decodeBytesToBuffer(res);
+                        if (res) res = decodeBytesToBuffer(res);
                         else res = null;
                     }
                     cb(e, res);
@@ -195,8 +205,7 @@ _Define(function(global) {
         this.readSync = function() {
             try {
                 var res = app.readStream(fd, accessKey);
-                if (res)
-                    res = decodeBytesToBuffer(res);
+                if (res) res = decodeBytesToBuffer(res);
                 else res = null;
                 return res;
             } catch (err) {
@@ -266,7 +275,7 @@ _Define(function(global) {
         };
         this.readdirSync = function(path) {
             try {
-                return JSON.parse(app.getFiles(path, accessKey));
+                return JSON.parse(app.getFiles(path, accessKey)).map(FileUtils.removeTrailingSlash);
             } catch (err) {
                 throwError(err);
             }
@@ -381,7 +390,7 @@ _Define(function(global) {
                 clearLastCallback(err);
             }
         };
-        this.getFiles = this.readdir = function(path, opts, callback) {
+        this.getFiles = function(path, opts, callback) {
             count++;
             try {
                 if (opts) {
@@ -389,16 +398,24 @@ _Define(function(global) {
                         callback = opts;
                     }
                 }
-                var res = app.getFilesAsync(path, createCallback(callback ? jsonCallback(callback) : null), accessKey);
+                var res = app.getFilesAsync(path, createCallback(callback ? jsonCallback(callback) : null),
+                    accessKey);
             } catch (err) {
                 clearLastCallback(err);
             }
         };
-
-
+        this.readdir = function(path, opts, callback) {
+            if (opts) {
+                if (!callback && typeof(opts) == "function") {
+                    callback = opts;
+                }
+            }
+            this.getFiles(path, callback && function(e, r) {
+                callback && callback(e, r && r.map(FileUtils.removeTrailingSlash));
+            });
+        }
         this.stat = asyncify(this, this.statSync, 1);
         this.lstat = asyncify(this, this.lstatSync, 1);
-
         this.copyFile = function(path, dest, callback, overwrite) {
             count++;
             try {
@@ -415,19 +432,28 @@ _Define(function(global) {
                 clearLastCallback(err);
             }
         };
-
         this.mkdir = asyncify(this, this.mkdirSync, 1);
         this.rename = asyncify(this, this.renameSync, 2);
         this.unlink = this.rmdir = this.delete = asyncify(this, deleteSync, 1);
-
-
+        this.fastGetOid = function(path, callback) {
+            count++;
+            try {
+                app.getGitBlobIdAsync(path, createCallback(callback), accessKey);
+            } catch (err) {
+                clearLastCallback(err);
+            }
+        };
         this.href = "file://";
         this.isEncoding = function(encoding) {
-            return true;
+            if (encodings.indexOf(e) > -1) return e;
+            //inefficient op
+            var i = encodings.map(normalizeEncoding).indexOf(normalizeEncoding(e));
+            if (i > -1) return encodings[i];
+            return false;
         };
         this.getEncodings = function() {
             try {
-                return JSON.parse(app.getEncodings(accessKey));
+                return this.encodings || (this.encodings = JSON.parse(app.getEncodings(accessKey)));
             } catch (err) {
                 throwError(err);
             }

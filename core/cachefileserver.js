@@ -1,6 +1,7 @@
 _Define(function(global) {
     "use strict";
     var Utils = global.Utils;
+    var removeTrailingSlash = global.FileUtils.removeTrailingSlash;
     var setImmediate = Utils.setImmediate;
     var normalize = global.FileUtils.normalize;
     var dirname = global.FileUtils.dirname;
@@ -100,14 +101,15 @@ _Define(function(global) {
                 }
             });
         };
-        var save = Utils.debounce(function() {
+        var saveAll = function(){
             var token = {};
             for (var i in cached) {
                 if (cached[i].willSave) {
                     doSave(cached[i], i, token);
                 }
             }
-        }, 1000);
+        }
+        var save = Utils.debounce(saveAll, 1000);
         var toBuffer = function(res) {
             return new TextEncoder().encode(res);
         };
@@ -204,7 +206,13 @@ _Define(function(global) {
                 cb && cb(e);
             });
         };
-        cacheFs.readdir = cacheFs.getFiles = function(path, opts, cb) {
+        cacheFs.readdir = function(path,cb){
+            this.getFiles(path,function(e,r){
+                if(r)r=r.map(removeTrailingSlash)
+                cb && cb(e,r);
+            });
+        };
+        cacheFs.getFiles = function(path, opts, cb) {
             if (typeof opts == "function") {
                 cb = opts;
                 opts = null;
@@ -215,12 +223,12 @@ _Define(function(global) {
             if (item) {
                 item.count++;
                 if (item.fileList) {
-                    return setTimeout(function() {
+                    return setImmediate(function() {
                         cb(null, item.fileList);
                     });
                 }
                 //unlikely
-                return setTimeout(function() {
+                return setImmediate(function() {
                     cb({
                         code: 'ENOTDIR',
                         message: 'ENOTDIR'
@@ -228,7 +236,7 @@ _Define(function(global) {
                 });
             }
             if (enoents[path]) {
-                return setTimeout(function() {
+                return setImmediate(function() {
                     cb({
                         code: 'ENOENT',
                         message: 'ENOENT'
@@ -249,7 +257,7 @@ _Define(function(global) {
                     }
                     //unlikely
                     console.error(path + ' not found in', t);
-                    return setTimeout(function() {
+                    return setImmediate(function() {
                         cb({
                             code: 'ENOENT',
                             message: 'ENOENT'
@@ -284,14 +292,14 @@ _Define(function(global) {
             if (cached[path]) {
                 var stat = getStat(cached[path], isLstat);
                 if (stat) {
-                    setTimeout(function() {
+                    setImmediate(function() {
                         cb(null, stat);
                     });
                     return;
                 }
             }
             else if (enoents[path]) {
-                setTimeout(function() {
+                setImmediate(function() {
                     cb({
                         code: 'ENOENT',
                         message: 'ENOENT'
@@ -310,11 +318,11 @@ _Define(function(global) {
                     putStat(cached[path], s, isLstat);
                 }
                 cb(e, s);
-            }
+            };
             fs.stat(path, opts || end, opts && end);
 
-        }
+        };
         cacheFs.isCached = true;
         return cacheFs;
     };
-});
+}); /*_EndDefine*/

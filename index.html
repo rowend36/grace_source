@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, user-scalable=no initial-scale=1.0" />
     <meta charset='utf-8' />
     <link rel="shortcut icon" href="./favicon.ico">
-    <link rel="stylesheet" href="./libs/css/materialize-slim.css">
+    <link rel="stylesheet" href="./libs/css/materialize-grace.css">
     <link rel="stylesheet" href="./main.css">
     <link rel='stylesheet' href="./libs/css/coding-fonts.css">
     <!--<oscript type="text/javascript" charset="utf-8">-->
@@ -29,63 +29,15 @@
     <!--<oscript src="./tests/snippets.js" type="text/javascript" charset="utf-8"></script>-->
     <script>
         //Snippets.detectGlobals.exec(window);
-        if(window.eruda)eruda.init([]);
+        if (window.eruda) {
+            eruda.init(["console"]);
+            if(window.Application)
+                eruda._entryBtn.hide();
+        }
         //timeline('Load Eruda');
     </script>
-    <script type="text/javascript" src="./libs/js/jquery-2.2.0.min.js"></script>
-    <script type="text/javascript" src="./libs/js/polyfill.js"></script>
-    <script type="text/javascript" src="./libs/js/materialize.js"></script>
-    <script type="text/javascript" src="./libs/js/base64.js"></script>
-    <script type="text/javascript" src="./libs/js/markdown-it.js"></script>
 
-
-    <script type="text/javascript" src="./src-min-noconflict/ace.js"></script>
-    <script type="text/javascript" src="./src-min-noconflict/ext-themelist.js"></script>
-    <script type="text/javascript" src="./src-min-noconflict/ext-modelist.js"></script>
-    <script type="text/javascript" src="./src-min-noconflict/ext-completions.js"></script>
-
-
-    <script type="text/javascript" src="./libs/js/diff_match_patch.js"></script>
-    <script type="text/javascript" src="./core/environment.js"></script>
-    <script type="text/javascript" src="./core/recovery.js"></script>
-    <script type="text/javascript" src="./core/utils.js"></script>
-    <script type="text/javascript" src="./core/events.js"></script>
-    <script type="text/javascript" src="./core/statemanager.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./ui/notification.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./core/fileutils.js"></script>
-    <script type="text/javascript" src="./core/requests.js"></script>
-    <script type="text/javascript" src="./core/application.js"></script>
-
-    <script type="text/javascript" src="./tabbable.js"></script>
-    <script type="text/javascript" src="./core/focusmanager.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./core/navigation.js"></script>
-    <script type="text/javascript" src="./core/fileservers.js"></script>
-    
-    <script type="text/javascript" src="./core/document.js"></script>
-    <script type="text/javascript" src="./core/checkpoints.js"></script>
-    <script type="text/javascript" src="./core/clipboard.js" charset="utf-8"></script>
-
-    <script type="text/javascript" src="./ui/linearlayout.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./ui/overflow.js"></script>
-    <script type="text/javascript" src="./ui/form.js"></script>
-    <script type="text/javascript" src="./ui/itemlist.js"></script>
-    <script type="text/javascript" src="./views/tabs.js"></script>
-
-    <!--todo load this views asynchronously since they are not immediately used!-->
-    <script type="text/javascript" src="./ui/sidenav.js"></script>
-
-    <script type="text/javascript" src="./core/bootlist.js"></script>
-    <script type="text/javascript" src="./tools/format/format.js"></script>
-    <script type="text/javascript" src="./editor/multiEditor.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./editor/editors.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./editor/viewPagers.js" charset="utf-8"></script>
-
-    <script type="text/javascript" src="./prefs/key_binding.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./prefs/load_settings.js" charset="utf-8"></script>
-
-    <script type="text/javascript" src="core/currentDoc.js" charset="utf-8"></script>
-
-    <div id="side-menu" class="clipboard-empty container sidenav">
+    <aside id="side-menu" class="clipboard-empty container sidenav">
 
         <ul id="selector" class="nav-main tabs" data-nav-behaviour="tabs">
 
@@ -94,12 +46,12 @@
                     <i class="material-icons" style="width:100%">work</i>
                 </a>
             </li>
-            <li class="tab">
+            <li id="search_tab" class="tab" style='display:none'>
                 <a href="#search_container">
                     <i class="material-icons">search</i>
                 </a>
             </li>
-            <li class="tab">
+            <li id="settings_tab" class="tab" style='display:none'>
                 <a href="#settings">
                     <i class="material-icons">settings</i>
                 </a>
@@ -107,11 +59,11 @@
         </ul>
 
         <div id="hierarchy_tab">
-            <span class="header toggleBelow" tabIndex=0>Open Documents<button class="material-icons">keyboard_arrow_up</button></span>
+            <span id="opendocs-toggle" class="header toggleBelow" tabIndex=0>Open Documents<button class="material-icons">keyboard_arrow_up</button></span>
             <ul id="opendocs" class="fileview">
 
             </ul>
-            <span class="header toggleBelow" tabIndex=0>Find file<button class="material-icons">keyboard_arrow_up</button></span>
+            <span id="find_file-toggle" class="header toggleBelow" tabIndex=0>Find file<button class="material-icons">keyboard_arrow_up</button></span>
             <div class="find_file edge_box-2 h-50">
                 <div class="fill_box p-5"><input type="text" name="search_text" id="search_text" value="" /></div>
                 <button id="find_file_btn" class="side-1 material-icons">search</button>
@@ -150,7 +102,7 @@
                 <button id="toggleWholeWord" class="right ace_button">[ab]</button>
             </div>
             <h6 id="searchInfo"></h6>
-            <div id="loading"><span>Searching...</span><br /><button id="searchStop" class='btn red center'>Stop</button></div>
+            <div id="loading"><span>Searching...</span><span>Searching...</span><br /><button id="searchStop" class='btn red center'>Stop</button></div>
             <div id="searchResults">
 
             </div>
@@ -162,43 +114,85 @@
         </div>
 
 
-    </div>
+    </aside>
+    <div class="content">
+        <div class="nav-main" id="action_bar">
+            <button class="sidenav-trigger sidenav-menu-button" data-target="side-menu">
+                <i class="material-icons big menu-icon">menu</i>
+            </button>
+            <ul id="menu" class="singleTab tabs"></ul>
+            <button class="dropdown-trigger sidenav-more-button" data-target="overflow-menu">
+                <i class="material-icons big menu-icon">more_vert</i>
+            </button>
+        </div>
 
-    <div class="sidenav-pushable nav-main" id="action_bar">
-        <button class="sidenav-trigger abs-left" data-target="side-menu">
-            <i class="material-icons big menu-icon">menu</i>
+        <div id="viewroot">
+
+
+        </div>
+        <button id="toolbar-toggle"><i class="material-icons">keyboard_arrow_down</i></button>
+
+        <button id="runButton" class="btn-floating btn btn-large waves-effect waves-light">
+            <i class="material-icons">play_arrow</i>
         </button>
-        <div id="status-text">
+        <div id="status-bar" class="editor-primary">
             <span id="status-filename" class="clipper">Open a file</span>
         </div>
-        <ul id="menu" class="singleTab tabs"></ul>
-        <button class="dropdown-trigger abs-right" data-target="overflow-menu">
-            <i class="material-icons big menu-icon">more_vert</i>
-        </button>
     </div>
+    <script type="text/javascript" src="./libs/js/jquery-2.2.0.min.js"></script>
+    <script type="text/javascript" src="./libs/js/materialize.js"></script>
+    <script type="text/javascript" src="./libs/js/base64.js"></script>
 
-    <!-- Modal Structure -->
-    <div id="createBrowserModal" class="modal">
-        <div class="modal-content">
-            <h6>Pick Storage Type</h6>
-            <select id="browserType">
-            </select>
-        </div>
-        <div class="modal-footer">
-            <a href="#!" class="modal-close waves-effect waves-green btn-flat">Cancel</a>
-            <a id="create" href="#!" class="modal-close waves-effect waves-green btn-flat">Done</a>
-        </div>
-    </div>
+    <script type="text/javascript" src="./src-min-noconflict/ace.js"></script>
+    
 
-    <div class="sidenav-pushable" id="viewroot">
+    <!--TODO Dynamic-->
+    <script type="text/javascript" src="./libs/js/diff_match_patch.js"></script>
+    <script type="text/javascript" src="./core/environment.js"></script>
+    <script type="text/javascript" src="./core/recovery.js"></script>
+    <script type="text/javascript" src="./core/utils.js"></script>
+    <script type="text/javascript" src="./core/events.js"></script>
+    <!--TODO Dynamic-->
+    <script type="text/javascript" src="./core/statemanager.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./ui/notification.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./core/fileutils.js"></script>
+    <script type="text/javascript" src="./core/requests.js"></script>
+    <script type="text/javascript" src="./android/application.js"></script>
 
+    <!--TODO Dynamic-->
+    <script type="text/javascript" src="./tabbable.js"></script>
+    <!--TODO Dynamic-->
+    <script type="text/javascript" src="./core/focusmanager.js" charset="utf-8"></script>
+    <!--TODO Dynamic or rather move core functionality to files loaded with bootlist.define-->
+    <script type="text/javascript" src="./core/navigation.js"></script>
+    <script type="text/javascript" src="./core/fileservers.js"></script>
 
-    </div>
-    <button class="sidenav-pushable" id="toolbar-toggle"><i class="material-icons">keyboard_arrow_down</i></button>
+    <script type="text/javascript" src="./document/document.js"></script>
+    <script type="text/javascript" src="./document/docs.js"></script>
+    <script type="text/javascript" src="./document/checkpoints.js"></script>
 
-    <button id="runButton" class="btn-floating btn btn-large waves-effect waves-light">
-        <i class="material-icons">play_arrow</i>
-    </button>
+    <script type="text/javascript" src="./ui/linearlayout.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./ui/overflow.js"></script>
+    <script type="text/javascript" src="./ui/form.js"></script>
+    <script type="text/javascript" src="./ui/itemlist.js"></script>
+    <script type="text/javascript" src="./views/tabs.js"></script>
+
+    <!--todo load this views asynchronously since they are not immediately used!-->
+    <script type="text/javascript" src="./ui/sidenav.js"></script>
+
+    <script type="text/javascript" src="./core/bootlist.js"></script>
+    <script type="text/javascript" src="./tools/format/format.js"></script>
+    <!--todo load documents after characterbar is set up?? Nah, it'an editor after all-->
+    <script type="text/javascript" src="./editor/editorSettings.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./editor/editors.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./editor/viewPagers.js" charset="utf-8"></script>
+
+    <!--TODO Dynamic-->
+    <script type="text/javascript" src="./prefs/key_binding.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./prefs/load_settings.js" charset="utf-8"></script>
+
+    <script type="text/javascript" src="./document/activeDoc.js" charset="utf-8"></script>
+
     <script type="text/javascript" src="./views/charbar.js" charset="utf-8"></script>
     <script type="text/javascript" src="main.js" charset="utf-8"></script>
 

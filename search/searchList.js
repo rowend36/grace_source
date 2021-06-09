@@ -2,11 +2,13 @@ _Define(function(global) {
     "use strict";
     var isDirectory = global.FileUtils.isDirectory;
     var setImmediate = global.Utils.setImmediate;
+    var noop = global.Utils.noop;
     var SearchList = function(folder, fileServer, allowDirectory, files) {
         this._files = files || [];
         //this._next = [];
         this._index = 0;
         this._folders = [folder];
+        this._errors = [];
         this._current = this._files;
         this._waiting = [];
         this._loading = false;
@@ -15,6 +17,7 @@ _Define(function(global) {
         this._argfolder = folder;
         this.tag = 0;
     };
+    SearchList.prototype.onDir = noop;
     SearchList.prototype.eatBack = function(file) {
         if (this._index == 0) {
             this._current.unshift(file);
@@ -43,9 +46,17 @@ _Define(function(global) {
             //this._next = [];
             this._current = [];
             this._waiting = [];
+            this._errors = [];
             this.tag++;
         }
-        else this._current = this._files;
+        else{
+            for(var i in this._errors){
+                this._folders.push(this._errors[i]);
+            }
+            this._errors.length = 0;
+            this._current = this._files;
+            this._waiting = [];
+        }
         this._index = 0;
 
     };
@@ -67,10 +78,8 @@ _Define(function(global) {
                 this._loading = true;
                 var self = this;
                 var now = throttle && new Date().getTime();
-                
                 var hasNext = this._nextFolder(throttle ? function(files) {
                     var diff = throttle - (new Date().getTime() - now);
-                    console.debug('retry delay before ' + self._folders[0], diff);
                     setTimeout(afterLoad.bind(null, self,files,empty,throttle), Math.max(0, diff));
                 } : function(files){
                     afterLoad(self,files,empty,throttle);
@@ -95,6 +104,7 @@ _Define(function(global) {
         }
         else {
             a = this._folders.shift();
+            this.onDir(a);
             this._init(a, callback);
             return true;
         }
@@ -115,7 +125,7 @@ _Define(function(global) {
                 return;
             }
             if (err) {
-                self._folders.push(folder);
+                self._errors.push(folder);
                 return callback([]);
             }
             res.sort();

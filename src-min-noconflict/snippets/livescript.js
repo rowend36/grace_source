@@ -1,12 +1,6 @@
-define("ace/snippets/livescript",["require","exports","module"], function(require, exports, module) {
-"use strict";
-
-exports.snippetText =undefined;
-exports.scope = "livescript";
-
-});
+ace.define("ace/snippets/livescript",[],function(e,t,n){"use strict";t.snippetText=undefined,t.scope="livescript"});
                 (function() {
-                    window.require(["ace/snippets/livescript"], function(m) {
+                    ace.require(["ace/snippets/livescript"], function(m) {
                         if (typeof module == "object" && typeof exports == "object" && module) {
                             module.exports = m;
                         }

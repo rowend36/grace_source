@@ -1,22 +1,19 @@
 (function(root, factory) {
     if (typeof _Define === 'function') {
-        _Define(factory,"AceDiff");/*_EndDefine*/
-    }
-    else if (typeof define === 'function' && define.amd) {
+        _Define(factory, "AceDiff"); /*_EndDefine*/
+    } else if (typeof define === 'function' && define.amd) {
         define([], factory);
-    }
-    else if (typeof exports === 'object') {
+    } else if (typeof exports === 'object') {
         module.exports = factory(require());
-    }
-    else {
+    } else {
         root.AceDiff = factory(root);
     }
 })(this, function(root) {
     'use strict';
 
     /*region Common Code*/
-    var Range = require('ace/range').Range;
-    var LineWidgets = require("ace/line_widgets").LineWidgets;
+    var Range = ace.require('ace/range').Range;
+    var LineWidgets = ace.require("ace/line_widgets").LineWidgets;
 
     var C = {
         DIFF_EQUAL: 0,
@@ -38,7 +35,8 @@
         var editor = acediff.editors[side];
         var session = (editor && editor.ace.getSession());
         if (!session) return false;
-        acediff.editors[side].markers.push(session.addMarker(new Range(line, from, toLine, to), acediff.options.classes.inline + (fade ? " fading" : ""), 'text', false));
+        acediff.editors[side].markers.push(session.addMarker(new Range(line, from, toLine, to),
+            acediff.options.classes.inline + (fade ? " fading" : ""), 'text', false));
         return true;
     }
 
@@ -85,13 +83,11 @@
                     inlineMarker.apply(null, marker);
                     state ^= PENDING;
                     inlineMarker(acediff, side, start, startCh, pos[side].line, pos[side].ch);
-                }
-                else if (state & CLEAN) {
+                } else if (state & CLEAN) {
                     state |= PENDING;
                     marker = [acediff, side, start, startCh, pos[side].line, pos[side].ch];
                 }
-            }
-            else {
+            } else {
                 state = FAILED;
                 continue;
                 /*if (state ^ FAILED) {
@@ -154,8 +150,7 @@
             if (obj) {
                 if (last) {
                     mergeDiff(last, obj);
-                }
-                else {
+                } else {
                     diffs.push(obj);
                 }
             }
@@ -203,7 +198,8 @@
                 //floating equal lines are forced down
                 //(prepended to next line)
                 if (/^\n+$/.test(text)) {
-                    var type = trailinglines[0] == C.DIFF_INSERT ? C.EDITOR_RIGHT : C.EDITOR_LEFT;
+                    var type = trailinglines[0] == C.DIFF_INSERT ? C.EDITOR_RIGHT : C
+                        .EDITOR_LEFT;
                     obj = {
                         leftStartLine: offset.left,
                         leftEndLine: offset.left,
@@ -215,8 +211,7 @@
                     last.chunks = text.split("\n");
                     offset.trailinglines = null;
                     return obj;
-                }
-                else {
+                } else {
                     offset.trailinglines = null;
                 }
             }
@@ -268,8 +263,7 @@
             var part = diff[i];
             if (ignoreWhitespace ? !/[^ \t]/.test(part[1]) : !part[1]) {
                 diff.splice(i--, 1);
-            }
-            else if (i && diff[i - 1][0] == part[0]) {
+            } else if (i && diff[i - 1][0] == part[0]) {
                 diff.splice(i--, 1);
                 diff[i][1] += part[1];
             }
@@ -340,7 +334,8 @@
                 var cleanFromRight = right.line + startOff,
                     cleanFromLeft = left.line + startOff;
                 moveOver(right, part[1], null, left);
-                var endOff = i == diff.length - 1 ? 1 : 0; //(left.ch === 0 && right.ch === 0) ? 0 : 0;
+                var endOff = i == diff.length - 1 ? 1 :
+                0; //(left.ch === 0 && right.ch === 0) ? 0 : 0;
                 var cleanToRight = right.line + endOff,
                     cleanToLeft = left.line + endOff;
                 if (cleanToRight > cleanFromRight) {
@@ -353,8 +348,7 @@
                     startRight = cleanToRight;
                     startLeft = cleanToLeft;
                 }
-            }
-            else {
+            } else {
                 moveOver(tp == DIFF_INSERT ? right : left, part[1]);
             }
         }
@@ -410,7 +404,8 @@
             if (!isOrig && editor != editors[pairs[i].right].ace) {
                 continue;
             }
-            var pos = dir < 0 ? findPrevDiff(diff, line, isOrig) : findNextDiff(diff, line, isOrig);
+            var pos = dir < 0 ? findPrevDiff(diff, line, isOrig) : findNextDiff(diff, line,
+                isOrig);
 
             if (pos != null && (found == null || (dir < 0 ? pos > found : pos < found)))
                 found = pos;
@@ -463,18 +458,19 @@
                     return !isNaN(parseFloat(obj)) && isFinite(obj);
                 },
                 type: function(obj) {
-                    return obj === null ? String(obj) : class2type[toString.call(obj)] || "object";
+                    return obj === null ? String(obj) : class2type[toString.call(obj)] ||
+                        "object";
                 },
                 isPlainObject: function(obj) {
                     if (!obj || jQuery.type(obj) !== "object" || obj.nodeType) {
                         return false;
                     }
                     try {
-                        if (obj.constructor && !hasOwn.call(obj, "constructor") && !hasOwn.call(obj.constructor.prototype, "isPrototypeOf")) {
+                        if (obj.constructor && !hasOwn.call(obj, "constructor") && !hasOwn
+                            .call(obj.constructor.prototype, "isPrototypeOf")) {
                             return false;
                         }
-                    }
-                    catch (e) {
+                    } catch (e) {
                         return false;
                     }
                     var key;
@@ -502,18 +498,17 @@
                     if (target === copy) {
                         continue;
                     }
-                    if (deep && copy && (jQuery.isPlainObject(copy) || (copyIsArray = jQuery.isArray(copy)))) {
+                    if (deep && copy && (jQuery.isPlainObject(copy) || (copyIsArray = jQuery
+                            .isArray(copy)))) {
                         if (copyIsArray) {
                             copyIsArray = false;
                             clone = src && jQuery.isArray(src) ? src : [];
-                        }
-                        else {
+                        } else {
                             clone = src && jQuery.isPlainObject(src) ? src : {};
                         }
                         // WARNING: RECURSION
                         target[name] = extend(deep, clone, copy);
-                    }
-                    else if (copy !== undefined) {
+                    } else if (copy !== undefined) {
                         target[name] = copy;
                     }
                 }
@@ -561,8 +556,7 @@
                 }
             }, this.options);
             this.options = options;
-        }
-        else options.center = undefined;
+        } else options.center = undefined;
         // instantiate the editors in an internal data structure that will store a little info about the diffs and
         // editor content
 
@@ -581,7 +575,8 @@
 
         setupEditor(this, C.EDITOR_RIGHT);
         setupEditor(this, C.EDITOR_LEFT);
-        this.lineHeight = this.editors.left.ace.renderer.lineHeight || 14; // assumption: both editors have same line heights
+        this.lineHeight = this.editors.left.ace.renderer.lineHeight ||
+        14; // assumption: both editors have same line heights
         this.pairs = [];
         addEventHandlers(this, C.EDITOR_LEFT);
         addEventHandlers(this, C.EDITOR_RIGHT);
@@ -603,8 +598,7 @@
             });
             setupEditor(this, C.EDITOR_CENTER);
             addEventHandlers(this, C.EDITOR_CENTER);
-        }
-        else {
+        } else {
             this.pairs.push({
                 left: C.EDITOR_LEFT,
                 right: C.EDITOR_RIGHT,
@@ -670,12 +664,13 @@
                 var text2 = ses2.getValue();
                 if (this.options.showInlineDiffs) {
                     pair.rawDiffs = getDiff(text1, text2, false);
-                    pair.diffs = getChunks(this.options.ignoreWhitespace ? getDiff(text1, text2, true) : pair.rawDiffs);
-                }
-                else if (ses1.getLength() + ses2.getLength() < 65535) {
-                    pair.diffs = getLineChunks(text1, text2, this.options.ignoreWhitespace);
-                }
-                else pair.diffs = getChunks(getDiff(text1, text2, this.options.ignoreWhitespace));
+                    pair.diffs = getChunks(this.options.ignoreWhitespace ? getDiff(
+                        text1, text2, true) : pair.rawDiffs);
+                } else if (ses1.getLength() + ses2.getLength() < 65535) {
+                    pair.diffs = getLineChunks(text1, text2, this.options
+                        .ignoreWhitespace);
+                } else pair.diffs = getChunks(getDiff(text1, text2, this.options
+                    .ignoreWhitespace));
 
                 count += pair.diffs.length;
             }
@@ -695,7 +690,8 @@
                 for (var i in this.editors) {
                     clearLineWidgets(acediff.editors[i]);
                 }
-                var offsets = computeOffsets(acediff.pairs[0].diffs, acediff.pairs[1] ? acediff.pairs[1].diffs : null);
+                var offsets = computeOffsets(acediff.pairs[0].diffs, acediff.pairs[1] ?
+                    acediff.pairs[1].diffs : null);
                 for (i in this.editors) {
                     for (var j in offsets[i]) {
                         addLineWidget(acediff.editors[i], Number(j), offsets[i][j]);
@@ -705,14 +701,15 @@
             if (acediff.pairs.length == 1) {
                 if (acediff.options.showDiffs) {
                     acediff.pairs[0].diffs.forEach(function(info) {
-                        showDiff(acediff, right, info.rightStartLine, info.rightEndLine, acediff.options.classes.added);
-                        showDiff(acediff, left, info.leftStartLine, info.leftEndLine, acediff.options.classes.removed);
+                        showDiff(acediff, right, info.rightStartLine, info
+                            .rightEndLine, acediff.options.classes.added);
+                        showDiff(acediff, left, info.leftStartLine, info
+                            .leftEndLine, acediff.options.classes.removed);
                     });
                 }
                 if (pair.rawDiffs)
                     showInlineDiffs(acediff, pair.left, pair.right, pair.rawDiffs);
-            }
-            else {
+            } else {
                 if (acediff.options.showDiffs) {
                     highlight3(acediff, acediff.pairs[0]);
                     highlight3(acediff, acediff.pairs[1]);
@@ -741,13 +738,19 @@
                     if (connect) {
                         var left = pair.left;
                         var right = pair.right;
-                        var leftScrollTop = acediff.editors[left].ace.getSession().getScrollTop();
-                        var rightScrollTop = acediff.editors[right].ace.getSession().getScrollTop();
+                        var leftScrollTop = acediff.editors[left].ace
+                            .getSession().getScrollTop();
+                        var rightScrollTop = acediff.editors[right].ace
+                            .getSession().getScrollTop();
                         var side = C.EDITOR_LEFT;
                         if (pair.left == C.EDITOR_CENTER) {
                             side = C.EDITOR_RIGHT;
                         }
-                        addConnector(acediff, pair, info.leftStartLine, info.leftEndLine, info.rightStartLine, info.rightEndLine, leftScrollTop, rightScrollTop, acediff.options.classes[side + "Diff"]);
+                        addConnector(acediff, pair, info.leftStartLine,
+                            info.leftEndLine, info.rightStartLine,
+                            info.rightEndLine, leftScrollTop,
+                            rightScrollTop, acediff.options.classes[
+                                side + "Diff"]);
                     }
                 });
             });
@@ -768,14 +771,15 @@
                     gutter.removeEventListener('click', pair.$gutterClickRight);
                 });
             }
-            for(var i in this.editors){
-                if(!this.options[i].editor){
+            for (var i in this.editors) {
+                if (!this.options[i].editor) {
                     this.editors[i].destroy();
                 }
             }
             if (this.options.showConnectors) {
                 this.pairs.forEach(function(pair) {
-                    document.getElementById(pair.gutterID).removeChild(pair.svg);
+                    document.getElementById(pair.gutterID).removeChild(pair
+                    .svg);
                 });
             }
         }
@@ -821,8 +825,7 @@
             //scroll cooldown
             if (tag - acediff.editors[side].tag < 1000)
                 return;
-        }
-        else if (!tag) throw 'ValueError';
+        } else if (!tag) throw 'ValueError';
         acediff.scrollSyncing = true;
         try {
             acediff.editors[side].tag = tag;
@@ -839,8 +842,7 @@
                 if (result)
                     syncScrolling(acediff, other, tag, true);
             }
-        }
-        catch (e) {
+        } catch (e) {
             console.error(e);
         }
         acediff.scrollSyncing = !!close;
@@ -857,16 +859,15 @@
         var scroll, targetScrollTop;
         if (!otherEditor.ace) return;
         if (acediff.options.alignLines) {
-            scroll = getScrollingInfo(acediff, side) - acediff.editors[side].scrollOffset * acediff.lineHeight;
+            scroll = getScrollingInfo(acediff, side) - acediff.editors[side].scrollOffset *
+                acediff.lineHeight;
             var top = getScrollingInfo(acediff, other);
             var offset = otherEditor.scrollOffset * acediff.lineHeight;
 
             if (offset + top != clampScroll(otherEditor, scroll + offset)) {
                 targetScrollTop = scroll + offset;
             }
-        }
-
-        else {
+        } else {
             //Copied from codemirror source
             var config = editor.ace.renderer.layerConfig;
             var size = editor.ace.renderer.$size;
@@ -887,15 +888,16 @@
             halfScreen = Math.min(config.maxHeight - size.scrollerHeight, halfScreen);
             if (targetPos > scroll && (mix = scroll / halfScreen) < 1) {
                 targetPos = targetPos * mix + scroll * (1 - mix);
-            }
-            else if ((botDist = config.maxHeight - size.scrollerHeight - scroll) < halfScreen) {
+            } else if ((botDist = config.maxHeight - size.scrollerHeight - scroll) <
+                halfScreen) {
                 var otherInfo = getScrollingInfo(acediff, other);
                 var otherConfig = otherEditor.ace.renderer.layerConfig;
                 var otherSize = otherEditor.ace.renderer.$size;
 
                 var botDistOther = otherConfig.maxHeight - otherSize.scrollerHeight - targetPos;
                 if (botDistOther > botDist && (mix = botDist / (halfScreen)) < 1)
-                    targetPos = targetPos * mix + (otherConfig.maxHeight - otherSize.scrollerHeight - botDist) * (1 - mix);
+                    targetPos = targetPos * mix + (otherConfig.maxHeight - otherSize
+                        .scrollerHeight - botDist) * (1 - mix);
             }
             targetScrollTop = clampScroll(otherEditor, targetPos);
         }
@@ -913,8 +915,7 @@
                 if (fromLocal > n) {
                     afterE = chunk.leftStartLine;
                     afterO = chunk.rightStartLine;
-                }
-                else if (toLocal > n) {
+                } else if (toLocal > n) {
                     afterE = chunk.leftEndLine;
                     afterO = chunk.rightEndLine;
                 }
@@ -922,13 +923,13 @@
             if (toLocal <= n) {
                 beforeE = chunk.leftEndLine;
                 beforeO = chunk.rightEndLine;
-            }
-            else if (fromLocal <= n) {
+            } else if (fromLocal <= n) {
                 beforeE = chunk.leftStartLine;
                 beforeO = chunk.rightStartLine;
             }
         }
-        return { edit: { before: beforeE, after: afterE }, orig: { before: beforeO, after: afterO } };
+        return { edit: { before: beforeE, after: afterE }, orig: { before: beforeO,
+                after: afterO } };
     }
 
     function getOffsets(editor, around) {
@@ -942,7 +943,8 @@
 
     function cursorToScreenPos(cursor) {
         var pos = editor.renderer.$cursorLayer.getPixelPosition(cursor, true);
-        pos.left += editor.renderer.gutterWidth - editor.session.getScrollLeft() + editor.renderer.margin.left;
+        pos.left += editor.renderer.gutterWidth - editor.session.getScrollLeft() + editor
+            .renderer.margin.left;
         pos.top += editor.renderer.margin.top - editor.renderer.layerConfig.offset;
         return pos;
     }
@@ -988,21 +990,26 @@
         acediff.pairs.forEach(function(pair) {
             var gutterID = pair.gutterID;
             if (acediff.options[pair.left].copyLinkEnabled) {
-                pair.$gutterClickLeft = delegate(gutterID, 'click', '.' + acediff.options.classes.newCodeConnectorLink, function(e) {
-                    copy(acediff, e, pair, C.LTR);
-                });
+                pair.$gutterClickLeft = delegate(gutterID, 'click', '.' + acediff
+                    .options.classes.newCodeConnectorLink,
+                    function(e) {
+                        copy(acediff, e, pair, C.LTR);
+                    });
             }
             if (acediff.options[pair.right].copyLinkEnabled) {
-                pair.$gutterClickRight = delegate(gutterID, 'click', '.' + acediff.options.classes.deletedCodeConnectorLink, function(e) {
-                    copy(acediff, e, pair, C.RTL);
-                });
+                pair.$gutterClickRight = delegate(gutterID, 'click', '.' + acediff
+                    .options.classes.deletedCodeConnectorLink,
+                    function(e) {
+                        copy(acediff, e, pair, C.RTL);
+                    });
             }
         });
     }
 
     function addWindowResizeHandler(acediff) {
         var onResize = debounce(function() {
-            acediff.availableHeight = document.getElementById(acediff.options.left.id).offsetHeight;
+            acediff.availableHeight = document.getElementById(acediff.options.left.id)
+                .offsetHeight;
             acediff.update(true);
         }, 250);
         acediff.$onResize = onResize;
@@ -1024,8 +1031,7 @@
             endLine = diff.leftEndLine;
             targetStartLine = diff.rightStartLine;
             targetEndLine = diff.rightEndLine;
-        }
-        else if (dir == C.RTL) {
+        } else if (dir == C.RTL) {
             targetEditor = acediff.editors[left];
             sourceEditor = acediff.editors[right];
             targetStartLine = diff.leftStartLine;
@@ -1140,7 +1146,8 @@
             pair.svg.setAttribute('height', height);
 
             gutter.appendChild(pair.svg);
-            if ((" " + gutter.className + " ").indexOf(acediff.options.classes.gutterClass) < 0) {
+            if ((" " + gutter.className + " ").indexOf(acediff.options.classes.gutterClass) <
+                0) {
                 gutter.className += " " + acediff.options.classes.gutterClass;
             }
         }
@@ -1158,11 +1165,13 @@
             endLine++;
         }
         // to get Ace to highlight the full row we just set the start and end chars to 0 and 1
-        editor.markers.push(editor.ace.session.addMarker(new Range(startLine, 0, endLine, 1), classNames, 'fullLine'));
+        editor.markers.push(editor.ace.session.addMarker(new Range(startLine, 0, endLine, 1),
+            classNames, 'fullLine'));
 
     }
 
-    function addConnector(acediff, pair, leftStartLine, leftEndLine, rightStartLine, rightEndLine, leftScrollTop, rightScrollTop, className) {
+    function addConnector(acediff, pair, leftStartLine, leftEndLine, rightStartLine,
+        rightEndLine, leftScrollTop, rightScrollTop, className) {
         // All connectors, regardless of ltr or rtl have the same point system, even if p1 === p3 or p2 === p4
         //  p1   p2
         //
@@ -1197,7 +1206,8 @@
         if (info.leftEndLine > info.leftStartLine && acediff.options.left.copyLinkEnabled) {
             arrow = createArrow({
                 className: acediff.options.classes.newCodeConnectorLink,
-                topOffset: getRowPosition(acediff.editors[pair.left], info.leftStartLine, false),
+                topOffset: getRowPosition(acediff.editors[pair.left], info
+                    .leftStartLine, false),
                 tooltip: 'Copy to right',
                 diffIndex: diffIndex,
                 arrowContent: acediff.options.classes.newCodeConnectorLinkContent
@@ -1208,7 +1218,8 @@
         if (info.rightEndLine > info.rightStartLine && acediff.options.right.copyLinkEnabled) {
             arrow = createArrow({
                 className: acediff.options.classes.deletedCodeConnectorLink,
-                topOffset: getRowPosition(acediff.editors[pair.right], info.rightStartLine, false),
+                topOffset: getRowPosition(acediff.editors[pair.right], info
+                    .rightStartLine, false),
                 tooltip: 'Copy to left',
                 diffIndex: diffIndex,
                 arrowContent: acediff.options.classes.deletedCodeConnectorLinkContent
@@ -1223,8 +1234,10 @@
             pair.rightDiv.style.cssText = 'top: ' + (-leftTopOffset) + 'px';
         }
         acediff.pairs.forEach(function(pair) {
-            var leftTopOffset = acediff.editors[pair.left].ace.getSession().getScrollTop(); //+acediff.editors.left.scrollOffset*acediff.lineHeight;
-            var rightTopOffset = acediff.editors[pair.right].ace.getSession().getScrollTop(); //+acediff.editors.right.scrollOffset*acediff.lineHeight;
+            var leftTopOffset = acediff.editors[pair.left].ace.getSession()
+                .getScrollTop(); //+acediff.editors.left.scrollOffset*acediff.lineHeight;
+            var rightTopOffset = acediff.editors[pair.right].ace.getSession()
+                .getScrollTop(); //+acediff.editors.right.scrollOffset*acediff.lineHeight;
             setStyle(pair, leftTopOffset, rightTopOffset);
         });
 
@@ -1234,8 +1247,10 @@
         acediff.pairs.forEach(function(cont) {
             cont.leftDiv = document.createElement('div');
             cont.rightDiv = document.createElement('div');
-            cont.leftDiv.setAttribute('class', acediff.options.classes.copyLeftContainer);
-            cont.rightDiv.setAttribute('class', acediff.options.classes.copyRightContainer);
+            cont.leftDiv.setAttribute('class', acediff.options.classes
+                .copyLeftContainer);
+            cont.rightDiv.setAttribute('class', acediff.options.classes
+                .copyRightContainer);
 
             document.getElementById(cont.gutterID).appendChild(cont.rightDiv);
             document.getElementById(cont.gutterID).appendChild(cont.leftDiv);
@@ -1256,7 +1271,8 @@
             editor.scrollOffset += no;
             decorating = true;
             //setting scroll margin triggers decorate
-            editor.ace.renderer.setScrollMargin(editor.scrollOffset * editor.ace.renderer.lineHeight);
+            editor.ace.renderer.setScrollMargin(editor.scrollOffset * editor.ace.renderer
+                .lineHeight);
             decorating = false;
             return;
         }
@@ -1286,8 +1302,7 @@
             other = pair.left;
             centerPosition = C.EDITOR_RIGHT;
             class_ += " " + acediff.options.classes.fromLeft;
-        }
-        else {
+        } else {
             other = pair.right;
             center = pair.left;
             centerPosition = C.EDITOR_LEFT;
@@ -1299,13 +1314,16 @@
             //highlight conflict blocks in center
             for (var i in stops) {
                 if (stops[i][1] > start) {
-                    showDiff(acediff, center, start, stops[i][1], stops[i][0] ? conflict : class_);
+                    showDiff(acediff, center, start, stops[i][1], stops[i][0] ?
+                        conflict : class_);
                 }
                 start = stops[i][1];
             }
             if (info[centerPosition + "EndLine"] > start)
-                showDiff(acediff, center, start, info[centerPosition + "EndLine"], class_);
-            showDiff(acediff, other, info[other + "StartLine"], info[other + "EndLine"], otherClass);
+                showDiff(acediff, center, start, info[centerPosition + "EndLine"],
+                    class_);
+            showDiff(acediff, other, info[other + "StartLine"], info[other + "EndLine"],
+                otherClass);
         });
         if (pair.rawDiffs) {
             showInlineDiffs(acediff, pair.left, pair.right, pair.rawDiffs);
@@ -1344,8 +1362,7 @@
                 offset1 = diff1[index1].leftStartLine;
                 end2 = diff2[index2].rightEndLine;
                 end1 = diff1[index1].leftEndLine;
-            }
-            else {
+            } else {
                 offset1 = diff1[index1].rightStartLine;
                 offset2 = diff2[index2].leftStartLine;
                 end1 = diff1[index1].rightEndLine;
@@ -1363,15 +1380,13 @@
                     diff1[index1++].stops.push([true, end1]);
                     diff2[index2].stops.push([true, end1]);
                     swap();
-                }
-                else {
+                } else {
                     diff1[index1].stops.push([false, offset2]);
                     diff1[index1].stops.push([true, end2]);
                     diff2[index2++].stops.push([true, end2]);
 
                 }
-            }
-            else {
+            } else {
                 swap();
             }
 
@@ -1396,8 +1411,7 @@
             var offset = heightLeft - heightRight;
             if (offset > 0) {
                 right[rightEndLine] = offset;
-            }
-            else if (offset < 0) {
+            } else if (offset < 0) {
                 left[leftEndLine] = -offset;
             }
         }
@@ -1408,8 +1422,7 @@
                 right: right,
                 rightEndLine: rightEndLine
             };
-        }
-        else {
+        } else {
             var other = computeOffsets(diff2);
             var lastline = Math.max(rightEndLine, other.leftEndLine) + 1;
             var la = -1,
@@ -1427,8 +1440,7 @@
                     other.right[b] = (other.right[b] || 0) + delta;
                     other.left[i] = offsetLeft;
 
-                }
-                else if (delta < 0) {
+                } else if (delta < 0) {
                     left[a] = (left[a] || 0) - delta;
                     right[i] = offsetRight;
                 }
@@ -1487,7 +1499,7 @@
 
 
     function getLine(editor, line) {
-        return editor.ace.getSession().doc.getLine(line);
+        return editor.ace.getSession().getLine(line);
     }
     /*ace layer config
         rowScreen = session.documentToScreenRow(row,column).row
@@ -1506,7 +1518,8 @@
     function getRowPosition(editor, row, onScreen) {
         if (onScreen === undefined)
             onScreen = true;
-        var top = editor.ace.renderer.$cursorLayer.getPixelPosition({ row: row, column: 0 }, onScreen).top -
+        var top = editor.ace.renderer.$cursorLayer.getPixelPosition({ row: row, column: 0 },
+                onScreen).top -
             (onScreen ? editor.ace.renderer.layerConfig.offset : 0);
         return top;
     }
@@ -1544,7 +1557,8 @@
 
             // now create the curve. This is of the form "C M,N O,P Q,R" where C is a directive for SVG ("curveto"),
             // M,N are the first curve control point, O,P the second control point and Q,R are the final coords
-            ' C ' + halfWidth + ',' + startY + ' ' + halfWidth + ',' + endY + ' ' + endX + ',' + endY;
+            ' C ' + halfWidth + ',' + startY + ' ' + halfWidth + ',' + endY + ' ' + endX + ',' +
+            endY;
 
         return curve;
     }
@@ -1591,24 +1605,23 @@
         };
     }
     AceDiff.diff = function(container, opts) {
-        function c(id,className){
+        function c(id, className) {
             var left = document.createElement('div');
             left.className = className;
             left.id = id;
             container.appendChild(left);
         }
         container.className += " acediff-container";
-        c('acediff-left-editor','acediff-editor');
-        if (opts.center && opts.threeWay!==false) {
+        c('acediff-left-editor', 'acediff-editor');
+        if (opts.center && opts.threeWay !== false) {
             container.className += " acediff-three-pane";
-            c('acediff-gutter-left','acediff-gutter');
-            c('acediff-center-editor','acediff-editor');
-            c('acediff-gutter-right','acediff-gutter');
+            c('acediff-gutter-left', 'acediff-gutter');
+            c('acediff-center-editor', 'acediff-editor');
+            c('acediff-gutter-right', 'acediff-gutter');
+        } else {
+            c('acediff-gutter', 'acediff-gutter');
         }
-        else{
-            c('acediff-gutter','acediff-gutter');
-        }
-        c('acediff-right-editor','acediff-editor');
+        c('acediff-right-editor', 'acediff-editor');
         return new AceDiff(opts);
     };
     AceDiff.defaults = {

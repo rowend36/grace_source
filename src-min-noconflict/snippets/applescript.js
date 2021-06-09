@@ -1,12 +1,6 @@
-define("ace/snippets/applescript",["require","exports","module"], function(require, exports, module) {
-"use strict";
-
-exports.snippetText =undefined;
-exports.scope = "applescript";
-
-});
+ace.define("ace/snippets/applescript",[],function(e,t,n){"use strict";t.snippetText=undefined,t.scope="applescript"});
                 (function() {
-                    window.require(["ace/snippets/applescript"], function(m) {
+                    ace.require(["ace/snippets/applescript"], function(m) {
                         if (typeof module == "object" && typeof exports == "object" && module) {
                             module.exports = m;
                         }

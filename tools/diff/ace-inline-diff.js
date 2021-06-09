@@ -11,8 +11,8 @@
 })(this, function(root) {
     'use strict';
     /*region Common Code*/
-    var Range = require('ace/range').Range;
-    var LineWidgets = require("ace/line_widgets").LineWidgets;
+    var Range = ace.require('ace/range').Range;
+    var LineWidgets = ace.require("ace/line_widgets").LineWidgets;
 
     var C = {
         DIFF_EQUAL: 0,
@@ -103,19 +103,7 @@
         }
     }
 
-    function getLineChunks(text1, text2, ignoreWhitespace, swap) {
-        /*
-        returns output of the form
-        [{
-            leftStartLine: offset
-            leftEndLine: offset
-            rightStartLine: offset
-            rightEndLine: offset
-            chunks: text
-        }]
-        */
-        if (!dmp)
-            dmp = new diff_match_patch();
+    function getLineDiff(text1, text2, ignoreWhitespace, swap) {
         // if (!/\n$/.test(text1)) 
         text1 += "\n";
         // if (!/\n$/.test(text2)) 
@@ -128,9 +116,28 @@
         var lineText1 = a.chars1;
         var lineText2 = a.chars2;
         var lineArray = a.lineArray;
+        var diff;
         var diff = dmp.diff_main(lineText1, lineText2, false);
         dmp.diff_charsToLines_(diff, lineArray);
+        if (swap) {
+            for (i = 0; i < diff.length; ++i) {
+                diff[i][0] = -diff[i][0];
+            }
+        }
+        return diff;
+    }
 
+    function getLineChunks(diff) {
+        /*
+        returns output of the form
+        [{
+            leftStartLine: offset
+            leftEndLine: offset
+            rightStartLine: offset
+            rightEndLine: offset
+            chunks: text
+        }]
+        */
         var diffs = [];
         var offset = {
             left: 0,
@@ -138,11 +145,6 @@
             trailinglines: null
         };
         var last = null;
-        if (swap) {
-            for (i = 0; i < diff.length; ++i) {
-                diff[i][0] = -diff[i][0];
-            }
-        }
         diff.forEach(function(chunk, i) {
             var obj = transformDiff(chunk, offset, last);
             if (obj) {
@@ -155,6 +157,30 @@
             last = obj;
         });
         return diffs;
+    }
+
+    function getDiffs(text1, text2, options, ctx, allowLine) {
+        var tag = ctx.savedDiffs ? "cached " : "clean ";
+        if (allowLine && !options.showInlineDiffs) {
+            if (options.ignoreWhitespace) {
+                text1 = text1.replace(/^( |\t)*|( |\t)*$/gm, "");
+                text2 = text2.replace(/^( |\t)*|( |\t)*$/gm, "");
+            }
+            ctx.savedDiffs = (ctx.savedDiffs) ? updateDiff(text1, text2, ctx.swapped, ctx.savedDiffs, getLineDiff) : getLineDiff(text1, text2, false, ctx.swapped);
+            return getLineChunks(ctx.savedDiffs);
+        } else {
+            if (ctx.savedDiffs) {
+                var updated = updateDiff(text1, text2, ctx.swapped, ctx.savedDiffs, getCharDiff);
+                cleanUpLines(updated);
+                // console.log(updated);
+                ctx.savedDiffs = updated;
+            } else ctx.savedDiffs = getCharDiff(text1, text2, false, ctx.swapped);
+            if (options.showInlineDiffs) {
+                ctx.rawDiffs = ctx.savedDiffs;
+            }
+            return getCharChunks(options.ignoreWhitespace ? filterWhiteSpace(ctx.savedDiffs) : ctx.savedDiffs);
+        }
+
     }
 
     function mergeDiff(dest, src) {
@@ -252,120 +278,249 @@
         };
     };
 
-    function updateDiff(a, b, ignoreWhitespace, swapped, diffs) {
+
+    function _unChangedHead(text1, text2, diffs, len) {
+        var start1 = 0,
+            start2 = 0;
+        var last = -1,
+            saved1 = 0,
+            saved2 = 0;
+        for (var i = 0; i < len; i++) {
+            var type = diffs[i][0];
+            var text = diffs[i][1];
+            if (type >= 0) {
+                if (text2.substring(start2, start2 + text.length) == text) {
+                    start2 += text.length;
+                } else break;
+            }
+            if (type <= 0) {
+                if (text1.substring(start1, start1 + text.length) == text) {
+                    start1 += text.length;
+                } else break;
+            }
+            if (type === 0) {
+                saved1 = start1;
+                saved2 = start2;
+                last = i;
+            }
+        }
+        return {
+            0: last,
+            1: saved1,
+            2: saved2,
+            3: i == len && start1 == text1.length && start2 == text2.length
+        };
+    }
+
+    function _unChangedTail(text1, text2, diffs, begin) {
+        var start1 = text1.length,
+            start2 = text2.length;
+        var last = diffs.length,
+            saved1 = start1,
+            saved2 = start2;
+
+        if (last - begin < 3 || diffs[last - 1][0])
+            return [last, saved1, saved2];
+        for (var i = last - 1;; i--) {
+            var type = diffs[i][0];
+            var text = diffs[i][1];
+            if (type >= 0) {
+                if (text2.substring(start2 - text.length, start2) == text) {
+                    start2 -= text.length;
+                } else break;
+            }
+            if (type <= 0) {
+                if (text1.substring(start1 - text.length, start1) == text) {
+                    start1 -= text.length;
+                } else break;
+            }
+            if (type === 0) {
+                saved1 = start1;
+                saved2 = start2;
+                last = i;
+                if (i - begin < 4) break;
+            }
+        }
+        return {
+            0: last,
+            1: saved1,
+            2: saved2
+        };
+    }
+    //Find a equal row that starts length chars away from end
+    function walkBack(diffs,length,data){
+        var len = diffs.length - 1;
+        for (var i = len; i >= 0; i--) {
+            var type = diffs[i][0];
+            var textL = diffs[i][1].length;
+            if (type == 0) {
+                length -= textL;
+                if (length < 0) {
+                    // i++;//keep equal row
+                    break;
+                }
+            }
+            if (type >= 0) {
+                data[2] -= textL;
+            }
+            if (type <= 0) {
+                data[1] -= textL;
+            }
+        }
+        diffs.splice(i+1);
+        data[0] = i;
+    }
+    //Find an equal row that starts length chars away from start
+    function walkForward(diffs,length,data){
+        var len = diffs.length-1;
+        for(var i=0;i<=len && (length>0 || diffs[i][0]);i++){
+            var type = diffs[i][0];
+            var textL = diffs[i][1].length;
+            if(type==0){
+                length-=textL;
+                if(length<0){
+                    // i--;
+                    break;
+                }
+            }
+            if(type>=0){
+                data[2]+=textL;
+            }
+            if(type<=0){
+                data[1]+=textL;
+            }
+        }
+        diffs.splice(0,i);
+        data[0] = i;
+    }
+    function updateDiff(a, b, swapped, diffs, func) {
         if (swapped) {
             var t = a;
             a = b, b = t;
         }
         var len = diffs.length;
-        var startPos = [0, undefined, 0];
-        var endPos = [a.length, undefined, b.length];
-        var sliceStart = [0, null, 0];
-        var sliceEnd = endPos.slice(0);
-        var text = [a, undefined, b];
-        var start = -1,
-            end = len;
-
-        function eat(type, frag) {
-            if (text[type].startsWith(frag, startPos[type])) {
-                startPos[type] += frag.length;
-                return true;
-            }
-            return false;
-        }
-
-        function eatBack(type, frag) {
-            if (text[type].endsWith(frag, endPos[type])) {
-                endPos[type] -= frag.length;
-                return true;
-            }
-            return false;
-        }
-
-        for (var i = 0; i < len; i++) {
-            if (diffs[i][0]) {
-                if (eat(diffs[i][0] + 1, diffs[i][1])) {
-                    continue;
-                }
-                //recoverable without regenerating tho
-                //but only fast if done perChange or so
-            } else {
-                if (eat(2, diffs[i][1]) && eat(0, diffs[i][1])) {
-                    sliceStart = startPos.slice(0);
-                    start = i;
-                    continue;
-                }
-            }
-            break;
-        }
-        for (var j = len; --j > i;) {
-            if (diffs[j][0]) {
-                if (eatBack(diffs[j][0] + 1, diffs[j][1])) {
-                    endPos[diffs[j][0] + 1] -= diffs[j][1].length;
-                    continue;
-                }
-            } else {
-                if (eatBack(0, diffs[j][1]) && eatBack(2, diffs[j][1])) {
-                    sliceEnd = endPos.slice(0);
-                    end = j;
-                    continue;
-                }
-            }
-            break;
-        }
-        var changed = diffs.slice(start + 1, end);
-        if (end < len && changed.length === 0) return diffs;
+        var headT = _unChangedHead(a, b, diffs, len);
+        if (headT[3]) return diffs;
+        var start = headT[0];
+        var tailT = _unChangedTail(a, b, diffs, start);
+        var end = tailT[0];
+        var lenChange = (tailT[1] - headT[1]) + (tailT[2] - headT[2]);
         var head = diffs.slice(0, start + 1);
         var tail = diffs.slice(end);
+        walkBack(head, lenChange, headT);
+        walkForward(tail, lenChange, tailT);
+        start = headT[0];
+        end += tailT[0];
         var mid;
-        if (end < len && changed.length == 1) {
-            mid = changed;
-            var type = changed[0][0] + 1;
-            mid[0][1] = text[type].substring(sliceStart[type], sliceEnd[type]);
+        if (start > -1 && end < len && end - start == 2) {
+            //single bounded insert/delete
+            var dif = diffs[start + 1][0];
+            var i = dif < 0 ? 1 : 2;
+            if (headT[i] == tailT[i]) {
+                //delete
+                tail[0][1]= head.pop()[1]+tail[0][1];
+                mid = [];
+            }
+            else{
+                var text = dif < 0 ? a : b;
+                //insert
+                mid = [{
+                    0: dif,
+                    1: text.substring(headT[i], tailT[i])
+                }];
+            }
         } else {
-            a = text[0].substring(sliceStart[0], sliceEnd[0]);
-            b = text[2].substring(sliceStart[2], sliceEnd[2]);
+            a = a.substring(headT[1], tailT[1]);
+            b = b.substring(headT[2], tailT[2]);
+            
             if (swapped) {
                 var t2 = b;
                 b = a,
                     a = t2;
             }
-            mid = getDiff(a, b, false, swapped);
-            //merge equal chunks
-            if (mid.length && mid[0][0] == C.DIFF_EQUAL) {
-                if (head.length) {
+            mid = func(a, b, false, swapped);
+            //merge adjacent equal chunks
+            if (head.length) {
+                if (mid.length && mid[0][0] == C.DIFF_EQUAL) {
                     head[head.length - 1][1] += mid.shift()[1];
                 }
             }
-            if (mid.length && mid[mid.length - 1][0] == C.DIFF_EQUAL) {
-                if (tail.length) {
+            if (tail.length) {
+                if (mid.length && mid[mid.length - 1][0] == C.DIFF_EQUAL) {
                     tail[0][1] = mid.pop()[1] + tail[0][1];
                 }
             }
         }
-        return head.concat(mid).concat(tail);
+        var m = head.concat(mid).concat(tail);
+        return m;
     }
 
-    function getDiff(a, b, ignoreWhitespace, swap, rawDiffs) {
-        if (!dmp) dmp = new diff_match_patch();
+    function getCharDiff(a, b, ignoreWhitespace, swap, rawDiffs) {
         var diff = rawDiffs || dmp.diff_main(a, b);
-        // The library sometimes leaves in empty parts, which confuse the algorithm
-        for (var i = 0; i < diff.length; ++i) {
-            var part = diff[i];
-            if (ignoreWhitespace ? !/[^ \t]/.test(part[1]) : !part[1]) {
-                diff.splice(i--, 1);
-            } else if (i && diff[i - 1][0] == part[0]) {
-                diff.splice(i--, 1);
-                diff[i][1] += part[1];
-            }
-        }
         cleanUpLines(diff);
         if (swap) {
-            for (i = 0; i < diff.length; ++i) {
+            for (var i = 0; i < diff.length; ++i) {
                 diff[i][0] = -diff[i][0];
             }
         }
         return diff;
+    }
+
+    function filterWhiteSpace(diff) {
+        var SPACE = /[^ \t]/;
+        diff = diff.slice(0);
+        for (var i = 0; i < diff.length; ++i) {
+            var part = diff[i];
+            if (!SPACE.test(part[1])) {
+                diff.splice(i--, 1);
+            } else if (i && diff[i - 1][0] == part[0]) {
+                diff.splice(i--, 1);
+                diff[i] = [diff[i][0], diff[i][1] + part[1]];
+            }
+        }
+        return diff;
+    }
+
+    function getCharChunks(diff) {
+        var chunks = [];
+        if (!diff.length) return chunks;
+        var startRight = 0,
+            startLeft = 0;
+        var right = Pos(0, 0),
+            left = Pos(0, 0);
+        for (var i = 0, p = diff.length; i < p; ++i) {
+            var part = diff[i],
+                tp = part[0];
+            if (tp == DIFF_EQUAL) {
+                var startOff = (left.ch || right.ch) ? 1 : 0;
+                var cleanFromRight = right.line + startOff,
+                    cleanFromLeft = left.line + startOff;
+                moveOver(right, part[1], null, left);
+                var endOff = i == p - 1 || (i == p - 2 && diff[p - 1][1][0] == '\n') ? 1 : 0; //(left.ch === 0 && right.ch === 0) ? 0 : 0;
+                var cleanToRight = right.line + endOff,
+                    cleanToLeft = left.line + endOff;
+                if (cleanToRight > cleanFromRight) {
+                    if (i) chunks.push({
+                        leftStartLine: startLeft,
+                        leftEndLine: cleanFromLeft,
+                        rightStartLine: startRight,
+                        rightEndLine: cleanFromRight
+                    });
+                    startRight = cleanToRight;
+                    startLeft = cleanToLeft;
+                }
+            } else {
+                moveOver(tp == DIFF_INSERT ? right : left, part[1]);
+            }
+        }
+        if (startRight <= right.line || startLeft <= left.line)
+            chunks.push({
+                leftStartLine: startLeft,
+                leftEndLine: left.line + 1,
+                rightStartLine: startRight,
+                rightEndLine: right.line + 1
+            });
+        return chunks;
     }
 
 
@@ -376,9 +531,9 @@
         //end with newlines when possible
         //dmp.diff_cleanupEfficiency(diff);
         for (var i = diff.length; i-- > 2;) {
-            if (diff[i][0] === 0) {
-                if (diff[--i][0]) {
-                    if (diff[i - 1][0] === 0) {
+            if (diff[i][0] === 0) { //equal row
+                if (diff[--i][0]) { //unequal row between
+                    if (diff[i - 1][0] === 0) { //equal row
                         shift(diff[i - 1], diff[i], diff[i + 1]);
                     }
                 }
@@ -413,47 +568,6 @@
         }
     }
 
-    function getChunks(diff) {
-        var chunks = [];
-        if (!diff.length) return chunks;
-        var startRight = 0,
-            startLeft = 0;
-        var right = Pos(0, 0),
-            left = Pos(0, 0);
-        for (var i = 0; i < diff.length; ++i) {
-            var part = diff[i],
-                tp = part[0];
-            if (tp == DIFF_EQUAL) {
-                var startOff = (left.ch || right.ch) ? 1 : 0;
-                var cleanFromRight = right.line + startOff,
-                    cleanFromLeft = left.line + startOff;
-                moveOver(right, part[1], null, left);
-                var endOff = i == diff.length - 1 ? 1 : 0; //(left.ch === 0 && right.ch === 0) ? 0 : 0;
-                var cleanToRight = right.line + endOff,
-                    cleanToLeft = left.line + endOff;
-                if (cleanToRight > cleanFromRight) {
-                    if (i) chunks.push({
-                        leftStartLine: startLeft,
-                        leftEndLine: cleanFromLeft,
-                        rightStartLine: startRight,
-                        rightEndLine: cleanFromRight
-                    });
-                    startRight = cleanToRight;
-                    startLeft = cleanToLeft;
-                }
-            } else {
-                moveOver(tp == DIFF_INSERT ? right : left, part[1]);
-            }
-        }
-        if (startRight <= right.line || startLeft <= left.line)
-            chunks.push({
-                leftStartLine: startLeft,
-                leftEndLine: left.line + 1,
-                rightStartLine: startRight,
-                rightEndLine: right.line + 1
-            });
-        return chunks;
-    }
 
     function moveOver(pos, str, copy, other) {
         var out = copy ? Pos(pos.line, pos.ch) : pos,
@@ -619,20 +733,20 @@
             context = this;
             args = arguments;
             if (!timeout) {
-                setTimeout(later, wait);
+                timeout = setTimeout(later, wait);
             }
         };
     }
 
     /*endregion Common Code*/
 
-    var EditSession = require('ace/edit_session').EditSession;
-    var Text = require('ace/layer/text').Text;
-    var Gutter = require('ace/layer/gutter').Gutter;
-    var oop = require("ace/lib/oop");
-    var dom = require("ace/lib/dom");
-    var FoldLine = require('ace/edit_session/fold_line').FoldLine;
-    var Marker = require('ace/layer/marker').Marker;
+    var EditSession = ace.require('ace/edit_session').EditSession;
+    var Text = ace.require('ace/layer/text').Text;
+    var Gutter = ace.require('ace/layer/gutter').Gutter;
+    var oop = ace.require("ace/lib/oop");
+    var dom = ace.require("ace/lib/dom");
+    var FoldLine = ace.require('ace/edit_session/fold_line').FoldLine;
+    var Marker = ace.require('ace/layer/marker').Marker;
 
 
     //Acediff Methods
@@ -677,14 +791,19 @@
                     },
                     readOnly: true,
                     bindKey: "Ctrl-Shift-P"
-                },
+                }, //Makes the origin the edit
                 swapDiffs: {
                     name: "Swap diff origin",
                     readOnly: true,
                     exec: function(editor) {
                         var right = acediff.sessions.right;
+                        var left = acediff.sessions.left;
                         acediff.clear();
-                        acediff.setSession(acediff.sessions.left, true);
+                        if (right.lineWidgets && right.lineWidgets.some(Boolean)) throw 'Error';
+                        if (left.lineWidgets && left.lineWidgets.some(Boolean)) throw 'Error';
+                        acediff.setSession(null, true);
+                        acediff.setSession(null, false);
+                        acediff.setSession(left, true);
                         acediff.setSession(right, false);
                     },
                 }
@@ -726,28 +845,29 @@
         editor.lineWidgets = [];
     }
 
-    function addLineWidget(editor, session, line, start, end, other) {
-        if (!editor.lineWidgets) {
-            editor.lineWidgets = []; //editor.ace.session.widgetManager
+    function addLineWidget(acediff, session, line, start, end, other) {
+        if (!acediff.lineWidgets) {
+            acediff.lineWidgets = []; //editor.ace.session.widgetManager
         }
         if (!session.widgetManager) {
             session.widgetManager = new LineWidgets(session);
-            session.widgetManager.editor = editor.ace;
+            session.widgetManager.editor = acediff.ace;
         }
         var no;
         if (other) {
             var screenStart = other.documentToScreenRow(start, 0);
-            var screenEnd = other.documentToScreenRow(end - 1, 0);
+            var screenEnd = other.documentToScreenRow(end - 1, Infinity);
             no = screenEnd - screenStart + 1;
         } else no = end - start;
 
         if (!no) return;
         if (!line) {
-            editor.scrollOffset += no;
-            //setting scroll margin triggers scroll if there is a session
-            var renderer = editor.ace.renderer;
+            //no multiple widgets supported
+            acediff.scrollOffset = no;
+            //Warning: setting scroll margin triggers scroll if there is a session
+            acediff.changeCharacterSize();
+            var renderer = acediff.ace.renderer;
             renderer.session = null;
-            renderer.setScrollMargin(editor.scrollOffset * (editor.ace.renderer.lineHeight || 14));
             renderer.session = session;
             session.topLineWidget = {
                 row: -1,
@@ -768,7 +888,7 @@
             start: start,
             end: end
         };
-        editor.lineWidgets.push(w);
+        acediff.lineWidgets.push(w);
         session.widgetManager.addLineWidget(w);
         return w;
     }
@@ -813,46 +933,27 @@
     }
 
     //binary search through an array of start end objects
-    function binarySearch(lines, row) {
+    function binarySearch(diffs, row, TYPE, invert) {
+        var startLine = TYPE(invert, "StartLine");
+        var endLine = TYPE(invert, "EndLine");
         var recursionHead = 0;
         var first = 0;
-        var last = lines.length - 1;
+        var last = diffs.length - 1;
         while (first <= last) {
             if (++recursionHead > 1000) {
                 throw new Error('Loop Limit Exceeded');
             }
             var mid = (first + last) >> 1;
-            if (lines[mid].start > row)
+            if (diffs[mid][startLine] > row)
                 last = mid - 1;
-            else if (lines[mid].end <= row)
+            else if (diffs[mid][endLine] <= row)
                 first = mid + 1;
             else
                 return mid;
         }
+        //use ABOVE to get first
         return -(first + 1);
     }
-
-    //binary search given mapStart instead of start
-    function inverseSearch(lines, row) {
-        var first = 0;
-        var last = lines.length - 1;
-        var recursionHead = 0;
-
-        while (first <= last) {
-            if (++recursionHead > 1000) {
-                throw new Error('Loop Limit Exceeded');
-            }
-            var mid = (first + last) >> 1;
-            if (lines[mid].mapStart > row)
-                last = mid - 1;
-            else if (lines[mid].mapStart + (lines[mid].end - lines[mid].start) <= row)
-                first = mid + 1;
-            else
-                return mid;
-        }
-        return -(first + 1);
-    }
-
     //Override object prototype or value
     function override(host, attr, virus, val) {
         var hasProp = host.hasOwnProperty(attr);
@@ -881,6 +982,15 @@
 
     function noop() {}
 
+    function time(func, name) {
+        return function() {
+            console.log(name);
+            console.time(name);
+            var res = func.apply(this, arguments);
+            console.timeEnd(name);
+            return res;
+        };
+    }
     //python-like @decorate
     function dec(func, after) {
         return function() {
@@ -908,41 +1018,99 @@
         return arg2;
     }
 
-    function DiffFoldMode(before, after) {
-        this.aligns = null;
-        this.getFoldWidget = function(session, style, row) {
-            var i = inverseSearch(this.aligns, row);
-            if (i < 0) return null;
-            var aligns = this.aligns;
-            if (row == aligns[i].mapStart + this.ctxAfter) {
-                var end = aligns[i].mapStart + (aligns[i].end - aligns[i].start - 1);
-                if (end - this.ctxBefore > row) {
-                    return "start";
-                }
+    function WIDGET(invert, type) {
+        return (invert ? C.EDITOR_LEFT : C.EDITOR_RIGHT) + (type || "");
+    }
+
+    function HOST(invert, type) {
+        return (invert ? C.EDITOR_RIGHT : C.EDITOR_LEFT) + (type || "");
+    }
+
+    function ABOVE(line) {
+        return -line - 2;
+    }
+
+    function updateDiffMarkers(acediff, session, diffs, TYPE, className, start, end) {
+        start = start || 0;
+        end = end || diffs.length;
+        var startLine = TYPE(null, "StartLine");
+        var endLine = TYPE(null, "EndLine");
+        for (var i = 0, m = acediff.markers, n = m.length; i < n; i++) {
+            session.removeMarker(m[i]);
+        }
+        acediff.markers = [];
+        for (; start < end; start++) {
+            var item = diffs[start];
+            if (item[endLine] > item[startLine]) {
+                acediff.markers.push(session.addMarker(new Range(item[startLine], 0, item[endLine] - 1, Infinity), className, 'fullLine'));
             }
-            if (this.sub) {
-                var fold = this.sub.getFoldWidgetRange(session, style, row);
+        }
+    }
+
+    function DiffFoldMode(before, after) {
+        this.diffs = null;
+        this.getFoldWidget = function(session, style, row) {
+            var i = binarySearch(this.diffs, row, HOST);
+            var start, end;
+            if (i < 0) {
+                var diff = this.diffs[ABOVE(i)];
+                start = (diff ? diff.leftEndLine : 0) + this.ctxAfter;
+                diff = this.diffs[ABOVE(i) + 1];
+                end = (diff ? diff.leftStartLine - 1 : session.getLength()) - this.ctxBefore;
+                if (end > start) {
+                    if (row == start) {
+                        return "start";
+                    } else if (style == "markbeginend" && row == end) {
+                        return "end";
+                    }
+                }
+            } else {
+                start = this.diffs[i].leftStartLine;
+                end = this.diffs[i].leftEndLine - 1;
+            }
+            if (this.sub && row > start && row < end) {
+                var fold = this.sub.getFoldWidget(session, style, row);
                 return fold;
             }
         };
         this.ctxBefore = before === 0 ? 0 : before || 1;
         this.ctxAfter = before === 0 ? 0 : before || 1;
-        this.getFoldWidgetRange = function(editor, style, row) {
-            var i = inverseSearch(this.aligns, row);
-            if (i < 0) return null;
-            var aligns = this.aligns;
-            var end;
-            if (row == aligns[i].mapStart + this.ctxAfter) {
-                end = aligns[i].mapStart + (aligns[i].end - aligns[i].start - 1) - this.ctxBefore;
-                if (end <= row) end = null;
-
+        this.getFoldWidgetRange = function(session, style, row) {
+            var i = binarySearch(this.diffs, row, HOST);
+            var start, end;
+            if (i < 0) {
+                var diff = this.diffs[ABOVE(i)];
+                start = (diff ? diff.leftEndLine : 0) + this.ctxAfter;
+                diff = this.diffs[ABOVE(i) + 1];
+                end = (diff ? diff.leftStartLine - 1 : session.getLength()) - this.ctxBefore;
+                if (end > start) {
+                    if (row == start || style == "markbeginend" && row == end) {
+                        return new Range(start, 0, end, 0);
+                    }
+                }
+                end += this.ctxBefore;
+            } else {
+                start = this.diffs[i].leftStartLine;
+                end = this.diffs[i].leftEndLine - 1;
             }
-            if (end) {
-                return new Range(row, 0, end, 0);
-            } else if (this.sub) {
-                var range = this.sub.getFoldWidgetRange(editor, style, row);
+            if (this.sub) {
+                var range = this.sub.getFoldWidgetRange(session, style, row);
+                if (range) {
+                    if (range.end.row >= end) {
+                        range.end.row = end - 1;
+                        range.end.column = session.getLine(end - 1).length;
+                    }
+
+                    if (range.start.row <= start) {
+                        range.start.row = start + 1;
+                        range.start.column = 0;
+                    }
+                    if (range.end.row < range.start.row || (
+                            range.end.row == range.start.row && (range.end.column - range.start.column < -5))) return null;
+                }
                 return range;
             }
+            return null;
         };
         this.setFolding = function(mode) {
             this.sub = mode;
@@ -955,70 +1123,50 @@
     //have implement update and scrollLines
     function CellVirus(element, Layer) {
         this.layer = new Layer(element);
-        this.alignables = {};
         this.layer.$lines.computeLineTop = this.computeLineTop.bind(this);
-
-        var last = null,
-            lastF = null;
-        this.getNextFoldLine = function(row, start) {
-            var widget = this.isWidget(row, this.layer.config);
-            var rowF = this.unmapLine(widget ? widget.end : row);
-            var ind;
-            if (start == last) {
-                ind = lastF;
-            }
-            lastF = this.host.session.getNextFoldLine(rowF, ind);
-            if (lastF) {
-                last = Object.create(FoldLine.prototype);
-                last.start = {
-                    row: this.mapLine(lastF.start.row)
-                };
-                last.end = {
-                    row: this.mapLine(lastF.end.row)
-                };
-                last.range = new Range(last.start.row, lastF.start.column, last.end.row, lastF.end.column);
-                //last.foldData = lastF.foldData;
-                //last.folds = lastF.folds;
-            } else last = null;
-            return last;
-        };
     }
     var CellVirusProps = (function() {
         this.computeLineTop = function(row, config, session, column) {
-            var tops = this.isWidget(row, config, true);
+            var tops = this.isWidget(row, true);
             var top;
             if (typeof tops == 'number') {
                 top = this.host.session.documentToScreenRow(tops, column || 0);
             } else if (tops.row < 0) {
                 top = (-tops.rowCount + this.layer.session.documentToScreenRow(row, column || 0) - this.layer.session.documentToScreenRow(tops.start, 0));
             } else {
-                top = this.host.session.documentToScreenRow(tops.row, 0) + this.layer.session.documentToScreenRow(row, column || 0) - this.layer.session.documentToScreenRow(tops.start, 0) + 1;
+                top = this.host.session.documentToScreenRow(tops.row, Infinity) + this.layer.session.documentToScreenRow(row, column || 0) - this.layer.session.documentToScreenRow(tops.start, 0) + 1;
             }
-            console.log(top,row);
             return top * config.lineHeight - config.lineOffset;
         };
         this.hook = function(host_) {
             this.host = host_;
             var hostUpdate = host_.update.bind(host_);
-            override(host_, "update", this, (function(config) {
+            override(host_, "update", this, ((function(config) {
                 hostUpdate(config);
                 this.update(this.computeConfig());
-            }).bind(this));
+                this.lastWidget = null;
+            }).bind(this)));
             var hostScroll = host_.scrollLines.bind(host_);
-            override(host_, "scrollLines", this, (function(config) {
+            override(host_, "scrollLines", this, ((function(config) {
                 hostScroll(config);
                 this.scrollLines(this.computeConfig());
-            }).bind(this));
+                this.lastWidget = null;
+            }).bind(this)));
         };
         this.unhook = function() {
             revert(this.host, "update", this);
             revert(this.host, "scrollLines", this);
+            this.lastWidget = null;
             this.host = null;
         };
 
         /*@return widget || number if equal
          **/
-        this.isWidget = function(row, config, returnRow) {
+        this.setSession = function(t) {
+            this.layer.setSession(t);
+        };
+
+        this.isWidget = function(row, returnRow) {
             var lastW = this.lastWidget;
             if (lastW && lastW.end > row && lastW.start <= row) {
                 return lastW;
@@ -1029,82 +1177,69 @@
                     return (this.lastWidget = top);
             }
 
-            var mapped = binarySearch(this.alignables, row);
-            if (mapped < 0) {
+            var mapped = binarySearch(this.diffs, row, WIDGET);
+
+            if (mapped > -1) {
                 var widgets = this.host.session.lineWidgets;
-                if (!widgets) return 0;
-                var last = this.alignables[-mapped - 2];
-                last = last ? last.end - 1 - last.start + last.mapStart : -1;
+                //push invalid rows down
+                if (!widgets) return this.host.session.getLength();
+                var last = this.diffs[mapped].leftStartLine - 1;
                 if (widgets[last] && widgets[last].type == C.WIDGET_INLINE) {
-                    console.log(widgets[last].row == last);
                     return (this.lastWidget = widgets[last]);
                 }
-                //inserting a line above a diff
-                //causes errors until the diff is updated
-                var next = this.alignables[-mapped - 1];
-                next = (next ? next.mapStart : widgets.length) - 1;
-                if (next != last && widgets[next] && widgets[next].type == C.WIDGET_INLINE) {
-                    console.log(widgets[next].row == last);
+                var next = this.diffs[mapped].leftEndLine - 1;
+                if (widgets[next] && widgets[next].type == C.WIDGET_INLINE) {
                     return (this.lastWidget = widgets[next]);
                 }
+                return this.host.session.getLength();
             } else if (returnRow) {
                 //return the equal row 
-                //ie opposite of ishostequalrow
-                var equal = this.lastWidget = this.alignables[mapped];
-                if (equal)
-                    return row - equal.start + equal.mapStart;
-                //error state 
+                var prev = this.diffs[ABOVE(mapped)];
+                return prev ? prev.leftEndLine + row - prev.rightEndLine : row;
             }
+            //return false
             return 0;
         };
+        //@deprecated use hostToWidgetRow directly
         this.isHostEqualRow = function(row, config) {
-            var i = inverseSearch(this.alignables, row);
-            if (i < 0)
-                return false;
-            var last = this.alignables[i];
-            return row - last.start + last.mapStart;
+            var result = this.hostToWidgetRow(row, undefined);
+            return result === undefined ? false : result;
         };
-        this.unmapLine = function(row) {
-            var last;
-            if (this.alignables[0].start > row)
-                return 0;
-
-            var mapped = binarySearch(this.alignables, row);
-            if (mapped < 0) {
-                last = this.alignables[-mapped - 2];
-                return last.end - 1 - last.start + last.mapStart;
+        //find host row from widget row
+        this.hostToWidgetRow = function(row, below, invert) {
+            var last, widgetLine;
+            var mapped = binarySearch(this.diffs, row, HOST, invert);
+            if (mapped > -1) {
+                if (below === undefined || below === null) return below;
+                //in widget
+                //don't return host diff
+                //return an equal row below or above the row
+                if (below) {
+                    widgetLine = WIDGET(invert, "EndLine");
+                    last = this.diffs[mapped];
+                    return last[widgetLine];
+                } else {
+                    widgetLine = WIDGET(invert, "StartLine");
+                    last = this.diffs[mapped];
+                    return last[widgetLine] - 1;
+                }
             } else {
-                last = this.alignables[mapped];
-                return row - last.start + last.mapStart;
+                //in equal row
+                var hostLine = HOST(invert, "EndLine");
+                widgetLine = WIDGET(invert, "EndLine");
+                last = this.diffs[ABOVE(mapped)];
+                return last ? row - last[hostLine] + last[widgetLine] : row;
             }
         };
-        this.mapLine = function(row) {
-            var last;
-            //*
-            if (this.alignables[0].mapStart > row)
-                return 0;
-            var mapped = inverseSearch(this.alignables, row);
-            if (mapped < 0) {
-                last = this.alignables[-mapped - 2];
-                return last.end - 1;
-            } else {
-                last = this.alignables[mapped];
-                return row + last.start - last.mapStart;
-            }
-        };
-        this.setSession = function(t) {
-            this.layer.setSession(t);
-        };
-        this.getFoldedRowCount = function(firstRow, lastRow) {
-            return this.host.session.getFoldedRowCount(this.unmapLine(firstRow), this.unmapLine(lastRow));
+        //find widget row from host row
+        this.widgetToHostRow = function(row, below) {
+            return this.hostToWidgetRow(row, below, true);
         };
 
         this.computeConfig = function() {
             var host = this.host.session;
             var config = Object.assign({}, this.host.config);
             var numRows = Math.ceil(config.height / config.lineHeight);
-            console.log(this.alignables);
-            console.log(host.lineWidgets, host.topLineWidget);
             //triggers bug in pageChanged(Gutter)
             //config.firstRowScreen = null;
             if (config.offset < 0 && host.topLineWidget) {
@@ -1112,43 +1247,60 @@
                 var lastOffsetRow = host.topLineWidget.rowCount;
                 var firstRow = Math.max(0, lastOffsetRow - diff);
                 config.firstRow = this.layer.session.screenToDocumentRow(firstRow, 0);
-                config.lastRow = this.layer.session.screenToDocumentRow(firstRow + numRows, Infinity);
+                config.lastRow = this.layer.session.screenToDocumentRow(firstRow + numRows, Infinity); //too much actually
                 config.lineOffset = -(lastOffsetRow - firstRow) * config.lineHeight;
                 config.offset -= config.lineOffset;
             } else {
-                var firstRowScreen = host.$scrollTop / config.lineHeight;
-                config.firstRow = this.$screenToInlineWidgetRow(Math.floor(firstRowScreen));
+                var firstRowScreen = config.offset > 0 ? (host.$scrollTop / config.lineHeight) : config.firstRowScreen; //not counting scrollMargin
+                config.firstRow = Math.max(0, this.$screenToInlineWidgetRow(Math.floor(firstRowScreen)) - 1);
                 config.lastRow = this.$screenToInlineWidgetRow(Math.ceil(firstRowScreen + numRows));
                 config.lineOffset = 0;
             }
+            config.gutterOffset = 1; //good enough for most purposes
             return config;
         };
         this.$screenToInlineWidgetRow = function(screenRow) {
             var host = this.host.session;
             var self = this.layer.session;
             var widgets = host.lineWidgets;
-            if (!widgets) return -1;
-            //row assured to be below or above the screenrow
+            //real screen row is assured to be at
+            //least this
             var row = host.screenToDocumentRow(screenRow, 0);
-            var hostRow, widgetRow;
-            var equal = inverseSearch(this.alignables, row);
-            if (equal > -1) {
-                var equalRow = this.alignables[equal];
-                widgetRow = row - equalRow.mapStart + equalRow.start;
-                if (!widgets[row] || widgets[row].type !== C.WIDGET_INLINE) return widgetRow;
-                hostRow = row;
+            var widgetRow /*the last shared widget row*/ , diff;
+            var widget = binarySearch(this.diffs, row, HOST);
+            if (widget < 0) {
+                //in an equal row
+                diff = this.diffs[ABOVE(widget)];
+                if (diff) {
+                    var delta = row - diff.leftEndLine;
+                    widgetRow = delta + diff.rightEndLine;
+                } else widgetRow = row;
+                //the host row does not have
+                //widgets so this should be it
+                if (!widgets || !widgets[row] || widgets[row].type !== C.WIDGET_INLINE) return widgetRow;
             } else {
-                //in a diff
-                //is the widget is directly above this row
-                //or directly below the previous equal row
-                var directlyAbove = this.alignables[-(equal + 1)];
-                widgetRow = directlyAbove.start;
-                hostRow = directlyAbove.mapStart;
-                if (!widgets[hostRow - 1] || widgets[hostRow - 1].type !== C.WIDGET_INLINE) return widgetRow;
+                //A diff can either be above or below specified row {@see removedFragmentsBelow}. Due to the asynchronous rendering we are better off gusessing which, right represents the widgets
+                diff = this.diffs[widget];
+                //assuming there is at least one equal line between the two diffs, that equal line would have the widget ie the line above if diffs are rendered below
+                var lineAbove = diff.leftStartLine - 1;
+                //only one can have a widget typically
+                if (lineAbove < 1 && host.topLineWidget) widgetRow = diff.rightEndLine - 1;
+                else if (widgets && widgets[lineAbove] && widgets[lineAbove].type === C.WIDGET_INLINE) {
+                    //widget is above this row
+                    return diff.rightEndLine - 1;
+                } else {
+                    widgetRow = diff.rightStartLine;
+                    if (!(widgets && widgets[row] && widgets[row].type === C.WIDGET_INLINE)) {
+                        //should be impossible but it isn't, it happens, this will cause glitches
+                        return widgetRow - 1;
+                    }
+                    //widget is below this row
+                    row == diff.leftStartLine;
+                }
             }
-            //get the difference the rows position and screen
-            var diff = screenRow - host.documentToScreenRow(hostRow, 0);
-            var widgetScreenRow = self.documentToScreenRow(widgetRow, Infinity) + diff;
+            //get the offset of the screen row in the widget; negative in topLine widgets
+            diff = screenRow - host.documentToScreenRow(row, 0);
+            var widgetScreenRow = self.documentToScreenRow(widgetRow, 0) + diff;
             var res = self.screenToDocumentRow(widgetScreenRow, 0);
             return res;
         };
@@ -1167,20 +1319,19 @@
         //override
         this.setSession = function(t) {
             if (this.layer.session) {
-                //revert(this.layer.session, "getNextFoldLine", this);
-                //revert(this.layer.session, "getFoldedRowCount", this);
                 this.layer.session.off("changeBackMarker", this.$updateMarkers);
             }
             this.layer.setSession(t);
             this.markers.setSession(t);
             if (t) {
+                //not supported yet
+                t.unfold();
                 t.$backMarkers = [];
-                //see updateFold
-                //override(t, "getNextFoldLine", this, this.getNextFoldLine.bind(this));
-                //override(t, "getFoldedRowCount", this, this.getFoldedRowCount.bind(this));
                 t.on("changeBackMarker", this.$updateMarkers);
                 this.updateMarkers();
-                this.updateWrapMode();
+                if (this.host && this.host.session) {
+                    this.updateWrapMode();
+                }
             }
         };
 
@@ -1198,52 +1349,39 @@
 
             return Math.max(this.$size.scrollerWidth - 2 * this.$padding, Math.round(charCount * this.characterWidth));
         };
-        this.$updateMarkers = this.updateMarkers.bind(this);
         this.$updateWrapMode = this.updateWrapMode.bind(this);
         this.$changeWrapLimit = this.changeWrapLimit.bind(this);
+
+        this.$updateMarkers = this.updateMarkers.bind(this);
         this.$renderLinesFragment = this.renderLinesFragment.bind(this);
         override(this.layer, "$renderLinesFragment", this);
         this.$doRender = this.doRender.bind(this);
-        this.$updateFolds = this.updateFolds.bind(this);
         this.attach();
     }
     (function() {
         CellVirusProps.call(this);
-        this.detach = function(temp) {
+        this.detach = function(sessionOnly) {
             this.host.session.off("changeWrapMode", this.$updateWrapMode);
             this.host.session.off("changeWrapLimit", this.$changeWrapLimit);
-            this.host.session.off('changeFold', this.$updateFolds);
-
-            if (!temp) {
+            if (!sessionOnly) {
                 this.renderer.off("afterRender", this.$doRender);
                 this.content.remove();
                 revert(this.renderer, "$getLongestLine", this);
                 this.unhook();
             }
         };
-        this.updateFolds = function(data, session) {
-            if (data.action == "add") {
-                var start = data.data.range.start.row;
-                var end = data.data.range.end.row;
-                var mapRange = new Range(this.mapLine(start), data.data.range.start.column, this.mapLine(end), data.data.range.end.column);
-                this.layer.session.addFold("...", mapRange);
-            } else if (data.action == "remove") {
-                var row = this.mapLine(data.data.range.start.row);
-                var fold = this.layer.session.getFoldAt(row, this.layer.session.getLine(row).length, 1);
-                if (fold)
-                    this.layer.session.removeFold(fold);
-            }
-        };
-        this.attach = function(temp) {
-            if (!temp) {
+        this.attach = function(sessionOnly) {
+            if (!sessionOnly) {
                 this.hook(this.renderer.$textLayer);
                 this.renderer.on("afterRender", this.$doRender);
                 override(this.renderer, "$getLongestLine", this);
                 this.renderer.scroller.appendChild(this.content);
             }
-            this.host.session.on('changeFold', this.$updateFolds);
             this.host.session.on("changeWrapMode", this.$updateWrapMode);
             this.host.session.on("changeWrapLimit", this.$changeWrapLimit);
+            if (this.layer.session) {
+                this.updateWrapMode();
+            }
         };
         this.updateMarkers = function() {
             this.markers.setMarkers(this.layer.session.getMarkers());
@@ -1277,6 +1415,7 @@
             var fragment = [];
             if (widgets.length) {
                 for (var j in widgets) {
+                    this.lastWidget = widgets[j];
                     fragment.push.apply(fragment, this.host$renderLinesFragment.apply(this.layer, [config, Math.max(first, widgets[j].start), Math.min(last, widgets[j].end - 1)]));
                 }
             }
@@ -1303,24 +1442,24 @@
             this.markers.update(config);
 
             var _this = this.layer;
-            if (!_this.$lines.cells.length)
-                return _this.update(config);
+            if (_this.$lines.cells.length == 0)
+                return this.update(config);
             var oldFirstRow = _this.$lines.cells[0].row;
             var lastRow = config.lastRow;
             var oldLastRow = _this.config ? _this.$lines.cells[_this.$lines.cells.length - 1].row : -1;
             if (_this.$lines.pageChanged(_this.config, config))
-                return _this.update(config);
+                return this.update(config);
             if (!_this.config || oldLastRow < config.firstRow)
-                return _this.update(config);
+                return this.update(config);
 
             if (lastRow < oldFirstRow)
-                return _this.update(config);
+                return this.update(config);
 
             if (oldLastRow < config.firstRow)
-                return _this.update(config);
+                return this.update(config);
 
             if (lastRow < oldFirstRow)
-                return _this.update(config);
+                return this.update(config);
 
 
             if (config.lineOffset != _this.config.lineOffset)
@@ -1375,6 +1514,33 @@
                 this.element.style.width = this.gutterWidth + "px";
             }
         };
+        var last, lastF;
+        this.getNextFoldLine = function(row, start) {
+            var rowF = this.widgetToHostRow(row, true);
+            var ind;
+            if (start == last)
+                ind = lastF;
+            lastF = this.host.session.getNextFoldLine(rowF, ind);
+            if (lastF) {
+                last = Object.create(FoldLine.prototype);
+                last.start = {
+                    row: this.hostToWidgetRow(lastF.start.row, true)
+                };
+                last.end = {
+                    row: this.hostToWidgetRow(lastF.end.row, false)
+                };
+                if (last.end.row < row) {
+                    last.start.row = last.end.row = row;
+                } else if (last.end.row < last.start.row) {
+                    last.start.row = last.end.row;
+                }
+                //last.range = new Range(last.start.row, 0, last.end.row, 0);
+                //last.foldData = lastF.foldData;
+                //last.folds = lastF.folds;
+            } else last = null;
+            return last;
+        };
+
         this.attach = function() {
             gutter = renderer.$gutterLayer;
             gutter.element.parentNode.appendChild(this.layer.element);
@@ -1385,13 +1551,93 @@
     }
     (function() {
         CellVirusProps.call(this);
+
+        function onCreateCell(element) {
+            var textNode = document.createTextNode('');
+            element.appendChild(textNode);
+
+            var foldWidget = dom.createElement("span");
+            element.appendChild(foldWidget);
+
+            return element;
+        }
+
         this.detach = function() {
             this.layer.element.remove();
             revert(this.host, "$renderer", this, this);
             this.unhook();
         };
         this.update = function(config) {
-            this.layer.update(config);
+            var _this = this.layer;
+            _this.config = config;
+            var session = _this.session;
+            var firstRow = config.firstRow;
+            var lastRow = Math.min(config.lastRow + config.gutterOffset, // needed to compensate for hor scollbar
+                session.getLength() - 1);
+            _this.oldLastRow = lastRow;
+            _this.config = config;
+
+            _this.$lines.moveContainer(config);
+            _this.$updateCursorRow();
+            _this.$lines.push(this.renderLines(config, config.firstRow, config.lastRow, true));
+            _this._signal("afterRender");
+            _this.$updateGutterWidth(config);
+        };
+        this.getFoldedRowCount = function(startRow, endRow) {
+            //when all things fail
+            var lines = this.layer.$lines.cells;
+            var count = 0;
+            for (var i = 0, len = lines.length; i < len; i++) {
+                var a = lines[i];
+                if (a.row < startRow) {
+                    continue;
+                }
+                if (a.row <= endRow)
+                    count++;
+                else break;
+            }
+            return count;
+        };
+        //so much duplicated code
+        this.renderLines = function(config, firstRow, lastRow, useCache) {
+            var fragment = [];
+            var row = firstRow;
+            var _layer = this.layer;
+            var session = _layer.session;
+            var foldLine = this.getNextFoldLine(row);
+            var foldStart = foldLine ? foldLine.start.row : Infinity;
+            var _lines = _layer.$lines;
+            var index = 0,
+                len = -1;
+            var cache = this.layer.$lines.cells;
+            if (useCache) {
+                len = cache.length;
+            }
+            while (true) {
+                if (row > foldStart) {
+                    row = foldLine.end.row + 1;
+                    foldLine = this.getNextFoldLine(row, foldLine);
+                    foldStart = foldLine ? foldLine.start.row : Infinity;
+                }
+                if (row > lastRow)
+                    break;
+
+                var cell;
+                if (index < len) {
+                    cell = cache[index++];
+                } else {
+                    cell = _lines.createCell(row, config, session, onCreateCell);
+                    fragment.push(cell);
+                }
+                _layer.$renderCell(cell, config, foldLine, row);
+                row++;
+            }
+            if (useCache && index < len) {
+                while (index++ < len) {
+                    _lines.pop();
+                }
+            }
+            return fragment;
         };
         this.scrollLines = function(config) {
             if (config.lineOffset != this.layer.config.lineOffset)
@@ -1399,19 +1645,51 @@
                     var cell = this.layer.$lines.cells[line];
                     cell.element.style.top = this.computeLineTop(cell.row, config, this.layer.session) + "px";
                 }
-            this.layer.scrollLines(config);
+            var _this = this.layer;
+            var oldConfig = _this.config;
+            _this.config = config;
+
+            _this.$updateCursorRow();
+            if (_this.$lines.pageChanged(oldConfig, config))
+                return this.update(config);
+
+            _this.$lines.moveContainer(config);
+            var lastRow = Math.min(config.lastRow + config.gutterOffset, // needed to compensate for hor scollbar
+                _this.session.getLength() - 1);
+            var oldLastRow = _this.oldLastRow;
+            _this.oldLastRow = lastRow;
+            if (!oldConfig || oldLastRow < config.firstRow)
+                return this.update(config);
+
+            if (lastRow < oldConfig.firstRow)
+                return this.update(config);
+
+            if (oldConfig.firstRow < config.firstRow)
+                for (var row = this.getFoldedRowCount(oldConfig.firstRow, config.firstRow - 1); row > 0; row--)
+                    _this.$lines.shift();
+
+            if (oldLastRow > lastRow)
+                for (var row = this.getFoldedRowCount(lastRow + 1, oldLastRow); row > 0; row--)
+                    _this.$lines.pop();
+            if (config.firstRow < oldConfig.firstRow) {
+                _this.$lines.unshift(this.renderLines(config, config.firstRow, oldConfig.firstRow - 1));
+            }
+            if (lastRow > oldLastRow) {
+                _this.$lines.push(this.renderLines(config, oldLastRow + 1, lastRow));
+            }
+            _this.updateLineHighlight();
+
+            _this._signal("afterRender");
+            _this.$updateGutterWidth(config);
+
         };
-        /*todo
-            use lastlinetext to get padded space
-            and remove textalign left style
-        */
         this.getText = function(session, row) {
             var text = (session.$firstLineNumber + row).toString();
             return text;
         };
         this.getWidth = function(session, rowText, config) {
             var lastRow = this.layer.$lines.last();
-            lastRow = lastRow ? lastRow.row : this.unmapLine(config.lastRow);
+            lastRow = lastRow ? lastRow.row : this.hostToWidgetRow(config.lastRow);
             var hostLastRow = this.host.$lines.last().row;
             var rowText = this.getText(this.layer.session, lastRow);
             var otherRowText = this.getText(this.host.session, hostLastRow);
@@ -1424,10 +1702,10 @@
         extend(true, this.options, AceInlineDiff.defaults, {
 
         }, options);
-        this.options.threeWay = false;
-        this.options.alignLines = false;
 
         //////////Hacks To Make It Work With Acediff Methods
+        this.options.threeWay = false;
+        this.options.alignLines = false;
         this.editor = this.options.editor || ace.edit(this.options.id);
         this.editors = {
             left: this,
@@ -1443,8 +1721,9 @@
         ///////////
 
         this.foldModes = {
-            left: new DiffFoldMode(2, 2),
-            right: new DiffFoldMode(2, 2)
+            left: new DiffFoldMode(0, 0),
+            //not used by virus unless swapped
+            right: new DiffFoldMode(0, 0)
         };
         if (this.options.left.session) {
             this.editor.setSession(this.options.left.session);
@@ -1469,10 +1748,7 @@
 
         setupEditor(this, C.EDITOR_LEFT);
         this.markers = [];
-        this.lineWidgets = [];
 
-        //array of equal line segments
-        this.lines = [];
         this.$decorate = this.decorate.bind(this);
         this.gutter = new GutterLineVirus(this.editor.renderer);
         this.gutter.setSession(this.other);
@@ -1481,14 +1757,27 @@
         this.renderer.setSession(this.other);
 
         this.addCssClasses();
-        this.diff();
+        if (!dmp) dmp = new diff_match_patch();
+        this.swapped = false;
+        this.scrollMargin = {};
+        this.editor.renderer.addScrollMargin(this.scrollMargin);
+        this.diff(true);
+        if (this.options.ignoreWhitespace == 'auto') {
+            if (this.diffs.length < 2) {
+                this.options.ignoreWhitespace = false;
+                this.diff(true);
+            } else this.options.ignoreWhitespace = true;
+        }
+
+
         if (this.options.autoupdate) {
+            //without this the diffs will
+            //eventually get muddled
             this.startUpdate();
         }
-        this.swapped = false;
-        this.$handleMouseDown = this.handleMouseDown.bind(this);
+        this.$handleDoubleClick = this.handleDoubleClick.bind(this);
         //this.$handleChangeSelection = this.handleChangeSelection.bind(this);
-        this.editor.on('mousedown', this.$handleMouseDown);
+        this.editor.on('dblclick', this.$handleDoubleClick);
         this.$update = this.updateAligns.bind(this);
         this.$changeCharacterSize = this.changeCharacterSize.bind(this);
         this.editor.on('change', this.$update);
@@ -1496,6 +1785,7 @@
         this.other.on('changeWrapLimit', this.$decorate);
         this.editor.renderer.on('changeCharacterSize', this.$changeCharacterSize);
     }
+    //Gutter and Folding
     //Three Structures, One, Alignables, Widgets and Diffs
     //Diffs can be updated with update diff but until then
     //A way to keep things rolling
@@ -1505,41 +1795,37 @@
     //Update line markers on change
     //Get rid of diff format or use
     AceInlineDiff.prototype = {
-        clickSwap: function(e, isWidget, row, column) {
-            if (e) e.stop();
+        clickSwap: function(isWidget, row, column) {
             this.swap();
-            if (isWidget && !getOption(this, this.swapped ? C.EDITOR_RIGHT : C.EDITOR_LEFT, 'editable') &&
-                getOption(this, this.swapped ? C.EDITOR_LEFT : C.EDITOR_RIGHT, 'editable'))
+            if (isWidget && !getOption(this, WIDGET(this.swapped), 'editable') &&
+                getOption(this, HOST(this.swapped), 'editable'))
                 this.allowSwap = true;
-            this.editor.gotoLine(row + 1, pos.column);
+            this.editor.gotoLine(row + 1, column);
         },
-        changeCharacterSize: function(){
-            if(this.scrollOffset){
-                this.ace.renderer.setScrollMargin(this.scrollOffset * (this.ace.renderer.lineHeight || 14));
-            }
-        },
-        clickCopy: function(e, isWidget, row, col, origPos) {
-            if (isWidget && getOption(this, this.swapped ? C.EDITOR_RIGHT : C.EDITOR_LEFT, "editable")) {
+        clickCopy: function(isWidget, row, col, origPos) {
+            if (isWidget && getOption(this, HOST(this.swapped), "editable")) {
                 var widget = origPos.row < 0 ? this.current.topLineWidget : this.current.lineWidgets[origPos.row];
                 var text = this.other.getLines(widget.start, widget.end - 1);
                 this.current.getDocument().insertFullLines(widget.row + 1, text);
             }
         },
-        handleMouseDown: function(e) {
-            var offset = this.scrollOffset;
+        handleDoubleClick: function(e) {
+            var linesAbove = this.scrollOffset;
             var pos = this.editor.renderer.pixelToScreenCoordinates(e.clientX, e.clientY);
             var swap = (this.options.onClick == "swap" ? this.clickSwap : this.clickCopy).bind(this);
             //clicked topLineWidget
-            if (pos.row < 0 && offset > 0) {
-                var post = this.other.screenToDocumentPosition(pos.row + offset, pos.column, pos.offsetX);
-                return swap(e, true, post.row, post.column, pos);
+            if (pos.row < 0 && linesAbove > 0) {
+                var post = this.other.screenToDocumentPosition(pos.row + linesAbove, pos.column, pos.offsetX);
+                e.stop();
+                return swap(true, post.row, post.column, pos);
             }
             //clicked equal row;
             var position = this.current.screenToDocumentPosition(pos.row, pos.column, pos.offsetX);
             if (this.allowSwap) {
                 var end = this.gutter.isHostEqualRow(position.row);
                 if (end !== false) {
-                    return swap(e, false, end, position.column, position);
+                    e.stop();
+                    return swap(false, end, position.column, position);
                 }
             }
             //clicked widget
@@ -1548,31 +1834,65 @@
                 var screenRow = this.current.documentToScreenRow(position.row, Infinity);
                 if (pos.row > screenRow) {
                     var otherPos = this.other.screenToDocumentPosition(this.other.documentToScreenRow(widget.start, 0) + (pos.row - screenRow - 1), pos.column, pos.offsetX);
-                    return swap(e, true, otherPos.row, otherPos.column, position);
+                    e.stop();
+                    return swap(true, otherPos.row, otherPos.column, position);
                 }
             }
         },
         startUpdate: function() {
             if (!this.$diff) {
-                this.$diff = throttle(this.diff, 1000).bind(this);
-                //this.editor.on('change', this.$diff);
+                this.$diff = throttle(this.diff, 1500).bind(this);
+                this.editor.on('change', this.$diff);
             }
         },
         updateAligns: function(change) {
-            var a = change.lines.length - 1;
-            if (a < 1) return;
-            if (change.action == 'remove') a = -a;
+            var startRow = change.start.row;
+            var endRow = change.end.row;
+            var delta = endRow - startRow;
+            if (delta < 1) return;
+            if (change.action == 'remove') delta = -delta;
             var b = change.start.row;
-            var start = inverseSearch(this.lines, b);
+            var start = binarySearch(this.diffs, b, HOST);
             //next line
-            if (start < 0) start = -(start + 1);
-            else {
-                start++;
+            if (start < 0) {
+                //needs rediffing
+                start = ABOVE(start) + 1;
+            } else {
+                var changed = this.diffs[start++];
+                if (change.action == "delete" && changed.leftEndLine < endRow) {
+                    changed.leftEndLine = startRow;
+                } else changed.leftEndLine += delta;
             }
-            var len = this.lines.length;
-            for (var i = start; i < len; i++) {
-                this.lines[i].mapStart += a;
+            var len = this.diffs.length;
+            var i;
+            if (change.action == "insert") {
+                for (i = start; i < len; i++) {
+                    this.diffs[i].leftStartLine += delta;
+                    this.diffs[i].leftEndLine += delta;
+                }
+            } else {
+                for (i = start; i < len; i++) {
+                    var r = this.diffs[i];
+
+                    if (r.leftEndLine < endRow &&
+                        startRow <= r.leftEndLine
+                    ) {
+                        r.leftEndLine = startRow;
+                    } else if (r.leftEndLine >= endRow) {
+                        r.leftEndLine += delta;
+                    }
+
+                    if (r.leftStartLine < endRow &&
+                        startRow <= r.leftStartLine
+                    ) {
+                        r.leftStartLine = startRow;
+                    } else if (r.leftStartLine >= endRow) {
+                        r.leftStartLine += delta;
+                    }
+                }
             }
+            var currentClass = this.swapped ? this.options.classes.removed : this.options.classes.added;
+            updateDiffMarkers(this, this.current, this.diffs, HOST, currentClass);
         },
         stopUpdate: function() {
             if (this.$diff) {
@@ -1615,7 +1935,7 @@
             var oldSession = this.sessions[side];
             if (oldSession == session)
                 return;
-            if (this.swapped !== isRight) {
+            if (side == WIDGET(this.swapped)) {
                 oldSession && oldSession.off('changeWrapLimit', this.$decorate);
                 this.other = session;
                 this.renderer.setSession(this.other);
@@ -1623,12 +1943,14 @@
                 this.editors.other.ace.session = this.other;
             } else {
                 this.session = this.current = session;
-                this.renderer.detach(true);
+                if (oldSession)
+                    this.renderer.detach(true);
                 this.editor.setSession(this.current);
                 this.editor.setReadOnly(!getOption(this, (isSwap == this.swapped) ? C.EDITOR_LEFT : C.EDITOR_RIGHT, "editable"));
-                this.renderer.attach(true);
+                if (session)
+                    this.renderer.attach(true);
             }
-            if (isSwap)
+            if (isSwap) //keep notion of left and right
                 return;
             var foldMode = this.foldModes[side];
             this.sessions[side] = session;
@@ -1641,34 +1963,37 @@
                 foldMode.setFolding(session.$foldMode);
                 session.$setFolding(foldMode);
                 override(session, "$setFolding", session, foldMode.setFolding.bind(foldMode));
-                this.diff();
+                if (this.sessions.left && this.sessions.right)
+                    this.diff(true);
             }
         },
-        diff: function() {
+        diff: function(clean) {
             var count = 0;
             var ses1 = this.sessions.left;
             var ses2 = this.sessions.right;
             var text1 = ses1.getValue();
             var text2 = ses2.getValue();
-            var pair = this;
-            if (!this.options.showInlineDiffs && ses1.getLength() + ses2.getLength() < 30000) {
-                //todo cache also
-                pair.diffs = getLineChunks(text1, text2, this.options.ignoreWhitespace, this.swapped);
-            } else {
-                var tag = pair.savedDiffs ? "saved" : "clean";
-                pair.savedDiffs = pair.savedDiffs ? updateDiff(text1, text2, false, this.swapped, pair.savedDiffs) : getDiff(text1, text2, false, this.swapped);
-                pair.diffs = getChunks(this.options.ignoreWhitespace ? getDiff(text1, text2, true, this.swapped, pair.savedDiffs) : pair.savedDiffs);
-                if (this.options.showInlineDiffs) {
-                    pair.rawDiffs = pair.savedDiffs;
-                }
-            }
-            count += pair.diffs.length;
-
+            //reset clean based on size
+            this.$reset(clean === true ? 0 :
+                text1.length + text2.length < 100000 ? 5 :
+                text1.length + text2.length > 1000000 ? 50 :
+                25);
+            this.diffs = getDiffs(text1, text2, this.options, this, ses1.getLength() + ses2.getLength() < 30000);
+            count = this.diffs.length;
             if (count > this.options.maxDiffs) return this.clear();
             this.decorate();
         },
+        $reset: (function() {
+            var i = 0;
+            return function(min) {
+                if (++i > min) {
+                    i = 0;
+                    this.savedDiffs = null;
+                }
+            };
+        })(),
         swap: function() {
-            var offset = this.scrollOffset * this.editor.renderer.layerConfig.lineHeight;
+            var offset = this.scrollMargin.top;
             this.allowSwap = false;
             //this.editor.off("changeSelection", this.$handleChangeSelection);
             var top = this.current.$scrollTop + offset;
@@ -1680,42 +2005,18 @@
             this.setSession(right, false, true);
             this.swapped = !this.swapped;
             this.addCssClasses();
-            this.diff();
+            this.diff(true);
         },
         decorate: function() {
             var diffs = this.diffs;
+            this.foldModes.left.diffs = this.foldModes.right.diffs = this.gutter.diffs = this.renderer.diffs = this.diffs;
             this.clear();
             var putFragmentsAbove = (this.swapped == this.options.removedFragmentsBelow);
             var currentClass = this.swapped ? this.options.classes.removed : this.options.classes.added;
             var otherClass = this.swapped ? this.options.classes.added : this.options.classes.removed;
-            //alignables are more flexible
-            //than diffs, but diffs show a
-            //clearer picture for widgets
-            //{@todo}if we make findNextDiff use
-            //alignables,we can free the memory
-            //used by diffs after decorate
-            var align = this.lines;
             var editor = this.editor;
-            var equal = {
-                start: 0,
-                end: 0,
-                mapStart: 0
-            };
-            var eq_start = function(s, m) {
-                equal = {
-                    start: s,
-                    mapStart: m
-                };
-            };
-            var eq_end = function(e) {
-                //if (e != equal.start) {
-                equal.end = e;
-                align.push(equal);
-                //}
-            };
+
             diffs.forEach(function(item) {
-                eq_end(item.rightStartLine);
-                eq_start(item.rightEndLine, item.leftEndLine);
                 if (item.rightEndLine > item.rightStartLine) addLineWidget(this, this.current, putFragmentsAbove ? item.leftStartLine : item.leftEndLine, item.rightStartLine, item.rightEndLine, this.other);
                 if (item.leftEndLine > item.leftStartLine) {
                     this.markers.push(this.current.addMarker(new Range(item.leftStartLine, 0, item.leftEndLine - 1, Infinity), currentClass, 'fullLine'));
@@ -1724,10 +2025,10 @@
                     this.editors.other.markers.push(this.other.addMarker(new Range(item.rightStartLine, 0, item.rightEndLine - 1, Infinity), otherClass, 'fullLine'));
                 }
             }, this);
-            if (!this.scrollOffset)
-                this.editor.renderer.setScrollMargin(0);
-            eq_end(this.other.getLength());
-            this.renderer.layer.config = this.gutter.layer.config = null;
+            if (!this.scrollOffset && this.scrollMargin.top) {
+                this.scrollMargin.top = 0;
+                this.editor.renderer.updateScrollMargins();
+            }
             if (this.rawDiffs)
                 showInlineDiffs(this, C.EDITOR_LEFT, "other", this.rawDiffs);
         },
@@ -1738,29 +2039,34 @@
             return goNearbyDiff(this, editor, -1);
         },
         clear: function() {
-            this.foldModes.left.aligns = this.foldModes.right.aligns = this.lines = this.gutter.alignables = this.renderer.alignables = [];
             clearLineWidgets(this);
-            this.markers.forEach(function(marker) {
-                this.current.removeMarker(marker);
-            }, this);
             this.editors.other.markers.forEach(function(marker) {
                 this.other.removeMarker(marker);
             }, this);
+            this.markers.forEach(function(marker) {
+                this.current.removeMarker(marker);
+            }, this);
             this.markers = [];
             this.editors.other.markers = [];
-
+        },
+        changeCharacterSize: function() {
+            if (this.scrollOffset) {
+                this.scrollMargin.top = this.scrollOffset * (this.ace.renderer.lineHeight || 14);
+                this.ace.renderer.updateScrollMargins();
+            }
         },
         resize: function(force) {
             this.editor.resize(force);
-            this.editor.renderer.setScrollMargin(this.scrollOffset * (this.editor.renderer.lineHeight || 14));
+            this.changeCharacterSize();
         },
         destroy: function() {
             //Work in progress
             this.removeCssClasses();
             this.stopUpdate();
+            this.editor.renderer.removeScrollMargin(this.scrollMargin);
             this.editor.off('change', this.$diff);
             this.editor.off('change', this.$update);
-            this.editor.off('mousedown', this.$handleMouseDown);
+            this.editor.off('dblclick', this.$handleDoubleClick);
             this.editor.renderer.off('changeCharacterSize', this.$changeCharacterSize);
             this.other.off('changeWrapLimit', this.$decorate);
 
@@ -1769,7 +2075,6 @@
             this.sessions.left.$setFolding(this.foldModes.left.sub);
             this.sessions.right.$setFolding(this.foldModes.right.sub);
             this.clear();
-            this.editor.renderer.setScrollMargin(0);
             this.gutter.setSession(null);
             this.renderer.setSession(null);
             this.gutter.detach();
@@ -1782,36 +2087,22 @@
             }
         }
     };
-    AceInlineDiff.diff = function(editor, value_or_session, options) {
+    AceInlineDiff.diff = function(editor, value_or_session, value_or_options) {
         var prop, isSession;
         value_or_session = value_or_session || "";
-        while ((prop = value_or_session.__proto__)) {
-            if (!prop || prop == Object.prototype) {
-                options = value_or_session;
-                value_or_session = "";
-                if (options.right && (options.right.id || options.right.editor)) {
-                    return AceDiff.diff(editor, null, options);
-                }
-                break;
-            }
-            if (prop == ace.Editor.prototype) {
-                return AceDiff.diff(editor, value_or_session, options);
-            } else if (prop == ace.EditSession.prototype) {
-                isSession = true;
-                break;
-            } else if (prop == String.prototype) {
-                break;
-            }
+        var options;
+        if (typeof value_or_session !== "string") {
+            isSession = true;
         }
-        if (typeof options == 'string') {
+        if (typeof value_or_options == 'string') {
             if (isSession) editor.setSession(value_or_session);
             else editor.setValue(value_or_session);
             options = {
                 right: {
-                    content: options
+                    content: value_or_options
                 }
             };
-        }
+        } else options = value_or_options;
         options = extend(true, {
                 editor: editor,
                 mode: editor.getOption('mode'),
@@ -1824,197 +2115,17 @@
             options);
         return new AceInlineDiff(options);
     };
-
-    //just a poc
-    //AceInlineDiff spawned from acediff just
-    //as acediff3 spawned from acediff
-    //but the two codes have diverged beyond
-    //reconciliation or have they???
-    function AceDiff(options) {
-        this.options = {};
-        extend(true, this.options, AceDiff.defaults, {
-            left: {
-                content: null,
-                session: undefined,
-                editor: undefined,
-            },
-            right: {
-                session: undefined,
-                editor: undefined,
-                content: null,
-                editable: true
-            }
-        }, options);
-        //////////Hacks To Make It Work With Acediff Methods
-        this.editors = {
-            left: {
-                ace: getOption(this, C.EDITOR_LEFT, "editor") || ace.edit(getOption(this, C.EDITOR_LEFT, "id")),
-                markers: [],
-                lineWidgets: []
-            },
-            right: {
-                ace: this.options.right.editor || ace.edit(this.options.right.id),
-                markers: [],
-                lineWidgets: []
-            }
-        };
-        this.pairs = [this];
-        this.left = C.EDITOR_LEFT;
-        this.right = C.EDITOR_RIGHT;
-        ///////////
-
-        this.foldModes = {
-            left: new DiffFoldMode(2, 2),
-            right: new DiffFoldMode(2, 2)
-        };
-        if (this.options.left.session) {
-            this.editors.left.ace.setSession(this.options.right.session);
-        }
-        if (this.options.right.session) {
-            this.editors.right.ace.setSession(this.options.right.session);
-        }
-        this.sessions = {
-            left: createSession(this, C.EDITOR_LEFT, this.editors.left.ace.session),
-            right: createSession(this, C.EDITOR_RIGHT, this.editors.right.ace.session)
-        };
-        setupEditor(this, C.EDITOR_LEFT);
-        setupEditor(this, C.EDITOR_RIGHT);
-
-        //array of equal line segments
-        this.lines = [];
-        this.$decorate = this.decorate.bind(this);
-
-        this.addCssClasses();
-        this.diff();
-        if (this.options.autoupdate) {
-            this.startUpdate();
-        }
-    }
-    AceDiff.prototype = Object.create(AceInlineDiff.prototype);
-    (function() {
-        this.addCssClasses = function() {
-            dom.addCssClass(this.editors.left.ace.renderer.$gutterLayer.element, this.options.classes.gutterRemoved);
-            dom.addCssClass(this.editors.left.ace.renderer.content, this.options.classes.contentRemoved);
-            dom.addCssClass(this.editors.right.ace.renderer.$gutterLayer.element, this.options.classes.gutterAdded);
-            dom.addCssClass(this.editors.right.ace.renderer.content, this.options.classes.contentAdded);
-        };
-        this.removeCssClasses = function() {
-            dom.removeCssClass(this.editors.left.ace.renderer.$gutterLayer.element, this.options.classes.gutterRemoved);
-            dom.removeCssClass(this.editors.left.ace.renderer.content, this.options.classes.contentRemoved);
-            dom.removeCssClass(this.editors.right.ace.renderer.$gutterLayer.element, this.options.classes.gutterAdded);
-            dom.removeCssClass(this.editors.right.ace.renderer.content, this.options.classes.contentAdded);
-        };
-        this.clear = function() {
-            this.foldModes.left.aligns = this.foldModes.right.aligns = this.lines = [];
-            clearLineWidgets(this.editors.left);
-            this.editors.left.markers.forEach(function(marker) {
-                this.sessions.left.removeMarker(marker);
-            }, this);
-            this.editors.right.markers.forEach(function(marker) {
-                this.sessions.right.removeMarker(marker);
-            }, this);
-            clearLineWidgets(this.editors.right);
-            this.editors.left.markers = [];
-            this.editors.right.markers = [];
-
-        };
-        this.destroy = function() {
-            this.clear();
-            this.removeCssClasses();
-            this.stopUpdate();
-        };
-        this.startUpdate = function() {
-            if (!this.$diff) {
-                this.$diff = throttle(this.diff, 1000).bind(this);
-                this.editors.left.ace.on('change', this.$diff);
-                this.editors.right.ace.on('change', this.$diff);
-            }
-        };
-        this.stopUpdate = function() {
-            if (this.$diff) {
-                this.editors.left.ace.off('change', this.$diff);
-                this.editors.right.ace.off('change', this.$diff);
-                this.$diff = null;
-            }
-        };
-        this.destroy = function() {
-            this.removeCssClasses();
-            this.clear();
-            this.stopUpdate();
-        };
-        this.decorate = function() {
-            this.clear();
-            var diffs = this.diffs;
-            var putFragmentsAbove = !this.options.removedFragmentsBelow;
-            var currentClass = this.options.classes.removed;
-            var otherClass = this.options.classes.added;
-            var align = this.lines;
-            var editor = this.editor;
-            var equal = {
-                start: 0,
-                end: 0,
-                mapStart: 0
-            };
-            var eq_start = function(s, m) {
-                equal = {
-                    start: s,
-                    mapStart: m
-                };
-            };
-            var eq_end = function(e) {
-                //if (e != equal.start) {
-                equal.end = e;
-                align.push(equal);
-                //}
-            };
-            diffs.forEach(function(item) {
-                eq_end(item.rightStartLine);
-                eq_start(item.rightEndLine, item.leftEndLine);
-                var heightLeft = item.leftEndLine - item.leftStartLine;
-                var heightRight = item.rightEndLine - item.rightStartLine;
-                if (this.options.alignLines) {
-                    if (heightRight > heightLeft) addLineWidget(this.editors.left, this.sessions.left, putFragmentsAbove ? item.leftStartLine : item.leftEndLine, heightLeft, heightRight);
-                    else if (heightLeft > heightRight) addLineWidget(this.editors.right, this.sessions.right, putFragmentsAbove ? item.rightStartLine : item.rightEndLine, heightRight, heightLeft);
-                }
-                if (item.leftEndLine > item.leftStartLine) {
-                    this.editors.left.markers.push(this.sessions.left.addMarker(new Range(item.leftStartLine, 0, item.leftEndLine - 1, Infinity), currentClass, 'fullLine'));
-                }
-                if (item.rightEndLine > item.rightStartLine) {
-                    this.editors.right.markers.push(this.sessions.right.addMarker(new Range(item.rightStartLine, 0, item.rightEndLine - 1, Infinity), otherClass, 'fullLine'));
-                }
-            }, this);
-            if (!this.editors.left.scrollOffset)
-                this.editors.left.ace.renderer.setScrollMargin(0);
-            if (!this.editors.right.scrollOffset)
-                this.editors.right.ace.renderer.setScrollMargin(0);
-            eq_end(this.sessions.right.getLength());
-            if (this.rawDiffs)
-                showInlineDiffs(this, C.EDITOR_LEFT, C.EDITOR_RIGHT, this.rawDiffs);
-        };
-    }).apply(AceDiff.prototype);
-    AceDiff.diff = function(id, id2, options) {
-        options = extend(true, {
-                left: {
-                    id: id
-                },
-                right: {
-                    id: id2
-                }
-            },
-            options);
-        return new AceDiff(options);
-    };
-    AceDiff.defaults = AceInlineDiff.defaults = {
+    AceInlineDiff.defaults = {
         mode: undefined,
         theme: null,
         diffGranularity: C.DIFF_GRANULARITY_BROAD,
-        showInlineDiffs: true,
         removedFragmentsBelow: false,
-        ignoreWhitespace: true,
+        ignoreWhitespace: 'auto',
         maxDiffs: 5000,
         editable: true,
         autoupdate: true,
         alignLines: false,
+        showInlineDiffs: false,
         editor: undefined,
         id: "diff-editor",
         left: {},
@@ -2034,9 +2145,5 @@
             inline: "acediff-inline"
         }
     };
-    return Object.assign(AceInlineDiff, {
-        One: AceInlineDiff,
-        Two: AceDiff,
-        diffTwo: AceDiff.diff
-    });
+    return AceInlineDiff;
 });

@@ -1,12 +1,6 @@
-define("ace/snippets/prolog",["require","exports","module"], function(require, exports, module) {
-"use strict";
-
-exports.snippetText =undefined;
-exports.scope = "prolog";
-
-});
+ace.define("ace/snippets/prolog",[],function(e,t,n){"use strict";t.snippetText=undefined,t.scope="prolog"});
                 (function() {
-                    window.require(["ace/snippets/prolog"], function(m) {
+                    ace.require(["ace/snippets/prolog"], function(m) {
                         if (typeof module == "object" && typeof exports == "object" && module) {
                             module.exports = m;
                         }

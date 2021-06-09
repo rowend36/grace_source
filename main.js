@@ -1,19 +1,19 @@
 _Define(function(global) {
     "use strict";
+    /*So this basically sets up the application,
+    Mainly is deals with tab navigation
+    */
     var Docs = global.Docs;
     var setBreakpoint = global.Recovery.setBreakpoint;
     var clearBreakpoint = global.Recovery.removeBreakpoint;
     var State = global.State;
     var AutoCloseable = global.AutoCloseable;
     var LinearLayout = global.LinearLayout;
-    var Functions = global.Functions;
     var docs = global.docs;
-    var Doc = global.Doc;
     var Editors = global.Editors;
     var Utils = global.Utils;
     var SettingsDoc = global.SettingsDoc;
     var FileUtils = global.FileUtils;
-    var addDoc = global.addDoc;
     var closeDoc = global.closeDoc;
     var getEditor = global.getEditor;
     var appConfig = global.appConfig;
@@ -27,45 +27,50 @@ _Define(function(global) {
     var DocumentTab = global.DocumentTab;
     var appEvents = global.AppEvents;
     var Navigation = global.Navigation;
+    var register = global.register;
     global.registerAll({
-        "currentTab": null,
-        'disableOptimizedFileBrowser': false,
-        "disableBackButtonTabSwitch": false,
-        "backButtonDelay": "700ms",
-        "enableFloatingRunButton": 'auto',
-        "enableSplits": true,
-        'autoHideTabs': window.innerHeight<500,
-        "enableKeyboardNavigation": Env.isDesktop,
-        "enableGit": true,
-        "inactiveFileDelay": "10s",
+        currentTab: null,
+        disableOptimizedFileBrowser: false,
+        disableBackButtonTabSwitch: false,
+        backButtonDelay: "700ms",
+        enableFloatingRunButton: "auto",
+        enableSplits: window.innerHeight > 700,
+        autoHideTabs: 500,
+        enableKeyboardNavigation: Env.isDesktop,
+        enableGit: true,
+        inactiveFileDelay: "5min",
+        projectConfigFile: "grace.json"
     });
     global.registerValues({
-        "currentTab": "no-user-config",
-        "enableFloatingRunButton": "Values: true,'small','center','auto',false"
+        currentTab: "no-user-config",
+        "autoHideTabs": "Automatically hide tabs when keyboard visible if window height is less than this value in pixels. Set to 0 to disable.",
+        // configFiles: "./.grace.json",
+        "projectConfigFile": " A file which contains configuration relative to project folder. Multiple comma separated files are allowed",
+        enableFloatingRunButton: {
+            "default": 'auto',
+            values: ["true", 'small', 'center', 'auto', false]
+        },
+        inactiveFileDelay: "How long after saving is necessary for a file to be considered inactive for 'Close inactive tabs' menu option"
     });
     var DocsTab;
     setBreakpoint("start-app", function(id, e) {
-        Notify.error("Error During Previous Load!!! Contact Developer");
+        Notify.error("Error During Previous Load!!! If issue persists, contact developer");
+        eruda._entryBtn.show();
     });
-    appEvents.once('app-loaded', function() {
-        clearBreakpoint('start-app');
+    appEvents.once("app-loaded", function() {
+        clearBreakpoint("start-app");
     });
-
     //stateManager
-    if (!Env.isWebView)
-        State.ensure("noexit", true);
+    if (!Env.isWebView) State.ensure("noexit", true);
     State.addListener(function(doc, old, dir) {
         if (DocsTab.getOwner(doc)) {
             //can try to reopen previously closed docs
             if (!appConfig.disableBackButtonTabSwitch && DocsTab.hasTab(doc)) {
-                if (doc != DocsTab.active)
-                    Docs.swapDoc(doc);
+                if (doc != DocsTab.active) Docs.swapDoc(doc);
                 return true;
             }
             return false;
-        } else {
-
-        }
+        } else {}
         switch (doc) {
             case "tabs":
                 return true;
@@ -83,52 +88,49 @@ _Define(function(global) {
                 return true;
         }
     }, function(state) {
-        return (state in ["tabs", "noexit"]) || DocsTab.hasTab(state);
+        return (state == "tabs" || state == "noexit" || DocsTab.hasTab(state));
     });
-
     var lastTab;
 
+
     function swapTab() {
-        if (lastTab < 0)
-            return;
+        if (lastTab < 0) return;
         Docs.swapDoc(lastTab);
     }
-
     var viewRoot, SidenavLeft, Menu;
     global.LayoutCommands = [{
-            name: "toggleFullscreen",
-            bindKey: "F11",
-            exec: function(editor) {
-                Menu.toggle();
-                Menu.$forcedOpen = !Menu.hidden;
-            }
-        }, {
-            name: "swapTabs",
-            bindKey: {
-                win: "Alt-Tab",
-                mac: "Command-Alt-N"
-            },
-            exec: swapTab
+        name: "toggleFullscreen",
+        bindKey: "F11",
+        exec: function(editor) {
+            Menu.toggle();
+            Menu.$forcedOpen = !Menu.hidden;
         },
-
-    ];
+    }, {
+        name: "swapTabs",
+        bindKey: {
+            win: "Alt-Tab",
+            mac: "Command-Alt-N",
+        },
+        exec: swapTab,
+    }, ];
     Editors.addCommands(global.LayoutCommands);
-
     MainMenu.addOption("close", {
         icon: "close",
+        sortIndex: 3,
         caption: "Close",
         childHier: {
             "close-current": {
                 icon: "close",
+                sortIndex: -1,
                 caption: "Close current tab",
                 close: true,
                 onclick: function() {
                     closeTab(global.DocsTab.active);
-                }
+                },
             },
-            "close-others": {
-                icon: "close",
-                caption: "Close all other tabs",
+            "close-except": {
+                icon: "clear_all",
+                caption: "Close others",
                 close: true,
                 onclick: function() {
                     var tab = global.DocsTab;
@@ -137,18 +139,18 @@ _Define(function(global) {
                             closeTab(tab.tabs[i]);
                         }
                     }
-                }
+                },
             },
             "close-all": {
                 icon: "clear_all",
-                caption: "Close all tabs",
+                caption: "Close all",
                 close: true,
                 onclick: function() {
                     var tab = global.DocsTab;
                     for (var i = tab.tabs.length; i-- > 0;) {
                         closeTab(tab.tabs[i]);
                     }
-                }
+                },
             },
             "close-inactive": {
                 icon: "timelapse",
@@ -159,222 +161,43 @@ _Define(function(global) {
                     Utils.asyncForEach(global.DocsTab.tabs.slice(0), function(e, i, n) {
                         n();
                         if (e == global.DocsTab.active || !docs[e] || docs[e].dirty || docs[e].isTemp()) return;
-                        docs[e].getFileServer().stat(docs[e].getSavePath(), function(err, s) {
-                            if (s && s.mtimeMs < inactiveTime && s.size === docs[e].getSize()) {
-                                closeTab(e);
-                            }
-                        });
+                        if (Utils.getCreationDate(docs[e].id) < inactiveTime)
+                            docs[e].getFileServer().stat(docs[e].getSavePath(), function(err, s) {
+                                if (s && s.mtimeMs < inactiveTime && s.size === docs[e].getSize()) {
+                                    closeTab(e);
+                                }
+                            });
                     });
-                }
-            }
-        }
-    });
-
-
-    //ClipBoard
-    var ClipBoard = global.Clipboard;
-    var clipboard = new ClipBoard();
-
-    (function() {
-        var appStorage = global.appStorage;
-        var savedClip = global.getObj('clipboard', []);
-        if (savedClip.length) {
-            clipboard._clip = savedClip;
-        }
-        var copyTextEl;
-        if (!Env.setClipboard) {
-            var setClipExec = function(text, callback) {
-                if (!copyTextEl) {
-                    copyTextEl = document.createElement('textarea');
-                    document.body.appendChild(copyTextEl);
-                } else copyTextEl.style.display = 'block';
-                copyTextEl.value = text;
-                copyTextEl.selectionStart = 0;
-                copyTextEl.selectionEnd = text.length;
-                copyTextEl.style.display = 'none';
-                var release = FocusManager.visit(copyTextEl, true);
-                var result = document.execCommand("copy") ? undefined : {
-                    code: 'EUNKNOWN',
-                    message: 'Failed to write clipboard'
-                };
-                release();
-                callback && callback(result);
-            };
-            var getClipExec = function(callback) {
-                if (!copyTextEl) {
-                    copyTextEl = document.createElement('textarea');
-                    document.body.appendChild(copyTextEl);
-                } else copyTextEl.style.display = 'block';
-                var prev = FocusManager.activeElement;
-                var release = FocusManager.visit(copyTextEl, true);
-                copyTextEl.focus();
-                copyTextEl.value = "";
-                copyTextEl.style.display = 'none';
-                var result = document.execCommand("paste") ? undefined : {
-                    code: 'EUNKNOWN',
-                    message: 'Failed to write clipboard'
-                };
-                release();
-                callback(result, copyTextEl.value);
-            };
-            if (window.navigator && navigator.clipboard) {
-                var readClip = function(callback) {
-                    navigator.clipboard.readText().then(function(text) {
-                        callback(undefined, text);
-                    }).catch(callback);
-                };
-                var writeClip = function(text, callback) {
-                    navigator.clipboard.writeText().then(function() {
-                        callback();
-                    }).catch(callback);
-                };
-                var failCount = 0;
-                Env.getClipboard = function(callback) {
-                    var passed;
-                    readClip(function(e, r) {
-                        if (e) {
-                            if (failCount++ > e.message.indexOf('denied') > 0) {
-                                Env.getClipboard = getClipExec;
-                            }
-                            if (passed === false) callback(e, r);
-                            else passed = false;
-                        } else {
-                            Env.getClipboard = readClip;
-                            if (!passed) {
-                                passed = true;
-                                callback(e, r);
-                            }
-                        }
-                    });
-                    getClipExec(function(e, r) {
-                        if (!e && r) {
-                            if (!passed) {
-                                passed = true;
-                                callback(e, r);
-                            }
-                        } else if (passed === false) callback(e, r);
-                        else passed = false;
-                    });
-                };
-                Env.setClipboard = function(text, callback) {
-                    var passed;
-                    callback = callback || Utils.noop;
-                    writeClip(text, function(e, r) {
-                        if (e) {
-                            if (failCount++ > 3 || e.message.indexOf('denied') > 0) {
-                                Env.setClipboard = setClipExec;
-                            }
-                            if (passed === false) callback(e, r);
-                            else passed = false;
-                        } else {
-                            Env.setClipboard = writeClip;
-                            if (!passed) {
-                                callback(e, r);
-                                passed = true;
-                            }
-                        }
-                    });
-                    setClipExec(text, function(e, r) {
-                        if (!e && r) {
-                            if (!passed) {
-                                passed = true;
-                                callback(e, r);
-                            }
-                        } else if (passed === false) callback(e, r);
-                        else passed = false;
-                    });
-                };
-            } else {
-                Env.setClipboard = setClipExec;
-                Env.getClipboard = getClipExec;
-            }
-        }
-        //todo expose clipboard directly
-        Object.assign(Functions, {
-            "copy": function(e, editor) {
-                clipboard.set(e.text, true);
-            }
-        });
-        clipboard.onchange = Utils.throttle(function(clip) {
-            while (clip.length > 20) {
-                clip.pop();
-            }
-            appStorage.setItem('clipboard', JSON.stringify(clip));
-        }, 40);
-        var BottomList = global.BottomList;
-        var clipboardList = new BottomList('clipboard-list', clipboard._clip);
-        Editors.addCommands([{
-            name: "openClipboard",
-            bindKey: {
-                win: "Ctrl-Shift-V",
-                mac: "Command-Shift-V"
+                },
             },
-            exec: function() {
-                clipboardList.show();
-            }
-        }]);
-        clipboardList.on('select', function(ev) {
-            //remove pasted index
-            if (ev.index && clipboard.get(ev.index) == ev.item) {
-                clipboard.delete(ev.index);
-            }
-            Functions.copy({
-                text: ev.item
-            });
-            getEditor().execCommand("paste", ev.item);
-            clipboardList.hide();
-        });
-
-        var copyFilePath = {
-            caption: 'Copy File Path',
-            onclick: function(ev) {
-                if (ev.filepath && ev.browser.getParent) {
-                    var root = false;
-                    var a = ev.browser.getParent();
-                    while (a && a.rootDir) {
-                        root = a.rootDir;
-                        a = a.getParent();
-                    }
-                    clipboard.text = root ? "./" + FileUtils.relative(root, ev.filepath) : ev.filepath;
-                } else clipboard.text = ev.filepath || ev.rootDir;
-                ev.preventDefault();
-            }
-        };
-        FileUtils.registerOption("files", ["file", "folder"], "copy-file-path", copyFilePath);
-
-    })();
-    SettingsDoc.setEditor(Editors.getSettingsEditor());
-
-
-    function switchTab(id) {
-        if (DocsTab.active == id)
-            return false;
-        lastTab = DocsTab.active;
+        },
+    });
+    //No one chnages tabs while we are triggering event return false instead
+    var switchTab = Utils.guardEntry(function switchTab(id, previousTab) {
+        lastTab = previousTab;
         //apps can set active Docs
-        var handled = appEvents.trigger('changeTab', {
+        var handled = appEvents.trigger("changeTab", {
             oldTab: lastTab,
-            tab: id
+            tab: id,
         }).defaultPrevented;
-        if (!handled) {
-            if (!setDoc(id))
-                return false;
+        if (!(handled || setDoc(id))) {
+            return false;
         }
-        DocsTab.active = id;
+        configure("currentTab", id, "application");
+        //TODO bad api but we can't move state to documemt tab yet
         State.ensure(appConfig.disableBackButtonTabSwitch ? "tabs" : id);
-        configure("currentTab", id);
         return true;
-    }
+    });
 
     function closeTab(id, force) {
         var doc = docs[id];
-        if ((appEvents.trigger('beforeCloseTab', {
+        if (appEvents.trigger("beforeCloseTab", {
                 id: id,
-                doc: doc
-            })).defaultPrevented)
-            return false;
-        var e = appEvents.trigger('closeTab', {
+                doc: doc,
+            }).defaultPrevented) return false;
+        var e = appEvents.trigger("closeTab", {
             id: id,
-            doc: doc
+            doc: doc,
         });
 
         function close() {
@@ -391,32 +214,27 @@ _Define(function(global) {
             return false;
         } else {
             close();
-            return false;
+            return true;
         }
     }
-
-
     Object.defineProperties(window, {
         fs: {
             get: function() {
                 return getActiveDoc().getFileServer();
-            }
+            },
         },
         doc: {
-            get: getActiveDoc
+            get: getActiveDoc,
         },
         editor: {
-            get: getEditor
-        },
-        Clip: {
-            value: clipboard
+            get: getEditor,
         },
         gUtils: {
-            value: Utils
+            value: Utils,
         },
         fUtils: {
-            value: FileUtils
-        }
+            value: FileUtils,
+        },
     });
 
     function bootEditor() {
@@ -424,95 +242,109 @@ _Define(function(global) {
         viewRoot = $("#viewroot")[0];
         var Layout = new LinearLayout($(document.body), window.innerHeight, LinearLayout.VERTICAL);
         Menu = Layout.addChild($("#action_bar"), 56);
-
-        var ViewRoot = Layout.addChild($("#viewroot"), 0, 1);
+        Layout.addChild($("#viewroot"), 0, 1);
+        Layout.addChild($("#status-bar"));
         var margins = {
             marginTop: 0,
-            marginBottom: 0
+            marginBottom: 0,
         };
         ace.Editor.prototype.getPopupMargins = function(isDoc) {
             return isDoc ? {
                 marginTop: 0,
-                marginBottom: margins.marginBottom
+                marginBottom: margins.marginBottom,
             } : margins;
-        }
+        };
+        var emmetExt = ace.require("ace/ext/emmet");
+        emmetExt.load = global.Imports.define(["./libs/js/emmet.js"], null, function(cb) {
+            window.emmet = window.emmetCodeMirror.emmet;
+            cb && cb();
+        });
         Layout.onRender = function() {
             appEvents.trigger("view-change");
             margins.marginTop = parseInt(viewRoot.style.top);
             margins.marginBottom = parseInt(viewRoot.style.bottom) + 50;
-        }
-        MainMenu.createTrigger($('#action_bar .dropdown-trigger')[0]);
+        };
+        MainMenu.createTrigger($("#action_bar .dropdown-trigger")[0]);
         if (window.innerHeight < 105) {
+            //possible layer resize
             var update = function() {
                 if (update) {
                     if (window.innerHeight > 105) {
-                        window.removeEventListener('resize', update);
+                        window.removeEventListener("resize", update);
                     }
                     update = null;
                 }
                 Layout.render();
             };
-            window.addEventListener('resize', update);
+            window.addEventListener("resize", update);
         }
         CharBar.init(Layout);
-        CharBar.setClipboard(clipboard);
-        appEvents.on('changeEditor', function(e) {
+        appEvents.on("changeEditor", function(e) {
             CharBar.setEditor(e.editor);
         });
         Layout.render();
-        if (appConfig.enableKeyboardNavigation)
-            Navigation.attach();
+        if (appConfig.enableKeyboardNavigation) Navigation.attach();
         var AutoComplete = global.Autocomplete;
         var doBlur = AutoComplete.prototype.blurListener;
         AutoComplete.prototype.blurListener = function() {
-            if (FocusManager.activeElement == editor.textInput.getElement())
-                return;
+            if (FocusManager.activeElement == editor.textInput.getElement()) return;
             doBlur.apply(this, arguments);
         };
         appEvents.on("keyboard-change", function(ev) {
             if (ev.isTrusted) {
                 if (!ev.visible) {
                     var a = AutoComplete.for(getEditor());
-                    if (a.activated)
-                        a.detach();
+                    if (a.activated) a.detach();
                 } else {
-                    if(appConfig.autoHideTabs && !Menu.$forcedOpen)
-                        Menu.hide();
-                    document.body.classList.add('virtual-keyboard-visible');
+                    if (appConfig.autoHideTabs && !Menu.$forcedOpen) {
+                        if (window.innerHeight < parseInt(appConfig.autoHideTabs)) Menu.hide();
+                    }
+                    $(document.body).addClass("virtual-keyboard-visible");
                 }
             }
             if (!ev.visible) {
-                if(appConfig.autoHideTabs)
-                    Menu.show();
-                document.body.classList.remove('virtual-keyboard-visible');
+                if (appConfig.autoHideTabs && !Menu.$forcedClose) Menu.show();
+                $(document.body).removeClass("virtual-keyboard-visible");
             }
         });
-        DocsTab = new DocumentTab($("#menu"), $("#opendocs"), $("#status-filename"));
+        global.styleClip($("#status-filename"));
+        DocsTab = new DocumentTab($("#menu"), $("#opendocs"), $("#status-filename").children());
         DocsTab.$hintActiveDoc = setDoc;
-
         FocusManager.trap($("#menu"), true);
+        FocusManager.trap($("#status-filename"), true);
         DocsTab.setSingleTabs(appConfig.singleTabLayout);
         DocsTab.afterClick = switchTab;
         DocsTab.onClose = closeTab;
         var SidenavLeftTab = new PagerTab($("#selector"), $("#side-menu"));
-
+        var toggles = {};
         $(".toggleBelow").click(function(e) {
             e.stopPropagation();
             if ($(this).next().css("display") == "none") {
+                configure(this.id + ":shown", true);
                 $(this).next().show();
                 $(this).children(".material-icons").text("keyboard_arrow_up");
             } else {
+                configure(this.id + ":shown", false);
                 $(this).next().hide();
                 $(this).children(".material-icons").text("keyboard_arrow_down");
             }
+        }).each(function(e, el) {
+            appConfig[el.id + ":shown"] = true;
+            register(el.id + ":shown");
+            toggles[el.id + ":shown"] = "no-user-config";
+            if (!appConfig[el.id + ":shown"]) {
+                el.click();
+            }
         });
+        global.registerValues(toggles);
+        toggles = null;
         //uodate currently push on openstart or dragstart
         var refocus = false;
-        SidenavLeft = new Sidenav($('#side-menu'), {
+        SidenavLeft = new Sidenav($("#side-menu"), {
             draggable: true,
-            edge: 'left',
-            minWidthPush: 400,
-            pushElements: true, //we'll need to scope things to view root first
+            edge: "left",
+            minWidthPush: 600,
+            pushElements: $(".content"),
             onOpenStart: function() {
                 FocusManager.hintChangeFocus();
                 /*if (window.innerWidth < 992) {
@@ -520,21 +352,28 @@ _Define(function(global) {
                 }*/
             },
             onOpenEnd: function() {
-                if (SidenavLeftTab.getActiveTab().attr('href') == "#settings")
-                    SidenavLeftTab.update("#settings");
+                if (SidenavLeftTab.getActiveTab().attr("href") == "#settings") SidenavLeftTab.update("#settings");
                 if (SidenavLeft.isOverlay) {
-                    Navigation.addRoot(SidenavLeft.el, SidenavLeft.close.bind(SidenavLeft));
                     if (!Env.isDesktop) {
-                        refocus = FocusManager.keyboardVisible && FocusManager.activeElement;
-                        if (refocus) refocus.blur();
+                        if (FocusManager.keyboardVisible) {
+                            refocus = FocusManager.activeElement;
+                            if (refocus) {
+                                refocus.blur();
+                            }
+                        } else document.activeElement.blur();
                     }
+                    Navigation.addRoot(SidenavLeft.el, SidenavLeft.close.bind(SidenavLeft));
                     AutoCloseable.add(this.id, SidenavLeft);
                 }
-                FileUtils.trigger('sidenav-open');
+                FileUtils.trigger("sidenav-open");
             },
             onCloseStart: function() {
-                if (FileUtils.activeFileBrowser) {
-                    FileUtils.activeFileBrowser.menu.hide();
+                try {
+                    if (FileUtils.activeFileBrowser) {
+                        FileUtils.activeFileBrowser.menu.hide();
+                    }
+                } catch (e) {
+                    console.error(e);
                 }
             },
             onCloseEnd: function() {
@@ -543,8 +382,11 @@ _Define(function(global) {
                     AutoCloseable.close(this.id);
                 }
                 FileUtils.exitSaveMode();
-                refocus && FocusManager.focusIfKeyboard(refocus, false, true);
-            }
+                if (refocus) {
+                    FocusManager.focusIfKeyboard(refocus, false, true);
+                    refocus = null;
+                }
+            },
         });
         $(".sidenav-trigger").click(SidenavLeft.toggle.bind(SidenavLeft));
         //Tabs
@@ -561,35 +403,26 @@ _Define(function(global) {
         Docs.initialize(DocsTab, currentTab);
         var newDoc;
         if (Docs.numDocs() < 1) {
-            newDoc = new Doc('Welcome to Grace Editor');
-            addDoc(newDoc, "", "", "", null, false);
+            newDoc = Docs.createPlaceHolder("welcome", "Welcome To Grace Editor", {
+                select: false,
+            });
         }
         if (!docs[currentTab]) {
             oldCurrentTab = currentTab;
             currentTab = Object.keys(docs)[0];
         }
-
         //Editor
         Editors.init();
         var editor = Editors.createEditor(viewRoot);
         Editors.setEditor(editor);
-
         //Loaded
         DocsTab.setActive(currentTab, true, true);
-
         if (oldCurrentTab) {
-            configure("currentTab", oldCurrentTab);
+            configure("currentTab", oldCurrentTab, "application");
         }
-        appEvents.triggerForever('app-loaded');
+        appEvents.triggerForever("app-loaded");
         appEvents.on("documents-loaded", function() {
             FileUtils.loadServers();
-            if (newDoc && Docs.numDocs() > 1) {
-                if (newDoc.getValue() == 'Welcome to Grace Editor') {
-                    if (newDoc.getRevision() === 0) {
-                        closeDoc(newDoc.id);
-                    }
-                }
-            }
             Docs.refreshDocs();
         });
     }
@@ -598,29 +431,28 @@ _Define(function(global) {
 _Define(function(global) {
     /*Theming*/
     "use strict";
-    var configEvents = global.configEvents;
+    var configEvents = global.ConfigEvents;
     var appEvents = global.AppEvents;
     var appConfig = global.registerAll({
-        "applicationTheme": "editor",
-        "appFontSize": "medium",
-        "singleTabLayout": false,
+        applicationTheme: "editor",
+        appFontSize: "medium",
+        singleTabLayout: false
     });
     global.registerValues({
-        "applicationTheme": "editor ,classic (needs reload)",
-        "appFontSize": "Font size for UI - small|medium|big",
-        "inactiveFileDelay": "How long after saving is necessary for a file\n to be considered inactive for 'Close inactive tabs' menu option"
+        applicationTheme: "editor , application",
+        appFontSize: "Font size for UI - small|medium|big"
     });
 
     function onChange(ev) {
         switch (ev.config) {
-            case 'applicationTheme':
-                updateTheme($('.editor-primary'), true);
+            case "applicationTheme":
+                updateTheme($(".editor-primary"), true);
                 break;
-            case 'appFontSize':
+            case "appFontSize":
                 switch (ev.newValue) {
-                    case 'small':
-                    case 'medium':
-                    case 'big':
+                    case "small":
+                    case "medium":
+                    case "big":
                         clearClass($(document.body.parentElement), /font$/);
                         document.body.parentElement.className += " " + ev.newValue + "font";
                         break;
@@ -628,40 +460,38 @@ _Define(function(global) {
                         ev.preventDefault();
                 }
                 break;
-            case 'singleTabLayout':
+            case "singleTabLayout":
                 global.DocsTab.setSingleTabs(ev.newValue);
                 break;
         }
     }
     configEvents.on("application", onChange);
     //App Theming
-    appEvents.once('app-loaded', function() {
+    appEvents.once("app-loaded", function() {
         document.body.parentElement.className += " " + appConfig.appFontSize + "font";
-        $('.splash-screen').fadeOut();
+        $(".splash-screen").fadeOut();
         setTimeout(function() {
-            $('.splash-screen').detach();
+            $(".splash-screen").detach();
         }, 700);
     });
-    var themeBlack = ["ace-tomorrow-night-bright", "ace-terminal-theme"];
+    var themeBlack = ["ace-tomorrow-night-bright", "ace-terminal-theme", "ace-vibrant-ink","ace-clouds-midnight","ace-kr-theme","ace-merbivore-soft","ace-ambiance","ace-twilight","ace-merbivore"];
     var theme = {
-        className: 'ace-tm',
-        background: 'white'
+        className: "ace-tm",
+        background: "white",
     };
 
-
     function getStyle(_class) {
-        var div = document.createElement('div');
+        var div = document.createElement("div");
         div.className = _class;
         document.body.appendChild(div);
         var e = window.getComputedStyle(div);
         var f = {
             background: e.background || e.backgroundColor,
             color: e.color,
-            font: e.font || e.fontFamily
+            font: e.font || e.fontFamily,
         };
         div.remove();
         return f;
-
     }
     global.setTheme = function(ace_theme) {
         var style = window.getComputedStyle ? getStyle(ace_theme.cssClass) : null;
@@ -671,9 +501,9 @@ _Define(function(global) {
             style: style,
             color: style && style.color,
             isDark: ace_theme.isDark,
-            isBlack: themeBlack.indexOf(ace_theme.cssClass) > -1
+            isBlack: themeBlack.indexOf(ace_theme.cssClass) > -1,
         };
-        var els = $('.editor-primary');
+        var els = $(".editor-primary");
         updateTheme(els, true);
     };
 
@@ -686,29 +516,36 @@ _Define(function(global) {
     }
 
     function updateTheme(els, added) {
-        if (!added)
-            els.addClass('editor-primary');
+        if (!added) els.addClass("editor-primary");
         var ev = theme;
         clearClass(els, /theme|^ace/);
-        if (ev.isDark) {
-            if (appConfig.applicationTheme == "editor") {
-                els.addClass(ev.className);
-                els.addClass("theme-dark");
-                if (ev.isBlack)
-                    els.addClass("theme-black");
-
-            } else {
-                els.addClass("app-theme-dark");
-                els.addClass("theme-dark");
-            }
+        if (ev.isDark && appConfig.applicationTheme == "editor" && !ev.isBlack) {
+            els.addClass(ev.className);
+            els.addClass("theme-dark");
         } else {
-            els.addClass("app-theme-light");
+            switch (appConfig.applicationTheme) {
+                case "blue-devel":
+                    if(ev.isDark){
+                        els.addClass("theme-dark");
+                        els.addClass("theme-blue-dark");
+                    }
+                    else els.addClass("theme-blue");
+                    /*fall through*/
+                default:
+                    if (ev.isDark){
+                        els.addClass("app-theme-dark");
+                        els.addClass("theme-dark");
+                    }
+                    else
+                        els.addClass("app-theme-light");
+            }
         }
     }
     global.styleCheckbox = function(el) {
-        el = el.find('[type=checkbox]').addClass('checkbox');
+        el = el.find("[type=checkbox]").addClass("checkbox").addClass("filled-in");
         for (var i = 0; i < el.length; i++) {
             var a = el.eq(i);
+            //The styling uses the before element of next span
             if (!a.next().is("span")) a.after("<span></span>");
         }
         el.next().click(function(e) {
@@ -717,8 +554,24 @@ _Define(function(global) {
             e.preventDefault();
         });
     };
+    global.styleClip = function(el) {
+        el = $(el);
+        var all = el.filter(".clipper");
+        all.add(el.find(".clipper")).each(function(i, clipper) {
+            var text = clipper.innerText;
+            clipper.innerText = "";
+            var chunks = [text];
+            var t = chunks.length - 1;
+            chunks.reverse().forEach(function(e, i) {
+                var span = document.createElement('span');
+                span.className = 'clipper-text';
+                span.innerText = (i < t ? "/" : "") + e;
+                clipper.appendChild(span);
+            });
+        });
+    };
     global.watchTheme = updateTheme;
-});
+}); /*_EndDefine*/
 _Define(function(global) {
     "use strict";
     var appEvents = global.AppEvents;
@@ -726,44 +579,37 @@ _Define(function(global) {
     var Functions = global.Functions;
     var Utils = global.Utils;
     var getEditor = global.getEditor;
-    var BootList = new global.BootList(function() {
-        BootList = null;
-        appEvents.triggerForever('fully-loaded');
+    var Imports = new global.Imports(function() {
+        global.BootList = Imports = null;
+        appEvents.triggerForever("fully-loaded");
     });
-    appEvents.on("documents-loaded", BootList.next);
+    global.BootList = Imports;
+    appEvents.on("documents-loaded", Imports.load);
     //material colors
-    BootList.push({
+    Imports.add({
         name: "Material Colors",
-        style: "./libs/css/materialize-colors.css"
+        style: "./libs/css/materialize-colors.css",
     });
-    BootList.push({
+    Imports.add({
         name: "Inbuilt Fonts",
         func: function() {
-            var fonts = [
-                "Courier Prime",
-                "Hack",
-                "JetBrains Mono",
-                "Roboto Mono",
-                "Source Code Pro",
-                "Ubuntu Mono",
-                {
-                    name: "Fira Code",
-                    types: ["Regular", "Bold"],
-                    formats: ["woff", "woff2", "ttf"]
-                },
-                {
-                    name: "Inconsolata",
-                    types: ["Regular", "Bold"]
-                },
-                {
-                    name: "Nova Mono",
-                    types: ["Regular"]
-                },
-                {
-                    name: "PT Mono",
-                    types: ["Regular"]
-                },
-            ];
+            var fonts = ["Anonymous Pro", "Courier Prime", {
+                name: "Fira Code",
+                types: ["Regular", "Bold"],
+                formats: ["woff", "woff2", "ttf"],
+            }, "Hack", {
+                name: "Inconsolata",
+                types: ["Regular", "Bold"],
+            }, "JetBrains Mono", {
+                name: "Roboto Mono",
+                types: ["Regular", "Bold"],
+            }, {
+                name: "PT Mono",
+                types: ["Regular"],
+            }, "Source Code Pro", "Ubuntu Mono", {
+                name: "Nova Mono",
+                types: ["Regular"],
+            }, ];
             /*var Default = {
                 types: ['Regular', 'Bold', 'Italic', 'BoldItalic'],
                 formats: ['ttf']
@@ -808,25 +654,28 @@ font-style: $STYLE;\
             styleEl.innerHTML = cssText;
             document.head.appendChild(styleEl);*/
             global.registerValues({
-                "fontFamily": "Font used by the editor and search results\n" +
-                    "Inbuilt fonts include " + fonts.map(function(e) {
-                        return e.name || e
-                    }).join(", ") + " as well as any System fonts.\n" +
-                    "Warning: If using system fonts, ensure they are monospace fonts to avoid view artifacts"
+                fontFamily: "Font used by the editor and search results. Bundled fonts include " + fonts.map(function(e) {
+                    return e.name || e;
+                }).join(", ") + " as well as any System fonts.\n"
             });
-        }
+        },
     });
-
+    Imports.add("./prefs/linter_options.js", {
+        script: "./document/auto_settings.js"
+    });
     //runManager
-    BootList.push({
-        script: "./libs/js/splits.js"
+    Imports.add({
+        script: "./libs/js/splits.js",
     }, {
-        script: "./ui/splits.js"
+        script: "./ui/splits.js",
     }, {
-        script: "./preview/previewer.js"
+        script: "./preview/previewer.js",
     }, {
         name: "Creating run manager",
-        script: "./preview/modes.js"
+        script: "./preview/modes.js",
+    }, {
+        name: "Enhanced Clipboard",
+        script: "./tools/enhanced_clipboard.js",
     }, {
         func: function() {
             var button = $("#runButton");
@@ -834,32 +683,22 @@ font-style: $STYLE;\
             if (enable) {
                 button.click(Functions.run);
                 switch (enable) {
-                    case 'center':
-                        button.addClass('centerV');
+                    case "center":
+                        button.addClass("centerV");
                         break;
-                    case 'small':
-                        button.removeClass('btn-large');
+                    case "small":
+                        button.removeClass("btn-large");
                         break;
-                    case 'auto':
+                    case "auto":
                         var visible = true;
-                        var hide = Utils.delay(function() {
-                            button.hide();
-                        }, 400);
                         var update = function(ev) {
                             if (ev.visible) {
                                 if (visible && ev.isTrusted) {
-                                    button.stop().animate({
-                                        right: -20,
-                                        opacity: 0
-                                    }, 400, hide);
+                                    button.addClass('slide-out');
                                     visible = false;
                                 }
                             } else if (!visible) {
-                                hide.cancel();
-                                button.stop().show().animate({
-                                    right: 20,
-                                    opacity: 0.5
-                                }, 300);
+                                button.removeClass('slide-out');
                                 visible = true;
                             }
                         };
@@ -868,95 +707,212 @@ font-style: $STYLE;\
             } else {
                 button.detach();
             }
-        }
+        },
     });
-
-    BootList.push("./libs/css/completion.css", "./autocompletion/ui.js", "./autocompletion/base_server.js", {
-        name: "Tags",
-        script: "./autocompletion/tags/tags.js"
+    Imports.add("./libs/css/completion.css", {
+        script: "./ui/overlayMode.js", //dynamic
     }, {
-        script: "./autocompletion/loader.js"
+        script: "./ui/rangeRenderer.js", //dynamuc
+    }, "./autocompletion/ui.js", "./autocompletion/base_server.js", {
+        name: "Tags",
+        script: "./autocompletion/tags/tags.js",
+    }, {
+        script: "./autocompletion/loader.js",
     }, {
         name: "AutoCompletion",
-        script: "./autocompletion/manager.js"
+        script: "./autocompletion/manager.js",
     });
-
-
+    var Overflow = global.Overflow;
     //StatusBar SearchBox
-    BootList.push({
-        name: 'SearchBox and Status',
-        /*Isolated*/ //Looks awful on small splits
+    Imports.add({
+        name: "SearchBox and Status", //Looks awful on small splits
+        /*Isolated*/
         func: function() {
             var getEditor = global.getEditor;
-            var viewRoot = global.viewRoot;
+
+            var updateStatus = Utils.delay(function() {
+                var editor = getEditor();
+                if (editor && editor.commands.recording) {
+                    $("#togglerecording").addClass('blink');
+                } else $("#togglerecording").removeClass('blink');
+            }, 100);
+            var trackStatus = function(e) {
+                (e.editor || e).on('changeStatus', updateStatus);
+            };
+            appEvents.on('changeEditor', updateStatus);
+            appEvents.on('createEditor', trackStatus);
+            global.Editors.forEach(trackStatus);
+            trackStatus = null;
             ace.config.loadModule("ace/ext/searchbox", function(e) {
                 var Searchbox = e.SearchBox;
                 var SearchBox = getEditor().searchBox || new Searchbox(getEditor());
-                // position(SearchBox.element);
+                var lastPosition = 0,
+                    inContent;
+
+                function position(ev) {
+                    var refocus = global.FocusManager.visit(global.FocusManager.activeElement);
+                    if (!ev) {
+                        inContent = false;
+                    }
+                    var el = SearchBox.element;
+                    var y = SearchBox.editor.container;
+                    var t = y.getBoundingClientRect();
+                    // var offset = 0;
+                    if (t.height < 300) {
+                        if (!inContent) {
+                            $(".content")[0].appendChild(SearchBox.element);
+                            inContent = true;
+                        }
+                        var u = $("#viewroot")[0].getBoundingClientRect();
+                        if (t.top - u.top > 100) {
+                            if (lastPosition == 1) return refocus();
+                            lastPosition = 1;
+                            el.style.top = u.top + "px";
+                            el.style.bottom = "auto";
+                            SearchBox.alignContainer(SearchBox.ALIGN_NONE);
+                        } else {
+
+                            if (t.bottom < u.bottom - 100) {
+                                if (lastPosition == 4) return refocus();
+                                lastPosition = 4;
+                                SearchBox.alignContainer(SearchBox.ALIGN_NONE);
+                            } else {
+                                if (lastPosition == 3) return refocus();
+                                lastPosition = 3;
+
+                                SearchBox.alignContainer(SearchBox.ALIGN_BELOW);
+                            }
+                            el.style.bottom = window.innerHeight - u.bottom + "px";
+                            el.style.top = "auto";
+                        }
+                        el.style.right = "auto";
+                        el.style.left = 0;
+                        return refocus();
+                    }
+                    var W = $(".content").width();
+                    var l = 0,
+                        r = 0;
+
+                    if (lastPosition < 5) {
+                        el.style.top = 0;
+                        el.style.bottom = "auto";
+                        lastPosition = 5;
+                    }
+                    if (t.width < 300 ||
+                        (inContent && SearchBox.active)
+                    ) {
+                        if (!inContent) {
+                            $(".content")[0].appendChild(SearchBox.element);
+                            inContent = true;
+                        }
+                        el.style.top = t.top + "px";
+                        lastPosition = 7;
+                    } else {
+                        //avoid jolting changes due to keyboard focus
+                        if (inContent) {
+                            y.appendChild(el);
+                            inContent = false;
+                            el.style.top = 0;
+                        }
+                        l = t.left;
+                        r = W - t.right;
+                        if (l == 0) {
+                            if (lastPosition !== 6)
+                                lastPosition = 6;
+                            else return refocus();
+                        }
+                    }
+                    SearchBox.alignContainer(SearchBox.ALIGN_ABOVE);
+                    var p = Overflow.clipWindow(t, 300, W, false);
+                    if (t[0] == 0 && !inContent) {
+
+                    }
+                    if (p[0] == undefined) {
+                        el.style.right = p[1] - r + "px";
+                        el.style.left = "auto";
+                    } else {
+                        el.style.right = "auto";
+                        el.style.left = p[0] - l + "px";
+                    }
+                    refocus();
+                }
                 ace.config.loadModule("ace/ext/statusbar", function(module) {
                     var Statusbar = module.StatusBar;
-                    var StatusBar = StatusBar || new Statusbar(getEditor(), $("#status-text")[0]);
+                    var StatusBar = StatusBar || new Statusbar(getEditor(), $("#status-bar")[0]);
                     if (SearchBox.editor != getEditor()) {
                         SearchBox.setEditor(e);
-                        // position(SearchBox.element);
                     }
-                    appEvents.on('changeEditor', (function(SearchBox, StatusBar) {
-                        return function(ev) {
-                            var e = ev.editor;
-                            StatusBar.setEditor(e);
-                            StatusBar.updateStatus(e);
-                            SearchBox.setEditor(e);
-                            // position(SearchBox.element);
-                        };
-                    })(SearchBox, StatusBar));
+                    position();
+                    appEvents.on("changeEditor",
+                        (function(SearchBox, StatusBar, position) {
+                            return function(ev) {
+                                var e = ev.editor;
+                                $(e.container).addClass("active_editor");
+                                if (ev.oldEditor) {
+                                    $(ev.oldEditor.container).removeClass("active_editor");
+                                    ev.oldEditor.renderer.off("resize", position);
+                                }
+                                StatusBar.setEditor(e);
+                                StatusBar.updateStatus(e);
+                                SearchBox.setEditor(e);
+                                e.renderer.on("resize", position);
+                                position();
+                            };
+                        })(SearchBox, StatusBar, position));
                 });
             });
-        }
+        },
     });
-
-
     //FileBrowsers
-    BootList.push({
+    Imports.add({
         script: "./libs/js/touchhold.js",
-        ignoreIf: true //use native contextmenu
+        ignoreIf: true, //use native contextmenu
     }, {
         script: "./ui/recycler.js",
-        ignoreIf: appConfig.disableOptimizedFileBrowser
+        ignoreIf: appConfig.disableOptimizedFileBrowser,
     }, {
         script: "./views/fileBrowser.js",
     }, {
         script: "./views/recyclerBrowser.js",
-        ignoreIf: appConfig.disableOptimizedFileBrowser
+        ignoreIf: appConfig.disableOptimizedFileBrowser,
     }, {
         name: "Creating File Browsers",
         func: function() {
             var FileUtils = global.FileUtils;
             //FileBrowsers
-            appEvents.triggerForever('filebrowsers');
+            appEvents.triggerForever("filebrowsers");
             var FileBrowser = global.FileBrowser;
             if (!appConfig.disableOptimizedFileBrowser) {
                 global.FileBrowser = global.RFileBrowser;
             }
             FileUtils.initialize(global.SideView, global.SideViewTabs);
             var Hierarchy = global.RHierarchy || global.Hierarchy;
-
-            var _hierarchy = new Hierarchy("hierarchy", "");
+            var _hierarchy = new Hierarchy($("#hierarchy"), "");
+            _hierarchy.id = "projectView";
             FileUtils.ownChannel("project", _hierarchy, "files");
-            _hierarchy.fileServer = FileUtils.getProject().fileServer;
-            _hierarchy.setRootDir(FileUtils.getProject().rootDir);
-            _hierarchy.rename(_hierarchy.hier[0], FileUtils.getProject().name);
             FileUtils.addBrowser(_hierarchy);
-            FileUtils.on("change-project", function(e) {
-                _hierarchy.fileServer = e.project.fileServer;
-                _hierarchy.setRootDir(e.project.rootDir);
-                _hierarchy.rename(_hierarchy.hier[0], e.project.name);
+
+            function update(e) {
+                var n = e.project.rootDir;
+                if (n == FileUtils.NO_PROJECT) {
+                    _hierarchy.close();
+                } else {
+                    _hierarchy.fileServer = e.project.fileServer;
+                    _hierarchy.setRootDir(n);
+                    _hierarchy.rename(_hierarchy.hier[0], e.project.name);
+                }
+            }
+            update({
+                project: FileUtils.getProject()
             });
+            FileUtils.on("change-project", update);
+            //FileUtils.on("close-project", update);
             //move this to header?
-            //File finding
+            //File finding TODO
             function stopFind() {
-                if ($("#find_file_cancel_btn").text() == 'stop') {
+                if ($("#find_file_cancel_btn").text() == "stop") {
                     _hierarchy.stopFind();
-                    $("#find_file_cancel_btn").text('refresh');
+                    $("#find_file_cancel_btn").text("refresh");
                 } else {
                     _hierarchy.cancelFind();
                 }
@@ -964,28 +920,26 @@ font-style: $STYLE;\
 
             function doFind() {
                 $("#search_text").val() && _hierarchy.findFile($("#search_text").val(), null, function() {
-                    $("#find_file_cancel_btn").text('refresh');
+                    $("#find_file_cancel_btn").text("refresh");
                 });
-                $("#find_file_cancel_btn").text('stop');
+                $("#find_file_cancel_btn").text("stop");
             }
             $("#find_file_btn").click(doFind);
             $("#search_text").change(doFind);
             $("#find_file_cancel_btn").click(stopFind);
-        }
+        },
     });
-
-
     //swiping
-    BootList.push({
+    Imports.add({
         name: "Swipe And Drag",
-        script: "./libs/js/mobile-drag.js"
+        script: "./libs/js/mobile-drag.js",
     }, {
         script: "./libs/js/drag-tabs.js",
     }, {
         script: "./libs/js/hammer.min.js",
-        ignoreIf: false //not quite there yet
+        ignoreIf: false, //not quite there yet
     }, {
-        script: "./libs/js/scroll-behaviour.js"
+        script: "./libs/js/scroll-behaviour.js",
     }, {
         func: function() {
             var SidenavTabs = global.SideViewTabs;
@@ -993,25 +947,34 @@ font-style: $STYLE;\
             var swipeDetector = new Hammer($("#side-menu")[0], {
                 inputClass: Hammer.TouchMouseInput,
                 recognizers: [
-                    [Hammer.Swipe, {
-                        threshold: 3.0,
-                        direction: Hammer.DIRECTION_HORIZONTAL
-                    }]
-                ]
+                    [
+                        Hammer.Swipe, {
+                            threshold: 3.0,
+                            direction: Hammer.DIRECTION_HORIZONTAL,
+                        },
+                    ],
+                ],
             });
             var unChecked = false;
-            swipeDetector.on('hammer.input', function(ev) {
-                if (ev.isFirst) unChecked = true;
+            swipeDetector.on("hammer.input", function(ev) {
+                if (ev.isFirst) {
+                    unChecked = true;
+                    var elt = ev.target;
+                    if (elt.tagName == "INPUT") return swipeDetector.stop();
+                    elt = elt.parentElement;
+                    if (elt && (elt.parentElement && elt.parentElement.id == "selector") || elt.id == 'selector') {
+                        return swipeDetector.stop();
+                    }
+                }
                 if (unChecked) {
                     var el = ev.target;
                     var style;
                     if (ev.velocityX < -0.5) {
                         do {
                             style = window.getComputedStyle(el);
-                            if ((style.overflow == 'scroll' ||
-                                    style.overflow == 'auto' ||
-                                    style.overflowX == 'scroll' ||
-                                    style.overflowX == 'auto') && el.scrollWidth - el.scrollLeft > el.offsetWidth) {
+                            if (
+                                (style.overflow == "scroll" || style.overflow == "auto" || style.overflowX == "scroll" || style
+                                    .overflowX == "auto") && el.scrollWidth - el.scrollLeft > el.offsetWidth) {
                                 return swipeDetector.stop();
                             }
                             el = el.parentElement;
@@ -1020,10 +983,9 @@ font-style: $STYLE;\
                     } else if (ev.velocityX > 0.5) {
                         do {
                             style = window.getComputedStyle(el);
-                            if ((style.overflow == 'scroll' ||
-                                    style.overflow == 'auto' ||
-                                    style.overflowX == 'scroll' ||
-                                    style.overflowX == 'auto') && el.scrollLeft > 0) {
+                            if (
+                                (style.overflow == "scroll" || style.overflow == "auto" || style.overflowX == "scroll" || style
+                                    .overflowX == "auto") && el.scrollLeft > 0) {
                                 return swipeDetector.stop();
                             }
                             el = el.parentElement;
@@ -1032,10 +994,10 @@ font-style: $STYLE;\
                     }
                 }
             });
-            swipeDetector.on('swipeleft', function(ev) {
+            swipeDetector.on("swipeleft", function(ev) {
                 SidenavTabs.goleft();
             });
-            swipeDetector.on('swiperight', function(ev) {
+            swipeDetector.on("swiperight", function(ev) {
                 SidenavTabs.goright();
             });
             window.MobileDragDrop.polyfill({
@@ -1044,57 +1006,53 @@ font-style: $STYLE;\
                 tryFindDraggableTarget: function(event) {
                     var el = event.target;
                     do {
-                        if (el.getAttribute &&
-                            el.getAttribute("draggable") === "true") {
+                        if (el.getAttribute && el.getAttribute("draggable") === "true") {
                             return el;
                         }
                     } while ((el = el.parentNode) && el !== document.body);
                 },
-                dragImageTranslateOverride: MobileDragDrop.scrollBehaviourDragImageTranslateOverride
+                dragImageTranslateOverride: MobileDragDrop.scrollBehaviourDragImageTranslateOverride,
             });
             var dragger = new global.DragTabs($("#menu")[0], {
                 selectors: {
-                    tab: ".tab"
-                }
+                    tab: ".tab",
+                },
             });
-
-            dragger.on('end', function(e) {
+            dragger.on("end", function(e) {
                 if (e.newIndex !== undefined) {
-                    DocsTab.moveTab(e.newIndex, e.dragTab.getAttribute('data-file'));
+                    DocsTab.moveTab(e.newIndex, e.dragTab.getAttribute("data-file"));
                 }
             });
             /*dragger.on('drag', function(e) {
-                //show drag intent
-            });*/
+                      //show drag intent
+                  });*/
             var listDragger = new global.DragList($("#opendocs")[0], {
                 selectors: {
-                    tab: ".file-item"
-                }
+                    tab: ".file-item",
+                },
             });
-            listDragger.on('drag', function(e) {
+            listDragger.on("drag", function(e) {
                 if (e.newIndex !== undefined) {
-                    DocsTab.moveTab(e.newIndex, e.dragTab.getAttribute('data-file'));
+                    DocsTab.moveTab(e.newIndex, e.dragTab.getAttribute("data-file"));
                 }
             });
-        }
+        },
     });
-
     //Split Editors
-    BootList.push({
-        script: "./editor/splitEditors.js",
-        ignoreIf: !appConfig.enableSplits
+    Imports.add({
+        script: "./tools/splitEditors.js",
+        ignoreIf: !appConfig.enableSplits,
     }, {
         name: "Split Editors",
         func: function() {
             global.SplitEditors && global.SplitEditors.init();
-        }
+        },
     });
-
     //Settings Menu
-    BootList.push({
-        script: "./src-min-noconflict/ext-options.js"
+    Imports.add({
+        script: "./src-min-noconflict/ext-options.js",
     }, {
-        script: "./prefs/settings-menu.js"
+        script: "./prefs/settings-menu.js",
     }, {
         name: "Create Settings Menu",
         func: function() {
@@ -1104,67 +1062,65 @@ font-style: $STYLE;\
             function updateSettings() {
                 SettingsPanel.render();
                 //settingsMenu.find('select').formSelect({ dropdownOptions: { height: 300, autoFocus: false } });
-                settingsMenu.find('button').addClass('btn btn-group').parent().addClass("btn-group-container");
+                settingsMenu.find("button").addClass("btn btn-group").parent().addClass("btn-group-container");
                 global.styleCheckbox(settingsMenu);
             }
             global.SideViewTabs["owner-#settings"] = {
-                update: updateSettings
+                update: updateSettings,
             };
-        }
+            $("#settings_tab").show();
+        },
     });
-
     //git
-    BootList.push({
+    Imports.add({
         name: "Git Integration",
         script: "./tools/git/git.js",
-        ignoreIf: !appConfig.enableGit
+        ignoreIf: !appConfig.enableGit,
     });
     //show diff
-    BootList.push("./core/storage/databasestorage.js", {
+    Imports.add("./core/storage/databasestorage.js", {
         name: "Diff Tooling",
-        script: "./tools/diff/diff.js"
+        script: "./tools/diff/diff.js",
     });
     //tools fxmising
-    BootList.push({
+    Imports.add({
         name: "Missing colons",
-        script: "./tools/fix_colons.js"
+        script: "./tools/fix_colons.js", //dynamic
     });
     //keybindings
-    BootList.push({
+    Imports.add({
         name: "Custom Keybindings",
         func: function() {
-            global.restoreBindings(getEditor());
-        }
+            var Editors = global.Editors;
+            Editors.forEach(function(e) {
+                global.restoreBindings(e);
+            });
+            var appEvents = global.AppEvents;
+            appEvents.on("createEditor", global.restoreBindings);
+        },
     });
-
-
     var searchConfig = global.registerAll({
-        "useRecyclerViewForSearchResults": true
+        useRecyclerViewForSearchResults: true,
     }, "search");
     //SearchPanel
-    BootList.push({
+    Imports.add({
         script: "./ui/recycler.js",
-        ignoreIf: searchConfig.useRecyclerViewForSearchResults && !global.RecyclerRenderer
+        ignoreIf: searchConfig.useRecyclerViewForSearchResults && !global.RecyclerRenderer,
     }, {
-        script: "./libs/js/brace-expansion.js"
+        script: "./libs/js/brace-expansion.js", //core
     }, {
-        script: "./search/overlayMode.js"
+        script: "./search/searchList.js", //dynamic
     }, {
-        script: "./search/rangeRenderer.js"
+        script: "./search/searchResults.js", //dynamic
     }, {
-        script: "./search/searchList.js"
+        script: "./search/searchReplace.js", //dynamic
     }, {
-        script: "./search/searchResults.js"
-    }, {
-        script: "./search/searchReplace.js"
-    }, {
-        script: "./views/searchTab.js"
+        script: "./search/searchTab.js",
     }, {
         name: "Creating Search Panel",
         func: function() {
-            var getEditor = global.getEditor;
             var SearchPanel = new global.SearchTab($("#search_container"), $("#searchModal"));
-            SearchPanel.init(Sidenav);
-        }
+            SearchPanel.init(global.SideView);
+        },
     });
-});
+}); /*_EndDefine*/

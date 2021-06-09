@@ -1,6 +1,6 @@
 _Define(function(global) {
-	var Utils = global.Utils;
-	var appStorage = global.appStorage;
+    var Utils = global.Utils;
+    var appStorage = global.appStorage;
     var storages = {};
     var ITEM_LIST = ":L:";
     var ITEM = ":I:";
@@ -8,21 +8,21 @@ _Define(function(global) {
     var JOIN = ",";
     var KEY = ":";
     //truncate the length of a long id
-    
-    function half(id){
-        if(id.length<6)return id;
-        
+
+    function half(id) {
+        if (id.length < 6) return id;
+
         //do a crude hash
-        var sum =33900;
-        for(var i=0;i<id.length;i++){
+        var sum = 33900;
+        for (var i = 0; i < id.length; i++) {
             var char = id.charCodeAt(i);
-            sum+=char*(i+1);
+            sum += char * (i + 1);
         }
-        sum = (sum%67 + sum%23 + sum%11 + sum%2);
-        
+        sum = (sum % 67 + sum % 23 + sum % 11 + sum % 2);
+
         //put a bit of resemblance
-        var _id = id.substring(0,3)+JOIN+sum;
-        
+        var _id = id.substring(0, 3) + JOIN + sum;
+
         return _id;
     }
 
@@ -32,7 +32,8 @@ _Define(function(global) {
         Utils.assert(id.indexOf(JOIN) < 0, BAD_ID + " " + id);
         this._id = half(id);
         //Bad coding
-        Utils.assert(!storages[this._id], storages[this._id]==id?"ID already exists":"Internal error: ID Conflict, contact plugin maintainer");
+        Utils.assert(!storages[this._id], storages[this._id] == id ? "ID already exists" :
+            "Internal error: ID Conflict, contact plugin maintainer");
         storages[this._id] = id;
     }
     Storage.prototype.load = function(onLoadItem, onNoItem, onLostItem) {
@@ -48,15 +49,13 @@ _Define(function(global) {
                 if (state) {
                     this.itemList.push(id);
                     var data = this.itemAdapter.parse(state);
-                    this.setItem(id,data);
-                    onLoadItem && onLoadItem(id,data);
-                }
-                else {
+                    this.setItem(id, data);
+                    onLoadItem && onLoadItem(id, data);
+                } else {
                     onLostItem && onLostItem(id);
                 }
             }
-        }
-        else {
+        } else {
             onNoItem && onNoItem();
         }
     };
@@ -74,9 +73,8 @@ _Define(function(global) {
         this._inTransaction = true;
         try {
             func.apply(ctx);
-        }
-        catch (Exception) {
-
+        } catch (Exception) {
+          //cancel??
         }
         this._inTransaction = before;
         if (before) return;
@@ -105,9 +103,9 @@ _Define(function(global) {
         if (this._inTransaction) this.changedItems[id] = true;
         else {
             try {
-                appStorage.setItem(this._id + ITEM + id, this.itemAdapter.stringify(this.getItem(id)));
-            }
-            catch (e) {
+                appStorage.setItem(this._id + ITEM + id, this.itemAdapter.stringify(this
+                    .getItem(id)));
+            } catch (e) {
                 console.error('Exception while saving:' + e);
             }
         }
@@ -121,30 +119,29 @@ _Define(function(global) {
         this.items[id] = data;
     };
     Storage.prototype.removeItem = function(id) {
-        Utils.assert(this.itemList.indexOf(id) > -1, "Removing item that does not exist");
+        Utils.assert(this.itemList.indexOf(id) > -1,
+            "Removing item that does not exist");
         this.itemList.splice(this.itemList.indexOf(id), 1);
 
         if (this._inTransaction) {
             this.changedItems[id] = false;
-        }
-        else {
+        } else {
             this.persist();
             appStorage.removeItem(this._id + ITEM + id);
         }
     };
     Storage.prototype.createItem = function(id, data) {
-        Utils.assert(this.itemList.indexOf(id) < 0, "Key already exists "+id);
+        Utils.assert(this.itemList.indexOf(id) < 0, "Key already exists " + id);
         Utils.assert(id.indexOf(KEY) < 0, BAD_ID + " " + id);
         Utils.assert(id.indexOf(JOIN) < 0, BAD_ID + " " + id);
         this.itemList.push(id);
         if (this._inTransaction) {
             this.needsPersist = true;
-        }
-        else this.persist();
+        } else this.persist();
         if (data) {
             this.setItem(id, data);
             this.saveItem(id);
         }
     };
     global.DBStorage = Storage;
-});/*_EndDefine*/
+}); /*_EndDefine*/

@@ -37,7 +37,7 @@ _Define(function(global){
                         //clip the ranges first
                         //then overlay tokenizer will not have to worry
                         //about range
-                        intersect = range
+                        intersect = range;
                         break;
                     }
                 }
@@ -115,11 +115,11 @@ _Define(function(global){
                 }
                 else {
                     l1++;
-                    i1 = 0
+                    i1 = 0;
                     token = {
                         type: type,
                         value: a
-                    }
+                    };
                     tokens.push(token);
                     tokens.push.apply(tokens, tokens1.slice(l1));
                     return tokens;
@@ -127,11 +127,11 @@ _Define(function(global){
                 token = {
                     type: type,
                     value: a
-                }
+                };
                 tokens.push(token);
             }
             return tokens;
-        }
+        };
         this.mergeTypes = function(type1, type2) {
             return type1 == type2 ? type1 : type1 + "." + type2;
             /*var types = type1.split(".");
@@ -141,4 +141,4 @@ _Define(function(global){
         };
     }).apply(OverlayTokenizer.prototype);
     global.OverlayTokenizer = OverlayTokenizer;
-})/*_EndDefine*/
+});/*_EndDefine*/

@@ -1,5 +1,5 @@
 _Define(function(global){
-    let candidateSelectors = [
+    var candidateSelectors = [
         'input',
         'select',
         'textarea',
@@ -12,9 +12,9 @@ _Define(function(global){
         'details>summary:first-of-type',
         'details',
     ];
-    let candidateSelector = /* #__PURE__ */ candidateSelectors.join(',');
+    var candidateSelector = /* #__PURE__ */ candidateSelectors.join(',');
 
-    let matches =
+    var matches =
         typeof Element === 'undefined' ?
         function() {} :
         Element.prototype.matches ||
@@ -24,17 +24,17 @@ _Define(function(global){
     function tabbable(el, options) {
         options = options || {};
 
-        let regularTabbables = [];
-        let orderedTabbables = [];
+        var regularTabbables = [];
+        var orderedTabbables = [];
 
-        let candidates = getCandidates(
+        var candidates = getCandidates(
             el,
             options.includeContainer,
             isNodeMatchingSelectorTabbable
         );
 
         candidates.forEach(function(candidate, i) {
-            let candidateTabindex = getTabindex(candidate);
+            var candidateTabindex = getTabindex(candidate);
             if (candidateTabindex === 0) {
                 regularTabbables.push(candidate);
             }
@@ -47,9 +47,9 @@ _Define(function(global){
             }
         });
 
-        let tabbableNodes = orderedTabbables
+        var tabbableNodes = orderedTabbables
             .sort(sortOrderedTabbables)
-            .map((a) => a.node)
+            .map(function(a){return a.node})
             .concat(regularTabbables);
 
         return tabbableNodes;
@@ -58,7 +58,7 @@ _Define(function(global){
     function focusable(el, options) {
         options = options || {};
 
-        let candidates = getCandidates(
+        var candidates = getCandidates(
             el,
             options.includeContainer,
             isNodeMatchingSelectorFocusable
@@ -68,7 +68,7 @@ _Define(function(global){
     }
 
     function getCandidates(el, includeContainer, filter) {
-        let candidates = Array.prototype.slice.apply(
+        var candidates = Array.prototype.slice.apply(
             el.querySelectorAll(candidateSelector)
         );
         if (includeContainer && matches.call(el, candidateSelector)) {
@@ -111,7 +111,7 @@ _Define(function(global){
         return true;
     }
 
-    let focusableCandidateSelector = /* #__PURE__ */ candidateSelectors
+    var focusableCandidateSelector = /* #__PURE__ */ candidateSelectors
         .concat('iframe')
         .join(',');
 
@@ -126,7 +126,7 @@ _Define(function(global){
     }
 
     function getTabindex(node) {
-        let tabindexAttr = parseInt(node.getAttribute('tabindex'), 10);
+        var tabindexAttr = parseInt(node.getAttribute('tabindex'), 10);
 
         if (!isNaN(tabindexAttr)) {
             return tabindexAttr;
@@ -178,7 +178,7 @@ _Define(function(global){
             node.tagName === 'DETAILS' &&
             Array.prototype.slice
             .apply(node.children)
-            .some((child) => child.tagName === 'SUMMARY');
+            .some(function(child) {child.tagName === 'SUMMARY'});
         return r;
     }
 
@@ -191,7 +191,7 @@ _Define(function(global){
     }
 
     function getCheckedRadio(nodes, form) {
-        for (let i = 0; i < nodes.length; i++) {
+        for (var i = 0; i < nodes.length; i++) {
             if (nodes[i].checked && nodes[i].form === form) {
                 return nodes[i];
             }
@@ -203,10 +203,10 @@ _Define(function(global){
             return true;
         }
         var radioScope = node.form || node.ownerDocument;
-        let radioSet = radioScope.querySelectorAll(
+        var radioSet = radioScope.querySelectorAll(
             'input[type="radio"][name="' + node.name + '"]'
         );
-        let checked = getCheckedRadio(radioSet, node.form);
+        var checked = getCheckedRadio(radioSet, node.form);
         return !checked || checked === node;
     }
 
@@ -227,5 +227,5 @@ _Define(function(global){
         return false;
     }
 
-    global.tabbable = { tabbable, focusable, isTabbable, isFocusable,isVisible:isNodeMatchingSelectorTabbable };
-});/*_EndDefine*/
+    global.tabbable = { tabbable:tabbable, focusable:focusable, isTabbable:isTabbable, isFocusable:isFocusable,isVisible:isNodeMatchingSelectorTabbable };
+}); /*_EndDefine*/

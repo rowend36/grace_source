@@ -1,15 +1,49 @@
 _Define(function(global) {
     var UI = global.LspUI;
     var debugCompletions = false;
+    var config = global.registerAll({
+        "jumpToDef": "Alt-.",
+        "rename": "Ctrl-Shift-E",
+        "findRefs": "Ctrl-E",
+        "markPosition": "Alt-M",
+        "showType": "Ctrl-I",
+        "refresh": 'Alt-R',
+        "jumpBack": "Alt-,"
+    }, "keyBindings.intellisense");
+    var Utils = global.Utils;
+    var rebind = Utils.debounce(function() {
+        var editor = global.getEditor();
+        var ts = editor.smartCompleter;
+        if (ts.name) {
+            ts = editor[ts.name] || ts;
+        }
+        if (ts.unbindAceKeys) {
+            ts.unbindAceKeys(editor);
+            for (var i in ts.aceCommands) {
+                ts.aceCommands[i].bindKey = config[i];
+            }
+            ts.bindAceKeys(editor);
+        }
+    }, 30);
+    global.ConfigEvents.on("keyBindings.intellisense", function(ev) {
+        var key = ev.newValue;
+        if (global.validateKey(key)) {
+            rebind();
+        } else {
+            Notify.info('Bad Key string for ' + e.config);
+            ev.preventDefault();
+        }
+    });
 
     function BaseServer(options, iconClass) {
         this.docs = Object.create(null);
         this.options = options || {};
         this.ui = this.options.ui || new UI(null, iconClass);
-        if (!this.options.hasOwnProperty('switchToDoc'))
-            this.options.switchToDoc = function(name, start) {
-                console.log('tern.switchToDoc called but not defined (need to specify this in options to enable jumping between documents). name=' + name + '; start=', start);
-            };
+        if (!this.options.hasOwnProperty('switchToDoc')) this.options.switchToDoc = function(name, start) {
+            console.log(
+                'tern.switchToDoc called but not defined (need to specify this in options to enable jumping between documents). name=' +
+                name + '; start=', start);
+        };
         this.jumpStack = [];
         this.trackChange = this.trackChange.bind(this);
     }
@@ -42,7 +76,8 @@ _Define(function(global) {
             var ts = this;
             this.findRefs(editor, function(r) {
                 if (!r || r.refs.length === 0) {
-                    ts.ui.showError(editor, "Cannot rename as no references were found for this variable");
+                    ts.ui.showError(editor,
+                        "Cannot rename as no references were found for this variable");
                     return;
                 }
                 ts.ui.renameDialog(ts, editor, r);
@@ -69,16 +104,25 @@ _Define(function(global) {
                 ts.goto(editor, pos);
             });
         },
+        getChanges: function(doc) {
+            var changes = doc.changes;
+            doc.changes = null;
+            doc.changed = null;
+            return changes;
+        },
+        invalidateDoc: function(doc) {
+            doc.changed = true;
+            doc.changes = null;
+        },
         trackChange: function(change, session) {
             var data = getDoc(this, session);
-            var changed = data.changes;
             if (data.changes) data.changes.push(change);
             else if (!data.changed) {
+                data.changed = true;
                 data.changes = [change];
             }
-            data.changed = true;
             var argHints = this.cachedArgHints;
-            if (argHints && argHints.doc == doc && cmpPos(argHints.start, _change.to) <= 0) {
+            if (argHints && argHints.doc == doc && cmpPos(argHints.start, change.to) <= 0) {
                 this.cachedArgHints = null;
             }
         },
@@ -103,8 +147,7 @@ _Define(function(global) {
                 }
             } else if (session_or_text.length > this.maxSize) data.doc = "";
             //for now we handle large docs by not loading them
-            if (!data.fragOnly)
-                this.sendDoc(data);
+            if (!data.fragOnly) this.sendDoc(data);
             return (this.docs[name] = data);
         },
         refreshDoc: function(editor, full) {
@@ -113,11 +156,9 @@ _Define(function(global) {
                 this.ui.showInfo(editor, 'Fully refreshed (reloaded current doc and all refs)');
                 return;
             }
-
             var doc = getDoc(this, editor.session);
             //for now we handle large docs by not loading them
-            if (doc.fragOnly)
-                return this.ui.showError(editor, 'Document Too Large');
+            if (doc.fragOnly) return this.ui.showError(editor, 'Document Too Large');
             this.sendDoc(doc);
             this.ui.showInfo(editor, 'Document refreshed');
         },
@@ -127,8 +168,7 @@ _Define(function(global) {
         goto: function(editor, data, cb, keepTips, ignoreClosed) {
             var doc = getDoc(this, editor.session);
             var localDoc = this.docs[data.file];
-            if (ignoreClosed && (!localDoc || typeof(localDoc.doc) == 'string'))
-                return cb();
+            if (ignoreClosed && (!localDoc || typeof(localDoc.doc) == 'string')) return cb();
             moveTo(this, editor, doc, (localDoc && localDoc.doc.getLine) ? localDoc : {
                 name: data.file,
                 doc: localDoc && localDoc.doc //optional if we want to use document res
@@ -147,8 +187,12 @@ _Define(function(global) {
             name = this.normalizeName(name);
             if (this.docs[name].doc.constructor.name != 'String') {
                 this.docs[name].doc.off("change", this.trackChange);
+                this.docs[name].changed = true;
             }
-            this.docs[name].doc = "";
+            this.docs[name] = {
+                doc: "",
+                name: name
+            };
         },
         hasDoc: function(session) {
             return findDoc(this, session);
@@ -179,8 +223,9 @@ _Define(function(global) {
                 if (!doc) return load();
                 if (typeof doc.doc == 'string') {
                     return ts.options.switchToDoc(file, null, null, doc.doc, function() {
-                        if (doc.name != getDoc(ts, editor.session).name)
-                            return cb('SwitchToDoc internal error: expected current document to be - ' + doc.name);
+                        if (doc.name != getDoc(ts, editor.session).name) return cb(
+                            'SwitchToDoc internal error: expected current document to be - ' +
+                            doc.name);
                         else load();
                     });
                 } else {
@@ -194,8 +239,7 @@ _Define(function(global) {
                 if (editor.completer && editor.completer.popup && editor.completer.popup.isOpen) return;
             }
             var ts = this;
-            if(ts.cachedArgHints && ts.cachedArgHints.isClosed)
-                ts.cachedArgHints.isClosed = false;
+            if (ts.cachedArgHints && ts.cachedArgHints.isClosed) ts.cachedArgHints.isClosed = false;
             var cb = function(error, data) {
                 if (error) {
                     if (calledFromCursorActivity) {
@@ -223,7 +267,8 @@ _Define(function(global) {
                     var infoMsg = "Replaced " + result.replaced + " references sucessfully";
                     var errorMsg = "";
                     if (result.replaced != r.refs.length) {
-                        errorMsg = " WARNING! original refs: " + r.refs.length + ", replaced refs: " + result.replaced;
+                        errorMsg = " WARNING! original refs: " + r.refs.length +
+                            ", replaced refs: " + result.replaced;
                     }
                     if (result.errors !== "") {
                         errorMsg += " \n Errors encountered:" + result.errors;
@@ -237,6 +282,7 @@ _Define(function(global) {
             }, r);
         },
         genInfoHtml: function(doc, fromCompletion, fromCursorActivity) {
+            var createToken = this.ui.createToken.bind(this.ui);
             var html = [];
             for (var i in doc.displayParts) {
                 html.push(createToken(doc.displayParts[i]));
@@ -283,12 +329,13 @@ _Define(function(global) {
             return html.join("");
         }
     };
-
-
     var debounce_updateArgHints = null;
 
     function updateArgHints(ts, editor) {
         clearTimeout(debounce_updateArgHints);
+        if (editor.completer && editor.completer.activated) {
+            return ts.ui.closeAllTips();
+        }
         if (ts.functionHintTrigger) {
             var trigger = ts.functionHintTrigger;
             var cursor = editor.getSelectionRange().start;
@@ -335,6 +382,7 @@ _Define(function(global) {
                 cache.start = cache.start || callPos.start;
                 cache.name = cache.name || callPos.name;
                 ts.ui.showArgHints(ts, editor, argpos);
+                if (debugCompletions) console.timeEnd('get definition');
             });
         }
     }
@@ -342,136 +390,141 @@ _Define(function(global) {
     function mergeChange(prev, next) {
         //todo
     }
-
-    function loadExplicitVsRefs(ts, doc) {
-        var isBrowser = window && window.location && window.location.toString().toLowerCase().indexOf('http') === 0;
-
-        var StringtoCheck = "";
-        for (var i = 0; i < doc.getLength(); i++) {
-            var thisLine = doc.getLine(i);
-            if (thisLine.substr(0, 3) === "///") {
-                StringtoCheck += "\n" + thisLine;
-            } else {
-                break; //only top lines may be references
-            }
-        }
-        if (StringtoCheck === '') {
-            return;
-        }
-
-        var re = /(?!\/\/\/\s*?<reference path=")[^"]*/g;
-        var m;
-        var refs = [];
-        while ((m = re.exec(StringtoCheck)) != null) {
-            if (m.index === re.lastIndex) {
-                re.lastIndex++;
-            }
-            var r = m[0].replace('"', '');
-            if (r.toLowerCase().indexOf('reference path') === -1 && r.trim() !== '' && r.toLowerCase().indexOf('/>') === -1) {
-                if (r.toLowerCase().indexOf('vsdoc') === -1) { //dont load vs doc files as they are visual studio xml junk
-                    refs.push(r);
-                }
-            }
-        }
-        var resultMsgEl = document.createElement('span'),
-            addFileDoneCount = 0,
-            addFileDoneCountCompleted = 0;
-        var addFileDone = function(msg, isErr) {
-            addFileDoneCountCompleted++;
-
-            var el = document.createElement('div');
-            el.setAttribute('style', 'font-size:smaller; font-style:italic; color:' + (isErr ? 'red' : 'gray'));
-            el.textContent = msg;
-
-            resultMsgEl.appendChild(el);
-
-            if (addFileDoneCount == addFileDoneCountCompleted) {
-                //ts.ui.tempTooltip(editor, resultMsgEl);
-            }
-        };
-        var ReadFile_AddToTern = function(path) {
-            try {
-                var isFullUrl = path.toLowerCase().indexOf("http") === 0;
-                if (isFullUrl || isBrowser) {
-                    addFileDoneCount++;
-                    var xhr = new XMLHttpRequest();
-                    xhr.open("get", path, true);
-                    xhr.send();
-                    xhr.onreadystatechange = function() {
-                        if (xhr.readyState == 4) {
-                            if (xhr.status == 200) {
-                                console.log('adding web reference: ' + path);
-                                addFileDone('adding web reference: ' + path);
-                                ts.addDoc(path, xhr.responseText, true);
-                            } else {
-                                if (xhr.status == 404) { //not found
-                                    console.log('error adding web reference (not found): ' + path, xhr);
-                                    addFileDone('error adding web reference (not found): ' + path, true);
-                                } else {
-                                    console.log('error adding web reference (unknown error, see xhr): ' + path, xhr);
-                                    addFileDone('error adding web reference (unknown error, see console): ' + path, true);
-                                }
-                            }
-                        }
-                    };
-                } else { //local
-                    addFileDoneCount++;
-                    resolveFilePath(ts, path, function(resolvedPath) {
-                        getFile(ts, resolvedPath, function(err, data) {
-                            if (err || !data) {
-                                console.log('error getting file: ' + resolvedPath, err);
-                                addFileDone('error getting file: ' + resolvedPath + '(see console for details)', true);
-                            } else {
-                                ts.addDoc(resolvedPath, data.toString(), true);
-                                console.log('adding reference: ' + resolvedPath);
-                                addFileDone('adding reference: ' + resolvedPath);
-                            }
-                        });
-                    });
-                }
-            } catch (ex) {
-                console.log('add to tern error; path=' + path);
-                throw ex;
-            }
-        };
-
-        for (var i = 0; i < refs.length; i++) {
-            var thisPath = refs[i];
-            ReadFile_AddToTern(thisPath);
-        }
-    }
-
-    function resolveFilePath(ts, path, cb) {
-        if (ts.options.resolveFilePath) {
-            ts.options.resolveFilePath(path, cb);
-        } else {
-            cb(path); //return original name
-        }
-    }
-
+    // function loadExplicitVsRefs(ts, doc) {
+    //     var isBrowser = window && window.location && window.location.toString()
+    //     .toLowerCase().indexOf('http') === 0;
+    //     var StringtoCheck = "";
+    //     for (var i = 0; i < doc.getLength(); i++) {
+    //         var thisLine = doc.getLine(i);
+    //         if (thisLine.substr(0, 3) === "///") {
+    //             StringtoCheck += "\n" + thisLine;
+    //         } else {
+    //             break; //only top lines may be references
+    //         }
+    //     }
+    //     if (StringtoCheck === '') {
+    //         return;
+    //     }
+    //     var re = /(?!\/\/\/\s*?<reference path=")[^"]*/g;
+    //     var m;
+    //     var refs = [];
+    //     while ((m = re.exec(StringtoCheck)) != null) {
+    //         if (m.index === re.lastIndex) {
+    //             re.lastIndex++;
+    //         }
+    //         var r = m[0].replace('"', '');
+    //         if (r.toLowerCase().indexOf('reference path') === -1 && r.trim() !== '' && r
+    //             .toLowerCase().indexOf('/>') === -1) {
+    //             if (r.toLowerCase().indexOf('vsdoc') === -
+    //                 1) { //dont load vs doc files as they are visual studio xml junk
+    //                 refs.push(r);
+    //             }
+    //         }
+    //     }
+    //     var resultMsgEl = document.createElement('span'),
+    //         addFileDoneCount = 0,
+    //         addFileDoneCountCompleted = 0;
+    //     var addFileDone = function(msg, isErr) {
+    //         addFileDoneCountCompleted++;
+    //         var el = document.createElement('div');
+    //         el.setAttribute('style', 'font-size:smaller; font-style:italic; color:' + (
+    //             isErr ? 'red' : 'gray'));
+    //         el.textContent = msg;
+    //         resultMsgEl.appendChild(el);
+    //         if (addFileDoneCount == addFileDoneCountCompleted) {
+    //             //ts.ui.tempTooltip(editor, resultMsgEl);
+    //         }
+    //     };
+    //     var ReadFile_AddToTern = function(path) {
+    //         try {
+    //             var isFullUrl = path.toLowerCase().indexOf("http") === 0;
+    //             if (isFullUrl || isBrowser) {
+    //                 addFileDoneCount++;
+    //                 var xhr = new XMLHttpRequest();
+    //                 xhr.open("get", path, true);
+    //                 xhr.send();
+    //                 xhr.onreadystatechange = function() {
+    //                     if (xhr.readyState == 4) {
+    //                         if (xhr.status == 200) {
+    //                             console.log('adding web reference: ' + path);
+    //                             addFileDone('adding web reference: ' + path);
+    //                             ts.addDoc(path, xhr.responseText, true);
+    //                         } else {
+    //                             if (xhr.status == 404) { //not found
+    //                                 console.log(
+    //                                     'error adding web reference (not found): ' +
+    //                                     path, xhr);
+    //                                 addFileDone(
+    //                                     'error adding web reference (not found): ' +
+    //                                     path, true);
+    //                             } else {
+    //                                 console.log(
+    //                                     'error adding web reference (unknown error, see xhr): ' +
+    //                                     path, xhr);
+    //                                 addFileDone(
+    //                                     'error adding web reference (unknown error, see console): ' +
+    //                                     path, true);
+    //                             }
+    //                         }
+    //                     }
+    //                 };
+    //             } else { //local
+    //                 addFileDoneCount++;
+    //                 resolveFilePath(ts, path, function(resolvedPath) {
+    //                     getFile(ts, resolvedPath, function(err, data) {
+    //                         if (err || !data) {
+    //                             console.log('error getting file: ' +
+    //                                 resolvedPath, err);
+    //                             addFileDone('error getting file: ' +
+    //                                 resolvedPath +
+    //                                 '(see console for details)',
+    //                                 true);
+    //                         } else {
+    //                             ts.addDoc(resolvedPath, data.toString(),
+    //                                 true);
+    //                             console.log('adding reference: ' +
+    //                                 resolvedPath);
+    //                             addFileDone('adding reference: ' +
+    //                                 resolvedPath);
+    //                         }
+    //                     });
+    //                 });
+    //             }
+    //         } catch (ex) {
+    //             console.log('add to tern error; path=' + path);
+    //             throw ex;
+    //         }
+    //     };
+    //     for (var i = 0; i < refs.length; i++) {
+    //         var thisPath = refs[i];
+    //         ReadFile_AddToTern(thisPath);
+    //     }
+    // }
+    // function resolveFilePath(ts, path, cb) {
+    //     if (ts.options.resolveFilePath) {
+    //         ts.options.resolveFilePath(path, cb);
+    //     } else {
+    //         cb(path); //return original name
+    //     }
+    // }
     function findDoc(ts, session) {
         for (var n in ts.docs) {
             var cur = ts.docs[n];
-            if (cur.doc === session)
-                return cur;
+            if (cur.doc === session) return cur;
         }
         return null;
     }
 
     function getFile(ts, name, cb) {
         var buf = ts.docs[name];
-        if (buf)
-            cb(docValue(ts, buf));
-        else if (ts.options.getFile)
-            ts.options.getFile(name, cb);
+        if (buf) cb(docValue(ts, buf));
+        else if (ts.options.getFile) ts.options.getFile(name, cb);
         else cb(null);
     }
-
 
     function getDoc(ts, session, name) {
         var doc = findDoc(ts, session);
         if (doc) return doc;
-
         if (!name)
             if (ts.options.getFileName) {
                 name = ts.options.getFileName(session);
@@ -491,8 +544,7 @@ _Define(function(global) {
 
     function getCallPos(editor, pos) {
         if (somethingIsSelected(editor)) return;
-        if (!pos)
-            pos = editor.getSelectionRange().start;
+        if (!pos) pos = editor.getSelectionRange().start;
         var iterator = new global.TokenIterator(editor.session, pos.row, pos.column);
         var timeOut = new Date().getTime() + 1000;
         var token = iterator.getCurrentToken();
@@ -500,7 +552,6 @@ _Define(function(global) {
         var maxLine = pos.row - 15;
         var start, numCommas = 0,
             depth = 0;
-
         var end = iterator.getCurrentTokenPosition();
         if (end.row == pos.row && end.column + token.value.length > pos.column) {
             token = {
@@ -524,7 +575,7 @@ _Define(function(global) {
         }
         while (token && iterator.getCurrentTokenRow() > maxLine && time()) {
             type = "." + token.type + ".";
-            if (is('paren')) {
+            if (is('lparen') || is('rparen')) {
                 for (var i = token.value.length - 1; i >= 0; i--) {
                     var ch = token.value[i];
                     if (ch === '}' || ch === ')' || ch === ']') {
@@ -540,12 +591,11 @@ _Define(function(global) {
                             type = name && "." + name.type + ".";
                             if (type && !(is('entity') || is('storage') || is('type'))) {
                                 start = iterator.getCurrentTokenPosition()
-                                if (start)
-                                    return {
-                                        name: name.value,
-                                        start: start,
-                                        argpos: numCommas
-                                    }
+                                if (start) return {
+                                    name: name.value,
+                                    start: start,
+                                    argpos: numCommas
+                                }
                             }
                             return;
                         } else {
@@ -604,7 +654,7 @@ _Define(function(global) {
                     ts.ui.closeAllTips();
                 }
                 //hack for tern relative paths till we fix it
-                ts.options.switchToDoc('/' + doc.name, start, end, doc.doc, span && function(session) {
+                ts.options.switchToDoc(('/' + doc.name).replace("//", "/"), start, end, doc.doc, span && function(session) {
                     start = session.getDocument().indexToPosition(span.start);
                     end = session.getDocument().indexToPosition(span.start + span.length);
                     moveTo(ts, editor, doc, doc, start, end);
@@ -616,8 +666,8 @@ _Define(function(global) {
         }
         var pos = start;
         editor.gotoLine(pos.row, pos.column || 0); //this will make sure that the line is expanded
-        editor.session.unfold(pos); //gotoLine is supposed to unfold but its not working properly.. this ensures it gets unfolded
-
+        editor.session.unfold(
+            pos); //gotoLine is supposed to unfold but its not working properly.. this ensures it gets unfolded
         var sel = editor.session.getSelection();
         sel.setSelectionRange({
             start: start,
@@ -629,7 +679,6 @@ _Define(function(global) {
         //if (!inJavascriptMode(editor)) return false;
         if (somethingIsSelected(editor)) return false;
         if (isInCall(editor)) return false;
-
         var tok = getCurrentToken(editor);
         if (!tok) return; //No token at current location
         if (!tok.start) return; //sometimes this is missing... not sure why but makes it impossible to do what we want
@@ -637,7 +686,6 @@ _Define(function(global) {
         if (tok.type.indexOf('storage.type') !== -1) return false; // could be 'function', which is start of an anon fn
         var nextTok = editor.session.getTokenAt(editor.getSelectionRange().end.row, (tok.start + tok.value.length + 1));
         if (!nextTok || nextTok.value !== "(") return false;
-
         return true;
     }
 
@@ -669,7 +717,6 @@ _Define(function(global) {
             status: "",
             errors: ""
         };
-
         for (var file in perFile) {
             var known = ts.docs[file],
                 chs = perFile[file];
@@ -700,68 +747,67 @@ _Define(function(global) {
     function createCommands(proto, name, prefix) {
         var commands = {};
         prefix = prefix || "";
-        commands.markPos = {
+        commands.markPosition = {
             name: prefix + "MarkPosition",
             exec: function(editor) {
                 editor[name].markPos(editor);
             },
-            bindKey: "Alt-M"
+            bindKey: config.markPosition
         }
         commands.jumpBack = {
             name: prefix + "JumpBack",
             exec: function(editor) {
                 editor[name].jumpBack(editor);
             },
-            bindKey: "Alt-,"
+            bindKey: config.jumpBack
         };
-
-        if (proto.requestDefinition)
-            commands.jumpToDef = {
-                name: prefix + "JumpToDef",
-                exec: function(editor) {
-                    editor[name].jumpToDef(editor);
-                },
-                bindKey: "Alt-."
-            };
-        if (proto.showType)
-            commands.showType = {
-                name: prefix + "ShowType",
-                exec: function(editor) {
-                    editor[name].showType(editor);
-                },
-                bindKey: "Ctrl-I"
-            };
-        if (proto.findRefs)
-            commands.findRefs = {
-                name: prefix + "FindRefs",
-                exec: function(editor) {
-                    editor[name].findRefs(editor);
-                },
-                bindKey: "Ctrl-E"
-            };
-        if (proto.rename)
-            commands.rename = {
-                name: prefix + "Rename",
-                exec: function(editor) {
-                    editor[name].rename(editor);
-                },
-                bindKey: "Ctrl-Shift-E"
-            };
-        if (proto.refresh)
-            commands.refresh = {
-                name: "tsRefresh",
-                exec: function(editor) {
-                    var full = false;
-                    if (editor[name].refreshDocLastCalled != null) {
-                        if (new Date().getTime() - editor.tsServer.refreshDocLastCalled < 1000) { //less than 1 second
-                            full = true;
-                        }
+        if (proto.requestDefinition) commands.jumpToDef = {
+            name: prefix + "JumpToDef",
+            exec: function(editor) {
+                editor[name].jumpToDef(editor);
+            },
+            bindKey: config.jumpToDef
+        };
+        if (proto.showType) commands.showType = {
+            name: prefix + "ShowType",
+            exec: function(editor) {
+                editor[name].showType(editor);
+            },
+            bindKey: config.showType
+        };
+        if (proto.findRefs) commands.findRefs = {
+            name: prefix + "FindRefs",
+            exec: function(editor) {
+                editor[name].findRefs(editor);
+            },
+            bindKey: config.findRefs
+        };
+        if (proto.rename) commands.rename = {
+            name: prefix + "Rename",
+            exec: function(editor) {
+                editor[name].rename(editor);
+            },
+            bindKey: config.rename
+        };
+        if (proto.refresh) commands.refresh = {
+            name: prefix + "Refresh",
+            exec: function(editor) {
+                var full = false;
+                if (editor[name].refreshDocLastCalled != null) {
+                    if (new Date().getTime() - editor.tsServer.refreshDocLastCalled < 1000) { //less than 1 second
+                        full = true;
                     }
-                    editor[name].refreshDocLastCalled = new Date().getTime();
-                    editor[name].refreshDoc(editor, full);
-                },
-                bindKey: "Alt-R"
-            }
+                }
+                editor[name].refreshDocLastCalled = new Date().getTime();
+                editor[name].refreshDoc(editor, full);
+            },
+            bindKey: config.refresh
+        }
+        var noConf = {};
+        for (var i in commands) {
+            noConf[commands[i].name] = "no-user-config";
+        }
+        global.registerValues(noConf, "keyBindings");
         proto.aceCommands = commands;
         return commands;
     }

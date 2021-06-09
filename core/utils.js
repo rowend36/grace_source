@@ -19,7 +19,7 @@ _Define(function(global) {
                     var after = buffer.slice(index, size);
                     return after.concat(before);
                 } else {
-                    return buffer.slice(0, index)
+                    return buffer.slice(0, index);
                 }
             },
             reset: function(obj) {
@@ -35,7 +35,6 @@ _Define(function(global) {
         };
     }
 
-
     function parseList(list_text) {
         var result = [];
         if (list_text) {
@@ -49,8 +48,9 @@ _Define(function(global) {
         return result;
     }
 
-    function genSpaces(amount, sep = " ") {
-        if (amount === 0) return "";
+    function genSpaces(amount, sep) {
+        if (amount <= 0) return "";
+        if (sep === undefined) sep = " ";
         if (amount < 2) return sep;
         return new Array(amount + 1).join(sep);
     }
@@ -68,8 +68,9 @@ _Define(function(global) {
         return arr;
     }
 
-    function print(obj, step = 2) {
+    function print(obj, step) {
         if (!obj) return obj;
+        if (arguments.length == 1) step = 2;
         if (typeof obj == 'number') return obj;
         if (typeof obj == 'string') return '"' + obj + '"';
         if (typeof obj == 'boolean') return '<' + obj + '>';
@@ -109,8 +110,7 @@ _Define(function(global) {
         log = log || window.console.debug;
         include = include || obj;
         for (var i in include) {
-            if (typeof obj[i] == "function" && (!exclude || exclude.indexOf(i) < 0))
-                obj[i] = wrapFunc(obj[i], i, log);
+            if (typeof obj[i] == "function" && (!exclude || exclude.indexOf(i) < 0)) obj[i] = wrapFunc(obj[i], i, log);
         }
     }
     var trackFunc = function(start, end, name, func) {
@@ -132,8 +132,8 @@ _Define(function(global) {
     function track(obj, include, exclude, start, end) {
         include = include || obj;
         for (var i in include) {
-            if (typeof obj[i] == "function" && (!exclude || exclude.indexOf(i) < 0))
-                obj[i] = trackFunc(start, end, i, obj[i]);
+            if (typeof obj[i] == "function" && (!exclude || exclude.indexOf(i) < 0)) obj[i] = trackFunc(start, end, i,
+                obj[i]);
         }
     }
 
@@ -145,10 +145,8 @@ _Define(function(global) {
             Object.assign(prop.prototype, mixins[i].prototype);
         }
         Object.assign(prop.prototype, a);
-        prop.prototype.super = superClass.prototype;
         prop.super = superClass.apply.bind(superClass);
     }
-
 
     function delay(func, wait) {
         //cancellable function
@@ -204,7 +202,7 @@ _Define(function(global) {
 
     function debounce(func, wait) {
         //like delay except each call cancels the previous
-        //useful but op is might be suspended indefinitely
+        //useful but op might be suspended indefinitely
         var timeout;
         return function() {
             var context = this,
@@ -219,6 +217,11 @@ _Define(function(global) {
             timeout = setTimeout(later, wait);
         }
     }
+    /*The most powerful async method ever built*/
+    /*Now spoilt by bad api, a method should have 2-3 arguments, anything longer is a scam*/
+
+    //unfinished can be called multiple times if you are generating results from within the loop, pass true so asyncEach will stop when the last next is called unless it will wait indefinitely for the result
+    var id_ = 6;
 
     function asyncEach(list, each, finish, parallel, unfinished, cancellable) {
         var i = 0;
@@ -229,6 +232,7 @@ _Define(function(global) {
             resume = function(finished) {
                 if (finished) unfinished = false;
                 var a = waiting;
+                parallel += waiting;
                 waiting = 0;
                 while (a--) {
                     next();
@@ -236,26 +240,30 @@ _Define(function(global) {
             }
             waiting = 0;
         }
+        var id = id_++
         if (cancellable) {
             cancel = function(e) {
                 if (!cancelled) {
                     unfinished = false;
                     list = [];
                     cancelled = e || true;
-                    next();
                 }
+                next();
             }
         }
         var next = function() {
             if (i >= list.length) {
-                if (unfinished) {
-                    waiting++;
-                } else if (finish && (--parallel) == 0) {
-                    finish(cancelled);
-                    finish = null;
+                if ((--parallel) == 0 && !unfinished) {
+                    if(finish){
+                        finish(cancelled);
+                        finish = null;
+                    }
                 } else if (parallel < 0) {
-                    console.warn('Counter error: you might be calling next twice or calling both next and cancel');
+                    console.error('Counter error: you might be calling next twice or calling both next and cancel');
+                } else {
+                    waiting++;
                 }
+
             } else {
                 var item = list[i];
                 each(item, i++, next, cancel);
@@ -266,8 +274,74 @@ _Define(function(global) {
         }
         return resume;
     }
+    var tasks;
+    //like throttle but ensures argumnts are not lost
+    function Batch(sleep, wake) {
+        this.tasks = new Array();
+        if (sleep) this.sleepTime = sleep;
+        if (wake) this.wakeTime = wake;
+        this.$execute = _batchExecute.bind(null, this);
+        this.waitUntil = 0;
+    }
+    Batch.prototype.allowSync = true;
+    Batch.prototype.wakeTime = 17;
+    Batch.prototype.sleepTime = 17;
+    Batch.prototype.batchSize = 1;
+    Batch.prototype.batch = function(func) {
+        var self = this;
+        return function() {
+            self.tasks.push({
+                f: func,
+                ctx: this,
+                args: arguments
+            });
+            if (self.timeout) return false;
+            var startT = self.allowSync ? new Date().getTime() : Infinity;
+            if (startT < self.waitUntil) {
+                self.timeout = setTimeout(self.$execute, self.waitUntil - startT);
+                return false;
+            }
+            _batchExecute(self);
+            return true;
+        }
+    }
+    var _batchExecute = function(ctx) {
+        //a simple strategy would be make getter that checks if timeout and difference between waitUntil and currentTIME and uses it to guess running load
+        ctx.timeout = null;
+        var deadline = ctx.wakeTime + new Date().getTime();
+        var batchSize = ctx.batchSize;
+        try {
+            if (deadline > 0)
+                for (var i = 0,
+                        tasks = ctx.tasks,
+                        t = tasks.length; i++ < t;) {
+                    var task = tasks.shift();
+                    //the first task can try to use batchSize to execute a batch of tasks at once
+                    //since ctx.tasks is a public property
+                    task.f.apply(task.ctx, task.args);
+                    if ((i % batchSize) == 0) {
+                        if (new Date().getTime() > deadline) break;
+                        else batchSize += (batchSize >> 1)
+                    }
+                }
+        } finally {
+            //calls this at 1 or two times more than necessary
+            var endT = new Date().getTime();
+            var sleep;
+            if (endT < deadline) {
+                sleep = ctx.sleepTime;
+            } else {
+                sleep = endT - deadline + ctx.sleepTime;
+                ctx.batchSize = (batchSize >> 1) || 1;
+            }
+            ctx.waitUntil = endT + sleep;
+            if (i < t) ctx.timeout = setTimeout(ctx.$execute, sleep);
+        }
+    }
     var toSizeString = function(size, nameType) {
-        var sizes = (nameType == "full" ? ["bytes", "kilobytes", "megabytes", "gigabytes", "terabytes"] : ["bytes", "kb", "Mb", "Gb", "Tb"])
+        var sizes = (nameType == "full" ? ["bytes", "kilobytes", "megabytes", "gigabytes", "terabytes"] : ["bytes",
+            "kb", "Mb", "Gb", "Tb"
+        ])
         var i = 0;
         while (size > 1024) {
             i++;
@@ -284,8 +358,7 @@ _Define(function(global) {
         };
         counter.decrement = function(err, res) {
             count--;
-            if (err)
-                errors.push(err);
+            if (err) errors.push(err);
             if (count === 0 && cb) {
                 if (errors.length < 1) cb();
                 else cb(errors);
@@ -295,8 +368,6 @@ _Define(function(global) {
         };
         return counter;
     }
-
-
     var times = {
         "": 1
     };
@@ -325,7 +396,7 @@ _Define(function(global) {
         }
         return time;
     }
-
+    /*Add all entries in update that are not in original to original*/
     function mergeList(original, update, copy, compare) {
         var list = copy ? original.slice(0) : original;
         var last = 0;
@@ -345,30 +416,135 @@ _Define(function(global) {
         return list;
     }
 
-    function setImmediate(func, args) {
-        setTimeout(func, 0);
+    function setImmediate(func, arg1, arg2) {
+        switch (arguments.length) {
+            case 1:
+                setTimeout(func, 0);
+                break;
+            case 2:
+                setTimeout(func, 0, arg1);
+                break;
+            case 3:
+                setTimeout(func, 0, arg1, arg2);
+                break;
+            case 0:
+                return;
+            default:
+                var args = Array.prototype.slice.call(arguments, 0);
+                args.splice(1, 0, 0);
+                setTimeout.apply(window, args);
+        }
     }
 
-    function createSingleService(func) {
-        var service_ = function() {
-            if (service_.cancel) {
-                service_.cancel();
-                service_.cancel = null;
-            }
-            func.apply(this, arguments);
+    function AbortSignal() {
+        this.aborted = false;
+        this.triggers = [];
+        this.abort = this.control(this._abort.bind(this), false);
+    }
+    AbortSignal.prototype.control = function(func, abortCode) {
+        var self = this;
+        return function() {
+            if (self.aborted) return typeof abortCode == 'function' ? abortCode.apply(this, arguments) :
+                abortCode;
+            return func.apply(this, arguments);
         }
-        service_.cancel = null;
-        return service_;
+    }
+    AbortSignal.prototype._abort = function(cause) {
+        this.aborted = cause || true;
+        var triggers = this.triggers;
+        this.triggers = null;
+        for (var i = triggers.length; i > 0;) {
+            triggers[--i].apply(null, arguments);
+        }
+        return true;
+    }
+    AbortSignal.prototype.notify = function(func) {
+        if (this.aborted) setImmediate(func, [this.aborted]);
+        else if (this.triggers.indexOf(func) < 0) this.triggers.push(func);
+    }
+    AbortSignal.prototype.unNotify = function(func) {
+        var index;
+        if (!this.aborted && (index = this.triggers.indexOf(func)) > -1) this.triggers.splice(index, 1);
+    }
+    AbortSignal.prototype.clear = function() {
+        this.aborted = true;
+        this.triggers = null;
     }
     var id_count = 0;
     global.Utils = {
         CBuffer: CircularBffer,
+        AbortSignal: AbortSignal,
         repeat: genSpaces,
-        single: createSingleService,
+        Batch: Batch,
+        batch: function(func) {
+            return new Batch().batch(func);
+        },
+        guardEntry: function(func, _throw, errorText) {
+            var guard = false;
+            if (arguments.length < 3) errorText = 'Attempt to call' + func.name + ' while a call ongoing ignored'
+            return function() {
+                if (guard) {
+                    var error = new Error(errorText);
+                    if (_throw) throw error;
+                    else {
+                        console.error(error);
+                        return;
+                    }
+                }
+                guard = true;
+                try {
+                    return func.apply(this, arguments);
+                } finally {
+                    guard = false;
+                }
+            }
+        },
+        withTry: function(func, err) {
+            if (arguments.length == 1) err = false;
+            //intentions should be clear when necessary
+            return function() {
+                try {
+                    return func.apply(this, arguments);
+                } catch (e) {
+                    console.error(e);
+                }
+                return err;
+            }
+        },
         noop: function() {},
         assert: function(cond, e) {
             if (!(cond)) throw new Error(e || 'AssertError');
             return true;
+        },
+        eventGroup: function(emit) {
+            var events = [];
+
+            function off() {
+                for (var i in events) {
+                    var e = events[i];
+                    e.t.off ? e.t.off(e.e, e.f) : e.t.removeEventListener(e.e, e.f);
+                }
+            }
+
+            function on(ev, fn, emitter) {
+                emitter = emitter || emit;
+                events.push({
+                    e: ev,
+                    f: fn,
+                    t: emitter
+                });
+                emitter.on ? emitter.on(ev, fn) : emitter.addEventListener(ev, fn);
+            }
+            return {
+                on: on,
+                off: off,
+                once: function(ev, fn, emitter) {
+                    on(ev, function() {
+                        off();
+                        fn.apply(this, arguments);
+                    }, emitter);
+                }
+            }
         },
         genID: function(s) {
             return s + "" + ("" + new Date().getTime()).substring(2) + (((++id_count) % 90) + 10);
@@ -383,7 +559,8 @@ _Define(function(global) {
         },
         print: print,
         inspect: function() {
-            window.console.debug(print.apply(null, arguments.length == 1 || typeof arguments[1] == "number" ? arguments : [arguments]));
+            window.console.debug(print.apply(null, arguments.length == 1 || typeof arguments[1] == "number" ?
+                arguments : [arguments]));
         },
         mergeList: mergeList,
         except: function(l) {
@@ -397,9 +574,14 @@ _Define(function(global) {
                 return !func.apply(this, arguments);
             }
         },
+        plural: function(no, name) {
+            return no + " " + name + (no > 1 ? "s" : "");
+        },
         inherits: extend,
         toChars: function(str) {
-            return Array.prototype.map.call(str, (e, i) => e.charCodeAt(0)).toString();
+            return Array.prototype.map.call(str, function(e, i) {
+                return e.charCodeAt(0)
+            }).toString();
         },
         createCounter: createCounter,
         parseTime: parseTime,

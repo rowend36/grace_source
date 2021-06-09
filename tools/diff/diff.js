@@ -9,9 +9,15 @@ _Define(function(global) {
     var appConfig = global.appConfig;
     var hintDoc = global.DocsTab.$hintActiveDoc;
     var MainMenu = global.MainMenu;
-    var BootList = global.BootList;
+    var Imports = global.Imports;
     var getActiveDoc = global.getActiveDoc;
     
+    var doDiff = Imports.define(["./tools/diff/diff.css", "./tools/diff/ace-inline-diff.js"], function() {
+        doDiff = doDiffLoaded;
+        AceInlineDiff = global.AceInlineDiff;
+        return doDiff;
+    });
+
     var Storage = new global.DBStorage('diff');
     DocsTab.registerPopulator('d', {
         getName: function(id) {
@@ -27,6 +33,9 @@ _Define(function(global) {
         getAnnotations: Utils.noop
     });
 
+    function safeGetPath(doc) {
+        return doc.getSavePath() ? doc.getSavePath().substring(doc.getSavePath().lastIndexOf("/") + 1) : doc.id;
+    }
     Storage.load(
         function(id, ev) {
             if (DocsTab.hasTab(id)) {
@@ -41,19 +50,24 @@ _Define(function(global) {
                             console.error(err);
                             return Storage.removeItem(id);
                         }
-                        doDiff(id, res, doc.getSavePath(), doc.getSavePath().substring(doc.getSavePath().lastIndexOf("/") + 1), doc, true);
+                        doDiff(id, res, doc.getSavePath(), safeGetPath(doc), doc, true);
                     }, true, true);
-                }
-                else {
+                } else if (ev.filepath == 'OLDEST') {
+
+                    var newDoc = doc.fork(true);
+                    newDoc.abortChanges();
+                    res = newDoc.session;
+
+                    doDiff(id, res, doc.getSavePath(), safeGetPath(doc), doc, true);
+                } else {
                     var server = doc.getFileServer();
                     var encoding = doc.getEncoding();
                     server.readFile(doc.getSavePath(), encoding, function(err, res) {
                         if (err) return Storage.removeItem(id);
-                        doDiff(id, res, doc.getSavePath(), doc.getSavePath().substring(doc.getSavePath().lastIndexOf("/") + 1), doc, appConfig.currentTab == id);
+                        doDiff(id, res, doc.getSavePath(), safeGetPath(doc), doc, appConfig.currentTab == id);
                     });
                 }
-            }
-            else {
+            } else {
                 Storage.removeItem(id);
             }
         },
@@ -65,19 +79,15 @@ _Define(function(global) {
     if (Storage.itemList.length)
         DocsTab.recreate();
 
-    var doDiff = BootList.define(["./tools/diff/diff.css", "./tools/diff/ace-inline-diff2.js"], function() {
-        doDiff = doDiffLoaded;
-        AceInlineDiff = global.AceInlineDiff;
-        return doDiff;
-    });
-
     function doDiffLoaded(windowId, res, filepath, filename, doc, newWindow) {
         function close() {
             Storage.removeItem(windowId);
             differ.destroy();
-            Docs.closeSession(session);
-            editor.setSession(null);
             Editors.closeEditor(editor);
+            if(typeof res!="string"){
+                Docs.closeSession(session);//just in case
+                res.destroy();
+            }
         }
         var diffWindow = Editors.getEditorWindow(windowId, filename, null, close, doc.id || null);
         var c = diffWindow.onEnter;
@@ -98,17 +108,18 @@ _Define(function(global) {
         var session = doc.cloneSession();
         editor.setSession(session);
         var differ = AceInlineDiff.diff(editor, res, {
-            editable: true || doc.isReadOnly(),
+            editable: true,//!doc.isReadOnly(),
             autoupdate: newWindow,
-            showInlineDiffs: true
+            showInlineDiffs: true,
+            onClick: res.getValue?'swap':'copy'
         });
-        editor.session.foldAll();
+        editor.execCommand("foldToLevel1");
         differ.goNextDiff(editor);
         if (newWindow)
             diffWindow.setActive();
     }
     var diskOption = {
-        caption: 'Show changes from disk',
+        caption: 'Show diff from disk',
         onclick: function() {
             var doc = getActiveDoc();
             if (!doc) return;
@@ -124,12 +135,31 @@ _Define(function(global) {
                     docId: doc.id
                 };
                 Storage.createItem(id, ev);
-                doDiff(id, res, doc.getSavePath(), doc.getSavePath().substring(doc.getSavePath().lastIndexOf("/") + 1), doc, true);
+                doDiff(id, res, doc.getSavePath(), safeGetPath(doc), doc, true);
             }, true, true);
         }
     };
+    var undoOption = {
+        caption: 'Show changes since opened',
+        onclick: function() {
+            var doc = getActiveDoc();
+            if (!doc) return;
+            var newDoc = doc.fork(true);
+            newDoc.abortChanges();
+            res = newDoc.session;
+            var id = Utils.genID("d");
+            Docs.tempSave(doc.id);
+            Docs.persist();
+            var ev = {
+                filepath: 'OLDEST',
+                docId: doc.id
+            };
+            Storage.createItem(id, ev);
+            doDiff(id, res, doc.getSavePath(), safeGetPath(doc), doc, true);
+        }
+    };
     var fileOption = {
-        caption: 'Show Changes from file',
+        caption: 'Show diff from file',
         onclick: function() {
             var doc = getActiveDoc();
             if (!doc) return;
@@ -144,13 +174,18 @@ _Define(function(global) {
                     ev = FileUtils.freezeEvent(ev);
                     ev.docId = doc.id;
                     Storage.createItem(id, ev);
-                    doDiff(id, res, doc.getSavePath(), doc.getSavePath().substring(doc.getSavePath().lastIndexOf("/") + 1), doc, true);
+                    doDiff(id, res, doc.getSavePath(), safeGetPath(doc), doc, true);
                 }, true, true);
             });
         }
     };
-    MainMenu.extendOption('tooling', {
-        "diff-disk": diskOption,
-        "diff-file": fileOption
+    MainMenu.extendOption('diff', {
+        icon: "swap_horiz",
+        caption: "Diff",
+        childHier: {
+            "diff-disk": diskOption,
+            "diff-file": fileOption,
+            "diff-undo": undoOption
+        }
     });
-})/*_EndDefine*/
+}) /*_EndDefine*/

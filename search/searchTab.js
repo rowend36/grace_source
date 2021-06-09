@@ -2,12 +2,13 @@ _Define(function(global) {
     "use strict";
     var configure = global.configure;
     var appConfig = global.registerAll({
-        "searchTabFilter": "",
+        "searchTabFilter": "**",
         "searchTabExclude": "**/.*git/",
         "searchOpenDocs": true,
         'maxSingleSearchTimeout': "2s",
         'searchTimeout': "30s",
         'searchThreshold': 200,
+        "matchBaseName": false,
         'useSearchWorker': false,
         'lastSearch': "",
         'lastSearchOpts': 0,
@@ -16,6 +17,7 @@ _Define(function(global) {
     }, "search");
     global.registerValues({
         "searchThreshold": "Maximum number of results to get at a go before pausing",
+        "matchBaseName": "Allows globs to match basenames. When enabled, it allows *.ext to match a/b/a.ext. Normally that would require **\\/*.ext. If using this option, ensure you update searchTabExclude so as not to slow down searches traversing unneeded directories",
         "searchTimeout": "Controls how long search continues before giving up",
         "lastSearch": "no-user-config",
         "lastSearchOpts": "no-user-config",
@@ -45,34 +47,26 @@ _Define(function(global) {
     var genQuickFilter = FileUtils.genQuickFilter;
     var SearchResults = global.SearchResults;
     var SearchReplace = global.SearchReplace;
-    
     var Doc = global.Doc;
     var SearchTab = function(el) {
         var self = this;
         var project;
         this.search = new(ace.require("ace/search").Search)();
-
         this.regExpOption = el.find("#toggleRegex");
         this.caseSensitiveOption = el.find("#caseSensitive");
         this.wholeWordOption = el.find("#toggleWholeWord");
         appConfig.lastSearchOpts = parseInt(appConfig.lastSearchOpts);
-        if (appConfig.lastSearchOpts & 4)
-            this.regExpOption.addClass('checked');
-        if (appConfig.lastSearchOpts & 2)
-            this.caseSensitiveOption.addClass('checked');
-        if (appConfig.lastSearchOpts & 1)
-            this.wholeWordOption.addClass('checked');
+        if (appConfig.lastSearchOpts & 4) this.regExpOption.addClass('checked');
+        if (appConfig.lastSearchOpts & 2) this.caseSensitiveOption.addClass('checked');
+        if (appConfig.lastSearchOpts & 1) this.wholeWordOption.addClass('checked');
         this.searchInput = el.find("#searchInput");
         this.replaceInput = el.find("#replaceInput");
         this.searchInput[0].value = appConfig.lastSearch;
-
-
         var moreEl = el.find("#showMoreResults");
         var loadEl = el.find("#loading");
         var stopBtn = loadEl.children(".red");
         var undoButton = $("#undoReplaceBtn");
         var searchInfo = el.find('#searchInfo');
-
         undoButton.hide();
         var searchInFolder = this.searchInFolder = function(folder, server) {
             project = {
@@ -92,26 +86,25 @@ _Define(function(global) {
             configure("searchOpenDocs", false, "search");
         };
         var quickFilter, includeFilter, excludeFilter;
-        var filterFiles = function(i, path) {
-            var rel = relative(project.rootDir, path + i);
+        var filterFiles = function(name, path) {
+            var rel = relative(project.rootDir, path + name);
             var isDirectory = FileUtils.isDirectory(rel);
-            return (isDirectory ?
-                    quickFilter.test(rel) :
-                    (!includeFilter || includeFilter.test(rel))) &&
-                !(excludeFilter && excludeFilter.test(rel));
+            if (appConfig.matchBaseName) {
+                return (isDirectory || (!includeFilter || includeFilter.test(name) || includeFilter.test(rel))) && !(
+                    excludeFilter && (excludeFilter.test(name) || excludeFilter.test(rel)));
+            }
+            return (isDirectory ? quickFilter.test(rel) : (!includeFilter || includeFilter.test(rel))) && !(
+                excludeFilter && excludeFilter.test(rel));
         };
-
         var init = this.init = function() {
             var project = FileUtils.getProject();
             if (project.fileServer) {
                 searchInFolder(project.rootDir, project.fileServer);
             }
-            includeFilter = globToRegex(appConfig.searchTabFilter);
+            includeFilter = appConfig.searchTabFilter && globToRegex(appConfig.searchTabFilter);
             quickFilter = genQuickFilter(appConfig.searchTabFilter);
             excludeFilter = globToRegex(appConfig.searchTabExclude);
         };
-
-
         //region modal
         var filterInput, excludeInput, modalEl, searchInTabs;
         var openModal = function() {
@@ -121,20 +114,21 @@ _Define(function(global) {
             }
             if (!modalEl) {
                 modalEl = createModal(self);
-                self.previewBrowser = new Hierarchy(modalEl.find(".fileview"), project.rootDir, project.fileServer);
+                self.previewBrowser = new Hierarchy(modalEl.find(".fileview"), project.rootDir, project
+                    .fileServer);
                 self.previewBrowser.setRootDir(project.rootDir);
                 self.previewBrowser.folderDropdown = "search-dropdown";
                 self.previewBrowser.childFolderDropdown = "search-dropdown";
                 self.previewBrowser.fileDropdown = "search-file-dropdown";
                 self.previewBrowser.foldersToIgnore = [];
                 self.previewBrowser.menuItems = {
-                    "search-dropdown": Object.create(self.previewBrowser.menuItems[self.previewBrowser.nestedFolderDropdown]),
-                    "search-file-dropdown": Object.create(self.previewBrowser.menuItems[self.previewBrowser.nestedFileDropdown])
+                    "search-dropdown": Object.create(self.previewBrowser.menuItems[self.previewBrowser
+                        .nestedFolderDropdown]),
+                    "search-file-dropdown": Object.create(self.previewBrowser.menuItems[self.previewBrowser
+                        .nestedFileDropdown])
                 };
-
                 filterInput = modalEl.find("#filterInput");
                 excludeInput = modalEl.find("#excludeInput");
-
                 filterInput.on("input", updatePreview);
                 excludeInput.on("input", updatePreview);
                 searchInTabs = modalEl.find("#includeOpenDocs")[0];
@@ -160,8 +154,7 @@ _Define(function(global) {
                         if (FileUtils.activeFileBrowser) {
                             FileUtils.activeFileBrowser.menu.hide();
                         }
-                        if (self.SearchList)
-                            self.SearchList.reset(true);
+                        if (self.SearchList) self.SearchList.reset(true);
                         self.previewBrowser.inFilter && self.previewBrowser.stopFind();
                     },
                     onOpenEnd: AutoCloseable.onOpenEnd,
@@ -173,7 +166,6 @@ _Define(function(global) {
             searchInTabs.checked = appConfig.searchOpenDocs;
             filterInput.val(appConfig.searchTabFilter);
             excludeInput.val(appConfig.searchTabExclude);
-
             if (appConfig.searchOpenDocs) {
                 self.previewBrowser.stub.hide();
             } else {
@@ -183,11 +175,10 @@ _Define(function(global) {
         };
         var updateTimeout;
         var updatePreview = function(ev) {
-            if (appConfig.searchOpenDocs)
-                return;
+            if (appConfig.searchOpenDocs) return;
             if (this == filterInput[0]) {
                 configure("searchTabFilter", $(this).val(), "search");
-                includeFilter = globToRegex(appConfig.searchTabFilter);
+                includeFilter = appConfig.searchTabFilter && globToRegex(appConfig.searchTabFilter);
                 quickFilter = genQuickFilter(appConfig.searchTabFilter);
             } else if (this == excludeInput[0]) {
                 excludeFilter = globToRegex($(this).val());
@@ -203,10 +194,8 @@ _Define(function(global) {
             }, 2000);
         };
         //endregion
-
         //region search
         var searchTimeout;
-
         var beginSearch = function(filename, useServer) {
             var doc = Docs.forPath(filename, (useServer === false) ? undefined : (project && project.fileServer));
             if (doc) {
@@ -217,29 +206,25 @@ _Define(function(global) {
                 }
                 possibleNewSearch();
                 renderResults(doc, ranges);
-            } else
-                (useWorker ? workerSearch : asyncSearch)(filename, project.fileServer, currentTimeout, searchId);
+            } else(useWorker ? workerSearch : asyncSearch)(filename, project.fileServer, currentTimeout,
+            searchId);
         };
-
         var empty = function() {
             lastResult = true;
             showSearchStopped();
         };
-
         var lastResult, currentTimeout,
             searching, searchedDocs = [];
-        var found, oldFound;
+        var found, targetFinds;
         var searchId = 0;
         var find = function() {
             searchId += 1;
             searching = 0;
             lastResult = false;
             found = 0;
-            oldFound = appConfig.searchThreshold;
-            var opts = (self.regExpOption.hasClass("checked") ? 4 : 0) +
-                (self.caseSensitiveOption.hasClass("checked") ? 2 : 0) +
-                (self.wholeWordOption.hasClass("checked") ? 1 : 0);
-
+            targetFinds = parseInt(appConfig.searchThreshold);
+            var opts = (self.regExpOption.hasClass("checked") ? 4 : 0) + (self.caseSensitiveOption.hasClass(
+                "checked") ? 2 : 0) + (self.wholeWordOption.hasClass("checked") ? 1 : 0);
             self.search.setOptions({
                 needle: self.searchInput.val(),
                 wrap: false,
@@ -248,13 +233,20 @@ _Define(function(global) {
                 wholeWord: opts & 1,
             });
             searchResults.clear();
+            searchedDocs.length = 0;
+            searchInfo.text("");
+            try{
+                self.search.$assembleRegExp(self.search.$options);
+            }
+            catch(e){
+               showSearchStarted();
+               return showSearching(" ","<span class='red-text'>"+e.message+"</span>");
+            }
             useWorker = appConfig.useSearchWorker;
             configure("lastSearch", self.searchInput.val(), "search");
             configure("lastSearchOpts", opts, "search");
             searchTimeout = Utils.parseTime(appConfig.searchTimeout);
             showSearchStarted();
-            searchedDocs.length = 0;
-            searchInfo.text("");
             if (!project || appConfig.searchOpenDocs) {
                 lastResult = true;
                 for (var doc in docs) {
@@ -269,6 +261,7 @@ _Define(function(global) {
                     var server = new FindFileServer(project.fileServer);
                     server.setFilter(filterFiles);
                     self.SearchList = new SearchList(rootDir, server);
+                    self.SearchList.onDir = onDir;
                     self.rootDir = rootDir;
                 }
                 self.SearchList.reset();
@@ -280,7 +273,7 @@ _Define(function(global) {
             }
         };
         var moreResults = function() {
-            oldFound = found + appConfig.searchThreshold;
+            targetFinds = found + appConfig.searchThreshold;
             currentTimeout = new Date().getTime() + searchTimeout;
             for (var i = 0; i < 10; i++) {
                 searching++;
@@ -289,11 +282,8 @@ _Define(function(global) {
             showSearchStarted();
             showSearching(null, "Finding files");
         };
-
         //endregion
-
         //region replace
-
         var searchResults = new SearchResults(el.children("#searchResults"), useRecycler);
         searchResults.afterLineClicked = function() {
             getEditor().session.highlight(self.search.getOptions().re);
@@ -340,13 +330,14 @@ _Define(function(global) {
             //todo handle when a single range is too long
             if (ranges && ranges.length > 0) {
                 found += ranges.length;
-                searchInfo.text('Found ' + found + ' results in ' + plural(searchedDocs.length,'file'));
+                searchInfo.text('Found ' + found + ' results in ' + plural(searchedDocs.length, 'file'));
                 searchResults.render(doc, ranges);
             }
         }
 
         function possibleNewSearch() {
-            if (searching && searching < (useWorker ? 5 : 2) && found < oldFound && new Date().getTime() < currentTimeout) {
+            if (searching && searching < (useWorker ? 5 : 2) && found < targetFinds && new Date().getTime() <
+                currentTimeout) {
                 searching++;
                 self.SearchList.getNext(beginSearch, empty);
             }
@@ -356,8 +347,7 @@ _Define(function(global) {
         function clearDocs(e) {
             for (var i in docs) {
                 if (docs[i].searchWillClear) {
-                    if (docs[i].bound)
-                        docs[i].searchWillClear = false;
+                    if (docs[i].bound) docs[i].searchWillClear = false;
                     else closeDoc(i);
                 }
             }
@@ -389,9 +379,7 @@ _Define(function(global) {
                     }
                     possibleNewSearch();
                     renderResults(doc, ranges);
-                    if (doc.searchWillClear && !doc.bound)
-                        closeDoc(doc.id);
-
+                    if (doc.searchWillClear && !doc.bound) closeDoc(doc.id);
                     break;
                 case 'getFile':
                     searchWorker.postMessage({
@@ -401,17 +389,18 @@ _Define(function(global) {
                         path: doc.getSavePath()
                     });
             }
-
         }
 
         function workerSearch(path, fileServer, timeout, id) {
             searchWorker = searchWorker || createSearchWorker(handleResult, clearDocs);
             terminate();
-
             var callback = function(doc, ck, clear) {
                 if (!doc) {
-                    if (ck == "binary")
+                    if (ck == "binary" && lastWarned!=id){
                         Notify.error('Unable to open binary file');
+                        lastWarned = id;
+                    }
+                    else Notify.error("Error Reading "+path);
                     possibleNewSearch();
                     renderResults();
                     return;
@@ -424,7 +413,6 @@ _Define(function(global) {
                     len: doc.getSize(),
                     path: doc.getSavePath()
                 });
-
                 if (!clear) {
                     if (appConfig.syntaxHighlightSearchResults) {
                         mode = global.modelist.getModeForPath(path).mode;
@@ -437,7 +425,7 @@ _Define(function(global) {
             if (has) callback(has, null, true);
             FileUtils.getDoc(path, fileServer, callback);
         }
-
+        var lastWarned = -1;
         function asyncSearch(path, fileServer, timeout, id) {
             if (id != searchId) return;
             var doc;
@@ -455,7 +443,10 @@ _Define(function(global) {
                 return;
             }
             if (FileUtils.isBinaryFile(path)) {
+                if(lastWarned != id){
                 Notify.error('Unable to open binary file');
+                lastWarned = id;
+                }
                 possibleNewSearch();
                 renderResults();
                 return;
@@ -491,7 +482,6 @@ _Define(function(global) {
                 }
                 closeDoc(doc.id);
             });
-
         }
         /*done|running|paused*/
         var showSearchPaused = function() {
@@ -499,11 +489,18 @@ _Define(function(global) {
             moreEl.attr('disabled', false);
             moreEl.show();
         };
-        var showSearching = function(name, status) {
-            status = status + ' ' + (name || ' ....');
-            status = '<li class=clipper >' + status + '</li>';
-            loadEl.children().eq(0).html(status);
+        var onDir = function(dir){
+            showSearching(dir||"","Iterating ");
         };
+        var dot = 0;
+        var showSearching = Utils.delay(function(name, status) {
+            dot = (dot+1)%4;
+            var path  = (name || ' .'+Utils.repeat(dot,"."));
+            path = '<li class=clipper >' + path + '</li>';
+            loadEl.children().eq(0).html(status);
+            loadEl.children().eq(1).html(path);
+            global.styleClip(loadEl.children().eq(1));
+        },30);
         var showSearchStarted = function() {
             moreEl.attr('disabled', true);
             loadEl.show();
@@ -515,13 +512,10 @@ _Define(function(global) {
         var stopSearch = function() {
             searchId += 1;
             searching = 0;
-            if (self.SearchList)
-                self.SearchList.waiting = [];
+            if (self.SearchList) self.SearchList.waiting = [];
             showSearchStopped();
             clearDocs();
         };
-
-
         undoButton.click(undoReplace);
         el.find("#searchConfig").click(openModal);
         el.find(".ace_search_options").children().click(function() {
@@ -530,10 +524,8 @@ _Define(function(global) {
         this.find = find;
         this.moreResults = moreResults;
         this.beginSearch = beginSearch;
-
         moreEl.click(moreResults);
         stopBtn.click(stopSearch);
-
         el.find("#toggleReplace").click(function() {
             if (el.hasClass("show_replace")) {
                 el.removeClass('show_replace');
@@ -559,7 +551,6 @@ _Define(function(global) {
         bind("#searchInput", "#searchBtn", find);
         bind("#replaceInput", "#replaceBtn", replace);
         bind = null;
-
         FileUtils.on('change-project', function(e) {
             searchInFolder(e.project.rootDir, e.project.fileServer);
         });
@@ -567,29 +558,26 @@ _Define(function(global) {
             id: "search-in-folder",
             caption: "Search In Folder",
             onclick: function(ev) {
-                searchInFolder(
-                    ev.filepath,
-                    ev.browser.fileServer
-                );
+                searchInFolder(ev.filepath, ev.browser.fileServer);
                 ev.preventDefault();
             }
         };
         FileUtils.registerOption("files", ["folder", "create"], "search-in-folder", searchInFolderOption);
-
+        $("#search_tab").show();
+        
     };
 
     function relative(b, l) {
-        if (l.startsWith(b))
-            return "./" + l.slice(b.length, l.length);
+        if (l.startsWith(b)) return "./" + l.slice(b.length, l.length);
         else {
             return null;
         }
     }
-
     var WORKER_BLOB_URL;
     var MAX_CACHE_SIZE = Utils.parseSize('15mb');
     var createSearchWorker = function(cb, e) {
-        if (!WORKER_BLOB_URL) WORKER_BLOB_URL = URL.createObjectURL(new Blob(["(" + inlineWorker.toString().replace("$MAX_CACHE_SIZE", MAX_CACHE_SIZE) + ")()"], {
+        if (!WORKER_BLOB_URL) WORKER_BLOB_URL = URL.createObjectURL(new Blob(["(" + inlineWorker.toString().replace(
+            "$MAX_CACHE_SIZE", MAX_CACHE_SIZE) + ")()"], {
             type: 'text/javascript'
         }));
         var worker = new Worker(WORKER_BLOB_URL);
@@ -623,7 +611,6 @@ _Define(function(global) {
                         row: line,
                         column: offset - lastLinePos
                     };
-
                 };
             };
 
@@ -643,7 +630,6 @@ _Define(function(global) {
                     ranges: matches
                 });
             }
-
             var cached = {};
             var cachedSize = 0;
             var MAX_CACHE_SIZE = $MAX_CACHE_SIZE;
@@ -690,12 +676,10 @@ _Define(function(global) {
         }
         return worker;
     };
-
     var createModal = function() {
         var modalEl = $(document.createElement('div'));
         modalEl.addClass('modal');
-        modalEl.html(
-            '\
+        modalEl.html('\
 <div class="modal-content">\
     <div class="h-30">\
         <h5>Filter Files<button class="close-icon material-icons">close</button></h5>\
@@ -723,8 +707,5 @@ _Define(function(global) {
         });
         return modalEl;
     };
-
-
     global.SearchTab = SearchTab;
-
 }) /*_EndDefine*/

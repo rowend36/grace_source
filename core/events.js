@@ -132,6 +132,6 @@ _Define(function(global) {
         "createEditor": null,
         "closeEditor": null
     };
-    global.configEvents = new EventsEmitter();
-    global.configEvents.frozen = true;
+    global.ConfigEvents = new EventsEmitter();
+    global.ConfigEvents.frozen = true;
 })/*_EndDefine*/

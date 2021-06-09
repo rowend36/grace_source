@@ -7,6 +7,7 @@ _Define(function(global){
     var Notify = global.Notify;
     
     var docs = Object.create(null);
+    var Range = global.Range;
     var Docs = global.Docs || (global.Docs={});
     var appConfig = global.registerAll({},"documents");
     
@@ -129,6 +130,7 @@ _Define(function(global){
         obj._LSC = this._LSC;
         obj.dirty = this.dirty;
         obj.options = this.options;
+        obj.flags = this.flags;
         obj.fileServer = this.fileServer;
         obj.encoding = this.encoding;
         obj.allowAutoSave = this.allowAutoSave;
@@ -142,6 +144,7 @@ _Define(function(global){
         this.encoding = obj.encoding;
         this.fileServer = obj.fileServer;
         this.allowAutoSave = obj.allowAutoSave;
+        this.flags = obj.flags;
         this.options = obj.options;
         this.session.setOptions(this.options || {});
         this.editorOptions = obj.editorOptions;
@@ -204,8 +207,8 @@ _Define(function(global){
     }
 
     function jsonToSession(session, state) {
+        session.setValue(state.content);
         if (state.content) {
-            session.setValue(state.content);
             session.selection.fromJSON(state.selection);
             session.setScrollTop(state.scrollTop);
             session.setScrollLeft(state.scrollLeft);
@@ -256,7 +259,7 @@ _Define(function(global){
             t.applyDelta(a[i]);
         }
         if (this.getSize() !== res.length) {
-            console.error("Generate diff failed");
+            console.error("Generate diff failed length check");
             this.setValue(res, isClean);
         } else if (isClean && !this.isTemp()) {
             this.setClean(null, res);
@@ -322,13 +325,16 @@ _Define(function(global){
         if (self.safe)
             self.safe = false;
         if (!self.dirty)
-            self.setDirty();
+            self.setDirty(true);
         if (self.allowAutoSave) {
             Docs.$autoSave();
         }
         Docs.$sessionSave();
     };
-    Doc.prototype.setDirty = function() {
+    Doc.prototype.setDirty = function(fromChange) {
+        if(!fromChange){
+            this.lastSave = null;
+        }
         this.dirty = true;
         Docs.$updateIcon(this.id);
     };

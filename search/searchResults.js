@@ -5,17 +5,16 @@ _Define(function(global) {
     var switchToDoc = global.Functions.switchToDoc;
     var Utils = global.Utils;
     var RecyclerViewHolder = global.RecyclerViewHolder;
-    var MAX_KEEP_LINES_RANGE_LENGTH = 500;
+    var MAX_KEEP_LINES_RANGE_LENGTH = 300;
     var ScrollSaver = global.ScrollSaver;
+    var getEditor = global.getEditor;
 
     function createHeader(noRecycle) {
         var div = document.createElement("div");
         div.className = "searchResultTitle";
-        div.innerHTML = "<h6 class='clipper searchResultFile'></h6>" +
-            "<div class='edge_box-1 h-30'>" +
+        div.innerHTML = "<h6 class='clipper searchResultFile'></h6>" + "<div class='edge_box-1 h-30'>" +
             "<i class='fill_box center numRanges'></i>" +
-            "<i class='material-icons side-1 foldResult'>keyboard_arrow_up</i>" +
-            "</div>";
+            "<i class='material-icons side-1 foldResult'>keyboard_arrow_up</i></div>";
         div.style.width = '100%';
         if (!noRecycle) div.style.position = 'absolute';
         return $(div);
@@ -36,11 +35,9 @@ _Define(function(global) {
             css: function(i) {
                 if (i != 'display') {
                     console.warn('Unimplemented property ' + i);
-                }
-                else if (this.hidden) {
+                } else if (this.hidden) {
                     return 'none';
-                }
-                else {
+                } else {
                     return 'block';
                 }
             },
@@ -64,22 +61,25 @@ _Define(function(global) {
             var endLine = 0;
             var mode = ace.config.$modes[doc.session.$modeId];
             var lines;
-
             //Better syntax highlighting if context is not lost
             //But no keeping large documents because of that
-            if (doc.session.$modeId != "ace/mode/text" && mode && ranges[ranges.length - 1].end.row < MAX_KEEP_LINES_RANGE_LENGTH) {
+            if (doc.session.$modeId != "ace/mode/text" && mode && ranges[ranges.length - 1].end.row <
+                MAX_KEEP_LINES_RANGE_LENGTH) {
                 endLine = ranges[ranges.length - 1].end.row;
                 lines = doc.session.getLines(0, endLine);
-            }
-            else {
+            } else {
                 var value = [];
                 for (var i in ranges) {
                     var start = ranges[i].start.row;
-                    var reset = "*/\"\"\"-->";
-                    while (start > endLine) {
+                    if (start > endLine) {
+                        //reset tokenizer
+                        var reset = "*/\"\"\"-->";
                         value.push(reset);
                         endLine++;
-                        if (reset) reset = "";
+                        while (start > endLine) {
+                            value.push("");
+                            endLine++;
+                        }
                     }
                     if (start == endLine) {
                         endLine = ranges[i].end.row;
@@ -99,7 +99,7 @@ _Define(function(global) {
                 //ranges are split into line chunks of maxHeight for renderering
                 maxHeight: 5,
                 start: 0,
-                hidden: false,
+                hidden: ranges.length>100,
                 views: []
             }, holder_props);
             holder.session.setUseWorker(false);
@@ -131,17 +131,16 @@ _Define(function(global) {
         ctx.clear = function() {
             recycler.detach();
             recycler.views = [];
-
             el.find(".search_line").each(function(i, e) {
                 e.searchData = null;
             });
             renderer.config.width = el.width() - 20;
-            renderer.config.themeClass = $('.editor')[0].className;
-
+            var edit = getEditor();
+            renderer.config.themeClass = 'ace_editor '+edit.renderer.$theme;
         };
         ctx.render = function(doc, ranges) {
             var holder = getHolder(doc, ranges);
-            header = new HeaderViewHolder(holder, recycler);
+            new HeaderViewHolder(holder, recycler);
             while (holder.start < ranges.length) {
                 var list = new ResultViewHolder(holder, recycler);
                 holder.views.push(list);
@@ -158,7 +157,6 @@ _Define(function(global) {
             el.html("");
             renderer.config.width = el.width() - 20;
             renderer.config.themeClass = $('.editor')[0].className;
-
         };
         ctx.render = function(doc, ranges) {
             var header = createHeader(true);
@@ -167,15 +165,14 @@ _Define(function(global) {
             bindClickListeners(body.children, ranges, doc.getPath());
             header.searchData = $(body);
             el[0].appendChild(body);
-        }
+        };
     }
 
     function ResultsView(el, useRecycler) {
         var renderer = new RangeRenderer();
         if (useRecycler && RecyclerViewCache) {
             withRecycler(el, renderer, this);
-        }
-        else {
+        } else {
             noRecycler(el, renderer, this);
         }
         el.on("click.resultview", ".foldResult", function() {
@@ -183,8 +180,7 @@ _Define(function(global) {
             if (a.css("display") == "none") {
                 a.show();
                 $(this).html("keyboard_arrow_up");
-            }
-            else {
+            } else {
                 a.hide();
                 $(this).html("keyboard_arrow_down");
             }
@@ -194,28 +190,29 @@ _Define(function(global) {
             e.stopPropagation();
             self.onLineClicked(this);
         });
-
         this.el = el;
     }
     ResultsView.prototype.onLineClicked = function(el) {
-        switchToDoc(el.searchData.path, el.searchData.range.start, el.searchData.range.end, true, this.afterLineClicked, this.server);
-    }
-    ResultsView.prototype.renderRanges = function() {
+        switchToDoc(el.searchData.path, el.searchData.range.start, el.searchData.range.end, true, this
+            .afterLineClicked, this.server);
+    };
+    ResultsView.prototype.renderRanges = function(doc,ranges) {
         this.clear();
         this.render(doc, ranges);
-    }
+    };
     ResultsView.prototype.destroy = function() {
         this.el.off("click.resultview", ".foldResult");
         this.el.off("click.resultview", ".search_line");
         if (this.scrollers) {
             this.scrollers.off("scroll.resultview");
         }
-    }
+    };
 
     function setTitle(el, path, c) {
         el = $(el);
-        el.find(".searchResultFile").text(path);
+        el.find(".searchResultFile").empty().text(path);
         el.find(".numRanges").text(c + " results");
+        global.styleClip(el);
     }
 
     function bindClickListeners(elements, ranges, path) {
@@ -233,18 +230,17 @@ _Define(function(global) {
             //because results are merged
             //var diff = 1
             var diff = (range.end.row - range.start.row + 1);
-
             for (var k = 0; k < diff; k++, i++) {
                 elements[i].className += ' search_line';
                 elements[i].searchData = data;
+                elements[i].tabIndex = 0;
             }
         }
     }
-
     if (RecyclerViewHolder) {
         var HeaderViewHolder = function(holder, renderer) {
             /*todo calculate header size*/
-            RecyclerViewHolder.apply(this, [holder.headerCache, renderer, 65]);
+            RecyclerViewHolder.apply(this, [holder.headerCache, renderer, 80]);
             renderer.register(Infinity, this);
             this.path = holder.path;
             this.numResults = holder.ranges.length;
@@ -256,20 +252,19 @@ _Define(function(global) {
             this.view[0].searchData = this.holder;
             if (this.holder.hidden) {
                 this.view.find('.foldResult').html("keyboard_arrow_down");
-            }
-            else {
+            } else {
                 this.view.find('.foldResult').html("keyboard_arrow_up");
             }
         };
         HeaderViewHolder.prototype.detach = function() {
-            if (this.view)
-                this.view[0].searchData = null;
+            if (this.view) this.view[0].searchData = null;
             RecyclerViewHolder.prototype.detach.apply(this, arguments);
         };
         var ResultViewHolder = function(holder, renderer) {
             RecyclerViewHolder.apply(this, [holder.lineCache, renderer, 0]);
             var start = holder.start || 0;
             this.holder = holder;
+            this.hidden  = holder.hidden;
             this.renderer = renderer;
             this.height = 0;
             this.range = holder.ranges;
@@ -282,11 +277,10 @@ _Define(function(global) {
             var end = i;
             this.range = holder.ranges.slice(start, end);
             holder.start = i;
-            this.height *= holder.config.lineHeight;
+            this.height *= (holder.config.lineHeight+holder.config.padding*2);
             renderer.register(Infinity, this);
         };
         ResultViewHolder.prototype = Object.create(RecyclerViewHolder.prototype);
-
         ResultViewHolder.prototype.compute = function() {
             return this.hidden ? 0 : this.height;
         };

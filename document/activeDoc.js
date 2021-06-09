@@ -42,7 +42,7 @@ _Define(function(global) {
             } else {
                 servers = [FileUtils.getProject().fileServer];
                 if (docs[currentDoc] && docs[currentDoc].getFileServer() != servers[
-                    0]) {
+                        0]) {
                     servers.unshift(docs[currentDoc].getFileServer());
                 }
             }
@@ -80,11 +80,11 @@ _Define(function(global) {
             var edit = getEditor();
             edit.exitMultiSelectMode && edit.exitMultiSelectMode();
             edit.getSession().unfold(
-            pos); //gotoLine is supposed to unfold but its not working properly.. this ensures it gets unfolded
+                pos); //gotoLine is supposed to unfold but its not working properly.. this ensures it gets unfolded
             var sel = edit.getSelection();
             if (end) {
                 edit.getSession().unfold(
-                end); //gotoLine is supposed to unfold but its not working properly.. this ensures it gets unfolded
+                    end); //gotoLine is supposed to unfold but its not working properly.. this ensures it gets unfolded
                 sel.setSelectionRange({
                     start: pos,
                     end: end
@@ -97,8 +97,8 @@ _Define(function(global) {
         cb && cb(doc.session);
     };
 
-    function save(e) {
-        Utils.assert(docs[currentDoc],'assert1');
+    function save(e) { ///TODO
+        // Utils.assert(docs[currentDoc],'assert1-'+currentDoc);
         if (docs[currentDoc].isTemp()) {
             FocusManager.hintChangeFocus();
             FileUtils.saveAs(currentDoc);
@@ -108,7 +108,6 @@ _Define(function(global) {
     }
 
     function setDoc(id) {
-        currentDoc = id;
         if (docs[id]) {
             currentDoc = id;
             if (docs[id] != Docs.forSession(getEditor().session))
@@ -129,7 +128,7 @@ _Define(function(global) {
     }, {
         name: 'Undo All Changes',
         exec: function() {
-            docs[currentDoc].saveCheckpoint('redo');
+            docs[currentDoc].saveCheckpoint('last undo');
             docs[currentDoc].abortChanges();
             Notify.info('Automatic checkpoint added');
         }
@@ -146,11 +145,13 @@ _Define(function(global) {
             function save(name) {
                 var obj = docs[currentDoc].saveCheckpoint(name);
                 if (obj.key) Notify.info('Saved');
+                else Notify.info("Could not save checkpoint");
                 if (args && args.cb) args.cb(obj.key);
             }
             if (args && args.name) {
                 save(args.name);
-            } else Notify.prompt('Enter name', save, "checkpoint", null, doc
+            } else Notify.prompt('Enter name', save, doc
+                .$loadCheckpoints()[0], null, doc
                 .$loadCheckpoints().map(function(e) {
                     return e.name;
                 }));
@@ -169,7 +170,8 @@ _Define(function(global) {
                 Notify.warn("Current state not saved");
             if (args && args.name) {
                 restore(name);
-            } else Notify.prompt('Enter name', restore, "checkpoint", doc
+            } else Notify.prompt('Enter name', restore, doc
+                .$loadCheckpoints()[0], doc
                 .$loadCheckpoints().map(function(e) {
                     return e.name;
                 }));
@@ -183,7 +185,6 @@ _Define(function(global) {
             docs[currentDoc].saveCheckpoint(name + (3 - lastBlob));
             docs[currentDoc].gotoCheckpoint(name + lastBlob);
             docs[currentDoc].deleteCheckpoint(name + lastBlob);
-            console.log(docs[currentDoc].checkpoints);
         }
     }, {
         name: 'Goto Checkpoint and Delete',
@@ -254,12 +255,14 @@ _Define(function(global) {
             icon: "save",
             caption: "Save",
             close: true,
+            sortIndex: 1,
             onclick: function() {
                 save();
             }
         },
         "refresh": {
             icon: "refresh",
+            sortIndex: 10,
             caption: "Refresh file",
             close: true,
             onclick: function() {
@@ -271,6 +274,7 @@ _Define(function(global) {
         },
         "find": {
             icon: "search",
+            sortIndex: 9,
             caption: "Find",
             childHier: {
                 "find-in-file": {
@@ -291,38 +295,64 @@ _Define(function(global) {
                     caption: "Find References",
                     close: true,
                     onclick: function() {
-                        getEditor().execCommand("ternFindRefs");
+                        var editor = getEditor();
+                        var completer = editor.smartCompleter;
+                        completer = editor[completer.name] || completer;
+                        if(completer.findRefs){
+                            completer.findRefs(editor);
+                        }
                     }
                 },
                 "rename": {
                     caption: "Rename Variable",
                     close: true,
                     onclick: function() {
-                        getEditor().execCommand("ternRename");
+                        var editor = getEditor();
+                        var completer = editor.smartCompleter;
+                        completer = editor[completer.name] || completer;
+                        if(completer.rename){
+                            completer.rename(editor);
+                        }
+                    }
+                }, "jumpToDef": {
+                    caption: "Jump To Definition",
+                    close: true,
+                    onclick: function() {
+                        var editor = getEditor();
+                        var completer = editor.smartCompleter;
+                        completer = editor[completer.name] || completer;
+                        if(completer.jumpToDef){
+                            completer.jumpToDef(editor);
+                        }
                     }
                 }
 
             }
         },
-        "tooling": {
+        "format":{
+            caption: "Format",
             icon: "edit",
-            caption: "Tools",
-            childHier: {
-                "beautify": {
-                    caption: "Beautify",
-                    close: true,
-                    onclick: function() {
-                        getEditor().execCommand('beautify');
-                    }
-                }
+            close: true,
+            onclick: function() {
+                getEditor().execCommand('beautify');
             }
-        },
+        }
     };
     var menu = global.MainMenu;
     for (var i in menuItems) {
         menu.addOption(i, menuItems[i]);
     }
-
+    menu.addOption(
+        "console",{
+            caption: "Show Console",
+            icon: "bug_report",
+            close: true,
+            sortIndex: 1000,
+            onclick: function() {
+                eruda._entryBtn.show();
+                eruda._devTools.toggle();
+            }
+        },true);
     Editors.addCommands(global.DocumentCommands);
     global.getActiveDoc = function() {
         return docs[currentDoc];

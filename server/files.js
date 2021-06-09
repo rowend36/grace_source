@@ -224,7 +224,6 @@ var copyFolder = exports.copyFolder = function(from, to, callback, allowOver, ov
         counter = createCounter(callback);
         counter.increment(from);
     }
-    console.log("copying folder" + from + " as " + to);
     fs.realpath(from, function(e, d) {
         if (e) {
             counter.error({ from: from, to: to, code: e.code });

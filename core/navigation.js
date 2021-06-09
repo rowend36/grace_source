@@ -40,15 +40,19 @@ _Define(function(global) {
         }
 
     }
+    //make this accessible to modkeyinput and enhanced clipboard
     var InvisibleTextArea = function(el) {
         var receiver = document.createElement('textarea');
         receiver.className = 'keyboard-listener';
         receiver.value = "-";
         receiver.setAttribute('tabIndex', -1);
-        receiver.style.opacity = 1;
+        receiver.style.opacity = 0.1;
+        receiver.style.position = 'fixed';
         receiver.style.width = '2px';
         receiver.style.height = '2px';
         receiver.style.overflow = 'hidden';
+        receiver.setAttribute("autocomplete","off");
+        receiver.setAttribute("name",Utils.genID("qt"));
         el.appendChild(receiver);
         return receiver;
     };
@@ -99,29 +103,29 @@ _Define(function(global) {
     var scrollIntoView = function(el, /*an offset into the element*/ offsetX, offsetY, itemWidth, itemHeight) {
         offsetX = offsetX || 0;
         offsetY = offsetY || 0;
-        itemWidth = itemWidth || el.clientWidth;
-        itemHeight = itemHeight || el.clientHeight;
+        itemWidth = itemWidth || el.offsetWidth;
+        itemHeight = itemHeight || el.offsetHeight;
         var a = el;
         while ((a = a.parentElement)) {
-            var baseTop = a==el.offsetParent?0:a.offsetTop;
-            var top = el.offsetTop + offsetY-baseTop;
-            var bottom = top+itemHeight;
+            var baseTop = a == el.offsetParent ? 0 : a.offsetTop;
+            var top = el.offsetTop + offsetY - baseTop;
+            var bottom = top + itemHeight;
             if (top < a.scrollTop) {
-                a.scrollTop=top;
-            } else if(bottom-a.clientHeight>a.scrollTop){
-                a.scrollTop = bottom-a.clientHeight;
+                a.scrollTop = top;
+            } else if (bottom - a.offsetHeight > a.scrollTop) {
+                a.scrollTop = bottom - a.offsetHeight;
             }
-            offsetY = top-a.scrollTop;
+            offsetY = top - a.scrollTop;
 
-            var baseLeft = a==el.offsetParent?0:a.offsetLeft;
-            var left = el.offsetLeft + offsetX-baseLeft;
-            var right = left+itemWidth;
+            var baseLeft = a == el.offsetParent ? 0 : a.offsetLeft;
+            var left = el.offsetLeft + offsetX - baseLeft;
+            var right = left + itemWidth;
             if (left < a.scrollLeft) {
-                a.scrollLeft=left;
-            } else if(right-a.clientWidth>a.scrollLeft){
-                a.scrollLeft = right-a.clientWidth;
+                a.scrollLeft = left;
+            } else if (right - a.offsetWidth > a.scrollLeft) {
+                a.scrollLeft = right - a.offsetWidth;
             }
-            offsetX = left-a.scrollLeft;
+            offsetX = left - a.scrollLeft;
             el = a;
         }
     };
@@ -177,15 +181,86 @@ _Define(function(global) {
                 case 'contextmenu':
                     self.onRightClick && self.onRightClick(index, e);
         }
-        e.preventDefault();
-        if (next && next != index) {
-            self.scrollIntoView(next);
-            if (self.shifted)
-                self.shiftTo(next, index);
-            else self.moveTo(next, index);
+        if (next) {
+            if (next == index || !isOnScreen(next, true, self.getRoot())) {
+                if (hash.indexOf("tab") < 0 && scrollView(next, hash)) {
+                    return e.preventDefault();
+                }
+            }
+            if (next != index) {
+                self.scrollIntoView(next);
+                if (self.shifted)
+                    self.shiftTo(next, index);
+                else self.moveTo(next, index);
+                return e.preventDefault();
+            }
         }
+        if (!Env.isDesktop) e.preventDefault();
     };
 
+    function scrollView(view, hash) {
+        view = getScrollParent(view)
+        do {
+            switch (hash) {
+                case "up":
+                    if (view.scrollTop != 0) {
+                        view.scrollTop = Math.max(0, view.scrollTop - 20);
+                        return true;
+                    }
+                    break;
+                case "down":
+                    if (view.scrollTop + view.clientHeight < view.scrollHeight) {
+                        view.scrollTop = Math.min(view.scrollTop + 20, view.scrollHeight - view.clientHeight);
+                        return true;
+                    }
+                    break;
+                case "left":
+                case "right":
+                    break;
+                default:
+                    break;
+            }
+
+        } while (view != document.body && (
+                view = getScrollParent(view)));
+        return false;
+    }
+
+    function isOnScreen(element, checkEdge, root) {
+        var rect = element.getBoundingClientRect();
+        var clipRect = root ? root.getBoundingClientRect() : {
+            top: 0,
+            bottom: (window.innerHeight || document.documentElement.clientHeight)
+            // ,left: 0,
+            // right: (window.innerWidth || document.documentElement.clientWidth)
+        }
+        var offset = checkEdge ? rect.height : 0;
+        return (
+            rect.top - clipRect.top >= -offset &&
+            // rect.left >= -offset &&
+            rect.bottom - offset <= clipRect.bottom 
+            //&& rect.right <= clipRect.right
+        );
+
+    }
+
+    function getScrollParent(element, includeHidden) {
+        var style = getComputedStyle(element);
+        var excludeStaticParent = style.position === "absolute";
+        var overflowRegex = includeHidden ? /(auto|scroll|hidden)/ : /(auto|scroll)/;
+
+        if (style.position === "fixed") return document.body;
+        for (var parent = element;
+            (parent = parent.parentElement);) {
+            style = getComputedStyle(parent);
+            if (excludeStaticParent && style.position === "static") {
+                continue;
+            }
+            if (overflowRegex.test(style.overflowY)) return parent;
+        }
+
+        return document.body;
+    }
     var inputToSkip;
     var inputType;
 
@@ -247,7 +322,7 @@ _Define(function(global) {
                 }
             }
             if (FocusManager.canTakeInput(a)) {
-                FocusManager.focusIfKeyboard(a,true);
+                FocusManager.focusIfKeyboard(a, true);
                 if (!source) {
                     doSkip(a);
                 }
@@ -256,11 +331,10 @@ _Define(function(global) {
                     if (tabbable.isTabbable(a)) {
                         $(a).addClass('nav-focused');
                     }
-                    if($(a).hasClass('modal') || $(a).closest('.modal').length){
+                    if ($(a).hasClass('modal') || $(a).closest('.modal').length) {
                         //todo
                         return FocusManager.hintChangeFocus();
-                    }
-                    else FocusManager.focusIfKeyboard(nav.$receiver, true);
+                    } else FocusManager.focusIfKeyboard(nav.$receiver, true);
                 }
             }
         },
@@ -305,7 +379,7 @@ _Define(function(global) {
         scrollIntoView: scrollIntoView,
         attach: function() {
             window.addEventListener('mousedown', function(e) {
-                nav.setFocused(e.target, 'mouse');
+                nav.setFocused(FocusManager.activeElement || e.target, 'mouse');
             });
             window.addEventListener('focusin', function(e) {
                 nav.setFocused(e.target, 'focus');
@@ -515,7 +589,7 @@ _Define(function(global) {
         'details',*/
     ];
     var candidateSelector = /* #__PURE__ */ candidateSelectors.join(',');
-    var indexOf = Array.prototype.indexOf.call.bind(Array.prototype.indexOf)
+    var indexOf = Array.prototype.indexOf.call.bind(Array.prototype.indexOf);
 
 
     global.Navigation = nav;

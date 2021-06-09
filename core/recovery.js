@@ -55,4 +55,4 @@ _Define(function(global) {
             };
         }
     };
-});
+}); /*_EndDefine*/

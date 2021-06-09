@@ -4,7 +4,12 @@ _Define(function(global) {
     var Utils = global.Utils;
     var jsonToSession = Docs.$jsonToSession;
     var sessionToJson = Docs.$sessionToJson;
-    var appConfig = global.appConfig;
+    var appConfig = global.registerAll({
+        "maximumCheckpoints":9
+    },"documents");
+    global.registerValues({
+        "maximumCheckpoints":"Checkpoints allow you to jump between locations in history quickly. Note: Checkpoints are always deleted when a document is closed. Also, saving a checkpoint might fail if a document is very large"
+    },"documents");
     //priority for checkpoints user creates
     var USER_CHECKPOINT_PRIORITY = 15;
     var TEMP_CHECKPOINT_PRIORITY = 5;
@@ -36,12 +41,15 @@ _Define(function(global) {
     };
     Doc.prototype.gotoCheckpoint = function(name) {
         this.$loadCheckpoints();
-        if (!this.checkpoints.length)
+        if (!this.checkpoints.length){
+            console.log('mdksksks');
             return false;
+        }
         var checkpoint;
 
         if (name) {
             name = name.toLowerCase();
+            console.log(name,this.checkpoints);
             checkpoint = this.checkpoints.find(function(e) {
                 return e.name == name;
             });
@@ -54,20 +62,21 @@ _Define(function(global) {
         if (checkpoint.name == this.stateID) {
             //ignore if current
             this.revertPoints.push(this.checkpoints.pop());
-            if (name) return;
+            if (name) return console.log('alredy ther');
             else return this.gotoCheckpoint();
         }
 
-        if (!this.revertPoints.length) {
-            //save current state, how to do this without gathering too
-            //too many temporary checkpoints
-            this.saveCheckpoint("Last Edit Location", true);
-            //clears revert stack
-            this.revertPoints.push(this.checkpoints.pop());
-        }
+        // if (!this.revertPoints.length) {
+        //     //save current state, how to do this without gathering too
+        //     //too many temporary checkpoints
+        //     this.saveCheckpoint("Last Edit Location", true);
+        //     //clears revert stack
+        //     this.revertPoints.push(this.checkpoints.pop());
+        // }
         this.checkpoints.splice(this.checkpoints.indexOf(checkpoint), 1);
         this.revertPoints.push(checkpoint);
         if (!this.checkout(checkpoint)) {
+            console.log('failed checkout');
             if (!name) return this.gotoCheckpoint();
             else return false;
         }

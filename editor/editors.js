@@ -6,17 +6,17 @@ _Define(function(global) {
     var docs = global.docs;
     var Utils = global.Utils;
     var Docs = global.Docs;
-    var MultiEditor = global.MultiEditor;
+    var EditorSettings = global.EditorSettings;
     var FocusManager = global.FocusManager;
 
     function getSettingsEditor() {
-        return multiEditor;
+        return settings;
     }
     //Basics for managing multiple editors
     //Whether it's splits,tabs, scrollers etc
     //setEditor, createEditor, closeEditor, getEditor
     var editors = [];
-    var multiEditor = new MultiEditor(editors);
+    var settings = new EditorSettings(editors);
 
     var __editor;
 
@@ -32,11 +32,11 @@ _Define(function(global) {
         //up internal state
         var e = mainEditor;
         if (__editor == e) return;
-        Utils.assert(editors.indexOf(e) > -1, 'Please use set viewPager.getEditorWindow || createEditor(container,true)');
+        Utils.assert(editors.indexOf(e) > -1, 'Please use set viewPager.getEditorWindow');
         var oldEditor = __editor;
         __editor = e;
         var pluginEditor = element.env && element.env.editor;
-        multiEditor.editor = pluginEditor || e;
+        settings.editor = pluginEditor || e;
         appEvents.trigger('changeEditor', {
             oldEditor: oldEditor,
             editor: pluginEditor || e
@@ -49,10 +49,10 @@ _Define(function(global) {
         //an editor mousedown event
         e = e.editor || e;
         if (__editor == e) return;
-        Utils.assert(editors.indexOf(e) > -1, 'Please use set viewPager.getEditorWindow || createEditor(container,true)');
+        Utils.assert(editors.indexOf(e) > -1, 'Please use set viewPager.getEditorWindow');
         var oldEditor = __editor;
         __editor = e;
-        multiEditor.editor = e;
+        settings.editor = e;
         var doc = Docs.forSession(e.session);
         if (doc) {
             Docs.swapDoc(doc.id);
@@ -68,8 +68,9 @@ _Define(function(global) {
         var session = doc.session;
         if (editors.length > 1) {
             var oldDoc = Docs.forSession(editor.session);
-            //session is clone
-            if (oldDoc && oldDoc.session != editor.session) {
+            //session is a clone, close
+            if (oldDoc && oldDoc.session !== editor.session) {
+                //unnecssary check
                 Docs.closeSession(editor.session);
             }
             if (getEditor(session)) {
@@ -77,10 +78,11 @@ _Define(function(global) {
                 session = doc.cloneSession();
             }
         }
-        multiEditor.session = doc.session;
+        settings.session = doc.session;
         var overrides = Object.assign({}, editor.editorOptions, doc.editorOptions);
         for (var i in overrides) {
-            var value = (doc.editorOptions && doc.editorOptions.hasOwnProperty(i)) ? doc.editorOptions[i] : multiEditor.options[i];
+            var value = (doc.editorOptions && doc.editorOptions.hasOwnProperty(i)) ? doc
+                .editorOptions[i] : settings.options[i];
             editor.setOption(i, value);
         }
         editor.editorOptions = doc.editorOptions;
@@ -89,23 +91,27 @@ _Define(function(global) {
     }
 
     function closeEditor(edit) {
-        var isOrphan = editors.indexOf(edit) < 0;
-        if (!isOrphan && appEvents.trigger('closeEditor', {
-                editor: edit
-            }).defaultPrevented)
-            return;
-        editors = editors.filter(Utils.except(edit));
-        if (edit === __editor) {
-            __editor = null;
-            setEditor(editors[0]);
+        var index = editors.indexOf(edit);
+        if (index > -1) {
+            if (appEvents.trigger('closeEditor', {
+                    editor: edit
+                }).defaultPrevented)
+                return;
+            editors.splice(index, 1);
+            if (edit === __editor) {
+                __editor = null;
+                setEditor(editors[0]);
+            }
         }
         if (Docs.forSession(edit.session))
             Docs.closeSession(edit.session);
-        edit.setSession(null);
+        try {
+            edit.setSession(null);
+        } catch (e) {
+            console.error(e);
+        }
         FocusManager.focusIfKeyboard(__editor.textInput.getElement());
         edit.destroy();
-        if (isOrphan) return;
-        
     }
 
     function autofadeScrollBars(editor) {
@@ -141,39 +147,44 @@ _Define(function(global) {
         });
         editor.renderer.scrollBarV.setVisible(true);
     }
-
+    function keepSelect(e){
+        var event = this.$mouseHandler.mousedownEvent;
+        if(event && new Date().getTime()-event.time<global.FOCUS_RESIZE_WINDOW){
+            this.renderer.scrollCursorIntoView(null,0.1);
+        }
+    }
     function createEditor(container, orphan) {
         var el = document.createElement("div");
         el.className = 'editor';
         container.appendChild(el);
         var editor = ace.edit(el);
+        editor.renderer.setScrollMargin(5, 5, 0, 0);
         autofadeScrollBars(editor);
-        editor.on("copy", Functions.copy);
-        //hack to get native clipboard content
-        editor.on("paste", Functions.copy);
         editor.setAutoScrollEditorIntoView(false);
         editor.$blockScrolling = Infinity; //prevents ace from logging annoying warnings
-        multiEditor.add(editor);
+        settings.add(editor);
 
         for (var i = 0, end = defaultCommands.length; i < end; i++) {
             if (orphan && defaultCommands[i].mainOnly) continue;
             editor.commands.addCommand(defaultCommands[i]);
         }
-        if (orphan) return editor;
-
-        editors.push(editor);
-        editor.renderer.on("themeLoaded", function(e) {
-            if (editor == editors[0]) {
-                global.setTheme(e.theme);
-            }
-        });
-        editor.renderer.on('changeCharacterSize', function() {
-            if (editor == editors[0]) {
-                multiEditor.setOption("fontSize", editor.getFontSize());
-            }
-        })
+        editor.renderer.on('resize',keepSelect.bind(editor));
+        if (!orphan) {
+            editors.push(editor);
+            editor.renderer.on("themeLoaded", function(e) {
+                if (editor == editors[0]) {
+                    global.setTheme(e.theme);
+                }
+            });
+            editor.renderer.on('changeCharacterSize', function() {
+                if (editor == editors[0]) {
+                    settings.setOption("fontSize", editor.getFontSize());
+                }
+            })
+        }
         appEvents.trigger('createEditor', {
-            editor: editor
+            editor: editor,
+            isMain: !orphan
         });
         return editor;
     }
@@ -192,7 +203,7 @@ _Define(function(global) {
                 editors[i].commands.addCommand(commands[j]);
         }
     };
-    var api = {};
+    var api = Object.create(null);
     api.init = Utils.noop;
     api._editors = editors;
 

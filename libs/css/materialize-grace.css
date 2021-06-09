@@ -369,7 +369,7 @@ th {
 
 .progress {
     position: relative;
-    height: 4px;
+    height: 5px;
     display: block;
     width: 100%;
     background-color: #acece6;
@@ -1406,12 +1406,12 @@ textarea.materialize-textarea {
     width: 20px;
     background-color: transparent;
     border: 2px solid #5a5a5a;
-    top: 0px;
+    top: 2px;
     z-index: 0
 }
 
 [type="checkbox"].filled-in:checked+span:not(.lever):before {
-    top: 0;
+    top: 2px;
     left: 1px;
     width: 8px;
     height: 13px;
@@ -1426,7 +1426,7 @@ textarea.materialize-textarea {
 }
 
 [type="checkbox"].filled-in:checked+span:not(.lever):after {
-    top: 0;
+    top: 2px;
     width: 20px;
     height: 20px;
     border: 2px solid #2196F3;

@@ -5,6 +5,9 @@ _Define(function(global) {
     var Utils = global.Utils;
     var TEMP_SESSION = new ace.EditSession("");
     var Notify = global.Notify;
+
+    /*There must be an active editor, there must be an active doc,
+     But what if there isn't. That's why we have view pagers*/
     global.showClickable = function(el) {
 
     };
@@ -61,12 +64,10 @@ _Define(function(global) {
                     if (host && host.onExit) {
                         try {
                             host.onExit(editor, this);
-                        }
-                        catch (e) {
+                        } catch (e) {
                             console.error('host exit threw exception ', e);
                         }
-                    }
-                    else if (!host) editor.setSession(TEMP_SESSION);
+                    } else if (!host) editor.setSession(TEMP_SESSION);
 
                     /*start switch*/
                     node.remove();
@@ -83,34 +84,30 @@ _Define(function(global) {
                     if (newhost.onEnter) {
                         try {
                             newhost.onEnter(editor, this);
-                        }
-                        catch (e) {
-                            console.error('host enter threw exception force removing tab');
+                        } catch (e) {
+                            console.error(
+                                'host enter threw exception force removing tab');
                             console.error(e);
                             Notify.error('Plugin error: ' + id);
                             ViewPager.forceClose(id, this.views[id]);
                         }
                         e.stopPropagation();
                     }
-                }
-                else if (hasParent != parent) {
+                } else if (hasParent != parent) {
                     //Viewpagers are not cloneable
                     //No need to be
                     e.stopPropagation();
                     return false;
-                }
-                else if (isIn != id) {
+                } else if (isIn != id) {
                     isIn = id;
                 }
                 newhost && newhost.swapDoc && newhost.swapDoc(isIn, e);
                 e && e.preventDefault();
-            }
-            else if (isIn) {
+            } else if (isIn) {
                 if (host && host.onExit) {
                     try {
                         host.onExit(editor, this);
-                    }
-                    catch (e) {
+                    } catch (e) {
                         console.error('host exit threw exception ', e);
                     }
                 }
@@ -124,6 +121,7 @@ _Define(function(global) {
                 parent.appendChild(node);
                 /*end switch*/
                 if (editor) {
+                    editor.resize();
                     //editor.renderer.updateFull();
                 }
             }
@@ -134,8 +132,7 @@ _Define(function(global) {
         this.onChangeTab = (function(e) {
             if (isIn && !this.views[e.tab]) {
                 this.exit();
-            }
-            else if (this.views[e.tab]) {
+            } else if (this.views[e.tab]) {
                 this.enter(e.tab, e);
             }
         }).bind(this);
@@ -155,8 +152,7 @@ _Define(function(global) {
             var views = this.views;
             if (views.hasOwnProperty(id)) {
                 throw 'Error id already taken';
-            }
-            else views[id] = host;
+            } else views[id] = host;
         };
 
     }
@@ -174,14 +170,16 @@ _Define(function(global) {
                 editor.viewPager.editor = editor;
                 editor.renderer.unfreeze();
                 Editors.getSettingsEditor().editor = editor;
-                global.AppEvents.trigger('changeEditor', { editor: editor, oldEditor: host, isEmbedded: true });
+                global.AppEvents.trigger('changeEditor', { editor: editor,
+                    oldEditor: host, isEmbedded: true });
             },
             onExit: function(host) {
                 editor.viewPager.editor = null;
                 editor.viewPager = null;
                 editor.renderer.freeze();
                 Editors.getSettingsEditor().editor = host;
-                global.AppEvents.trigger('changeEditor', { oldEditor: editor, editor: host, isEmbedded: true });
+                global.AppEvents.trigger('changeEditor', { oldEditor: editor,
+                    editor: host, isEmbedded: true });
             }
         };
     };
@@ -198,7 +196,7 @@ _Define(function(global) {
     };
 
     //viewpager
-    Editors.getTabWindow = function(id, name, info, onClose,insert) {
+    Editors.getTabWindow = function(id, name, info, onClose, insert) {
         if (!doneInit)
             ViewPager.init();
         var pager = getEditor().viewPager;
@@ -209,8 +207,9 @@ _Define(function(global) {
             DocsTab.setActive(id, true, true);
         };
         pager.add(id, host);
-        if (insert!==undefined) {
-            global.DocsTab.insertTab(global.DocsTab.indexOf(insert)+1,id, name, null, info);
+        if (insert !== undefined) {
+            global.DocsTab.insertTab(global.DocsTab.indexOf(insert) + 1, id, name, null,
+                info);
         }
         global.DocsTab.addTab(id, name, null, info);
         return host;
@@ -226,14 +225,15 @@ _Define(function(global) {
             global.DocsTab.setActive(id, true, true);
         };
         pager.add(id, host);
-        if (insert!==undefined) {
-            global.DocsTab.insertTab(global.DocsTab.indexOf(insert)+1,id, name, null, info);
+        if (insert !== undefined) {
+            global.DocsTab.insertTab(global.DocsTab.indexOf(insert) + 1, id, name, null,
+                info);
         }
         global.DocsTab.addTab(id, name, null, info);
         return host;
     };
     Editors.closeTabWindow = function(id) {
-        global.DocsTab.removeTab(id, true);
+        global.DocsTab.removeTab(id);
         Editors.forEach(function(e) {
             e.viewPager.remove(id);
         });
@@ -246,7 +246,8 @@ _Define(function(global) {
             var pager = getEditor().viewPager;
             var host = pager.views[id];
             if (host) {
-                if (host.autoClose || (host.onClose && host.onClose() !== false))
+                if (host.autoClose || (host.onClose && host.onClose() !==
+                    false))
                     Editors.closeTabWindow(id);
                 e.preventDefault();
             }
@@ -258,7 +259,7 @@ _Define(function(global) {
             e.editor.viewPager.exit();
         });
         app.on('createEditor', function(e) {
-            if (!e.editor.viewPager)
+            if (e.isMain && !e.editor.viewPager)
                 e.editor.viewPager = new ViewPager(e.editor);
         })
         app.on('changeEditor', function(e) {
@@ -275,8 +276,8 @@ _Define(function(global) {
         if (errant && !errant.autoClose && errant.onClose) {
             try {
                 errant.onClose();
+            } catch (e) {//ignore
             }
-            catch (e) {}
         }
         Editors.closeTabWindow(id);
     }
@@ -287,10 +288,10 @@ _Define(function(global) {
             return a.viewPager.editor || a;
         }
     }
-    global.getHostEditor = function(editor){
-        return doneInit?editor.viewPager.mainEditor:editor;
+    global.getHostEditor = function(editor) {
+        return doneInit ? editor.viewPager.mainEditor : editor;
     }
     global.getMainEditor = getEditor;
     global.ViewPager = ViewPager;
 
-});/*_EndDefine*/
+}); /*_EndDefine*/

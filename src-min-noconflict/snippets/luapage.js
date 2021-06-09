@@ -1,12 +1,6 @@
-define("ace/snippets/luapage",["require","exports","module"], function(require, exports, module) {
-"use strict";
-
-exports.snippetText =undefined;
-exports.scope = "luapage";
-
-});
+ace.define("ace/snippets/luapage",[],function(e,t,n){"use strict";t.snippetText=undefined,t.scope="luapage"});
                 (function() {
-                    window.require(["ace/snippets/luapage"], function(m) {
+                    ace.require(["ace/snippets/luapage"], function(m) {
                         if (typeof module == "object" && typeof exports == "object" && module) {
                             module.exports = m;
                         }

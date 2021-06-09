@@ -5,7 +5,7 @@ _Define(
 
         var EventsEmitter = global.EventsEmitter;
         var Utils = global.Utils;
-
+        //Largely inspired by and inspired global Navigation plugin which is still a work in progress
         function ItemList(id, items, container) {
             ItemList.super(this);
             this.container = container || document.body;
@@ -23,7 +23,7 @@ _Define(
             $(oldEl).removeClass('selected');
             this.selected = newEl;
             $(newEl).addClass('selected');
-            var index = newEl.getAttribute('index');
+            var index = newEl.getAttribute('item-list-index');
             if (index || index === 0) {
                 this.trigger('moveSelect', this.getItem(index), true);
             }
@@ -34,21 +34,22 @@ _Define(
         ItemList.prototype.shiftTo = ItemList.prototype.moveTo;
         ItemList.prototype.getNext = function(current, root, direction) {
             var elements = this.getElements(root);
-            return elements[this.lastEl < elements.length - 1 ? ++this.lastEl : this.lastEl];
+            var lastIndex = indexOf(elements,current);
+            return elements[lastIndex+1] ||current;
         };
         ItemList.prototype.getElements = function(root) {
-            return this.elementCache || (this.elementCache = root.getElementsByClassName('tabbable'));
+            return root.getElementsByClassName('tabbable');
         };
         ItemList.prototype.getCurrentElement = function(root) {
-            if (this.elementCache) {
-                return this.elementCache[this.lastEl];
+            if (this.selected) {
+                return this.selected;
             }
-            this.lastEl = -1;
             return root;
         };
         ItemList.prototype.getPrev = function(current, root, direction) {
             var elements = this.getElements(root);
-            return elements[this.lastEl > 0 ? --this.lastEl : this.lastEl];
+            var lastIndex = indexOf(elements,current);
+            return elements[lastIndex-1] || elements[0];
         };
         ItemList.prototype.select = function(index) {
             var current = this.selected;
@@ -66,6 +67,7 @@ _Define(
         ItemList.prototype.getLength = function() {
             return this.items.length;
         };
+        ItemList.prototype.blur = Utils.noop;
         ItemList.prototype.getHtml = function(index) {
             return this.items[index];
         };
@@ -75,7 +77,6 @@ _Define(
         ItemList.prototype.createItem = function(index) {
             var el = document.createElement('li');
             el.className = this.itemClass + " tabbable";
-            el.setAttribute('index', index);
             el.setAttribute('tabIndex', 0);
             el.innerHTML = this.getHtml(index);
             return el;
@@ -93,9 +94,9 @@ _Define(
                 "<ul class='item-list-items'>" +
                 "</ul>" +
                 "</div>" +
-                "<div class='modal-footer'>" +
-                (this.footer ? this.footer.map(function(name, i) {
-                    return '<a id="item-list-' + name.toLowerCase() + '" href="#!" class="' + (i < 1 ? "align-left " : "") + 'tabbable waves-effect btn-flat">' +
+                "<div class='modal-footer align-right'>" +
+                (this.footer ? this.footer.map(function(name, i,arr) {
+                    return '<a id="item-list-' + name.toLowerCase() + '" href="#!" class="tabbable waves-effect btn-flat">' +
                         name + '</a>';
                 }).join("") : "") +
                 '</div>';
@@ -105,7 +106,7 @@ _Define(
             this.$el.on('click', '.' + this.itemClass, function(e) {
                     FocusManager.focusIfKeyboard(self.$receiver);
                     e.stopPropagation();
-                    var index = $(this).attr('index');
+                    var index = $(this).attr('item-list-index');
                     self.select(index);
                 })
                 .on('click', function(e) {
@@ -121,6 +122,9 @@ _Define(
         ItemList.prototype.onenter = function(e){
             e.click();
         };
+        ItemList.prototype.getRoot = function(e){
+            return this.container;  
+        };
         ItemList.prototype.containerClass = 'modal modal-container';
         ItemList.prototype.itemClass = "item-list-item";
         ItemList.prototype.headerText = "";
@@ -133,13 +137,13 @@ _Define(
             header.innerHTML = this.headerText;
             var content = this.listEl;
             content.innerHTML = "";
-            this.elementCache = null;
             if (this.selected)
                 $(this.selected).removeClass('selected');
             this.selected = null;
             if (this.getLength() > 0) {
                 for (var i = 0; i < this.getLength(); i++) {
                     var item = this.createItem(i);
+                    item.setAttribute('item-list-index', i);
                     content.appendChild(item);
                 }
             } else {
@@ -160,13 +164,13 @@ _Define(
             this.$close = this.hide.bind(this);
         }
         QuickList.prototype.getHtml = function(index) {
-            return ("" + this.items[index]).replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        }
-        QuickList.prototype.containerClass = "modal bottom-list"
-        QuickList.prototype.itemClass = "bottom-list-item"
+            return ("" + this.items[index]).substring(0,100000).replace(/&/g,"&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        };
+        QuickList.prototype.containerClass = "modal bottom-list";
+        QuickList.prototype.itemClass = "bottom-list-item";
         QuickList.prototype.footer = ["Clear", "Close"];
         QuickList.prototype.hide = function(e) {
-            if (e) e.stopPropagation()
+            if (e) e.stopPropagation();
             if (!this.shown) return;
             this.shown = false;
             this.trigger('dismiss', null, true);
@@ -176,17 +180,20 @@ _Define(
         };
         QuickList.prototype.blur = function() {
             this.hide();
-        }
+        };
         QuickList.prototype.show = function(forElement) {
             if (this.shown) return;
             this.shown = true;
             this.render();
             this.$el.fadeIn();
-            this.$el.css("z-index", 1200)
+            this.$el.css("z-index", 500);
+            this.$el.css("position", "absolute");
             this.lastFocus = FocusManager.visit(this.$receiver);
         };
         Utils.inherits(QuickList, ItemList);
+        
+        var indexOf = Array.prototype.indexOf.call.bind(Array.prototype.indexOf);
 
         global.BottomList = QuickList;
         global.ItemList = ItemList;
-    }) /*_EndDefine*/
+    }); /*_EndDefine*/

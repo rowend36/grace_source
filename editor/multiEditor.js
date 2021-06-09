@@ -1,33 +1,36 @@
 _Define(function(global) {
-    var completionSettings = [
-        'enableSnippets',
-        'enableLiveAutocompletion',
-        'enableBasicAutocompletion',
-        'enableIntelligentAutocompletion',
-        'enableArgumentHints'
+    var completionSettings = ['enableSnippets', 'enableLiveAutocompletion', 'enableBasicAutocompletion',
+        'enableIntelligentAutocompletion', 'enableArgumentHints'
     ];
     var appStorage = global.appStorage;
-    var themes = ace.require("ace/ext/themelist").themes.map(function(t) { return t.theme });
-    
+    var themes = ace.require("ace/ext/themelist").themes.map(function(t) {
+        return t.theme;
+    });
     var docs = global.docs;
     var Docs = global.Docs;
-    
+    var Notify = global.Notify;
     var appConfig = global.registerAll({
         'perEditorTheming': true,
         'perEditorCompletion': false
-    },"multieditors");
+    }, "splitEditors");
     global.registerValues({
-        "editor": "Configuration for ace editor",
-        "theme": themes.join(",").replace(/(.{50,60})\,/g, "$1\n,"),
-        "wrap": "free(use windowWidth as limit), printMargin, off, [number]",
+        "theme": {
+            doc: "Editor syntax highlight theme. When applicationTheme is set to editor, this also configures the applicationTheme",
+            values: themes
+        },
+        "wrap": {
+            values: ["free(use windowWidth as limit)", "printMargin", "off", "[number]"]
+        },
         "cursorStyle": "ace, smooth, slim, smooth slim, wide",
         "foldStyle": "markbegin, markbeginend, manual",
+        "lineSpacing": "normal|wide|wider|narrow",
+    },"editor");
+    global.registerValues({
         "perEditorTheming": "Allow dialog/splits editors to have separate themes",
         "perEditorCompletion": "Allow dialog/splits editors to have separate completion settings"
-    });
-
+    }, "splitEditors");
     //default settings for docs
-    var sessionSettings = {
+    var sessionDefaults = {
         firstLineNumber: 1,
         foldStyle: "markbegin",
         indentedSoftWrap: true,
@@ -38,13 +41,12 @@ _Define(function(global) {
         useSoftTabs: true,
         useWorker: true,
         wrap: "off",
-        wrapMethod: "auto"
     };
     //default settings for editors
-    var options = {
-        theme: "ace/theme/monokai",
+    var editorDefaults = {
+        theme: "ace/theme/cobalt",
         hideNonLatinChars: false,
-        readOnly:false,
+        readOnly: false,
         wrap: false,
         htmlBeautify: true,
         autoBeautify: true,
@@ -54,7 +56,6 @@ _Define(function(global) {
         enableBasicAutocompletion: true,
         enableIntelligentAutocompletion: true
     };
-
     var editors;
     //there is only a single instance of this class
     //you need to remove its dependence 
@@ -64,12 +65,11 @@ _Define(function(global) {
         this.editor = null;
         editors = editor_list;
     }
-
     EditorSettings.prototype.add = function(edit) {
         edit.setOptions(this.options);
     };
-    EditorSettings.prototype.options = options;
-    EditorSettings.prototype.setOption = function(key, val) {
+    EditorSettings.prototype.options = editorDefaults;
+    EditorSettings.prototype.setOption = function(key, val,noSave) {
         var isForSession;
         if (key.startsWith("session-")) {
             key = key.substring(8);
@@ -80,30 +80,26 @@ _Define(function(global) {
             return;
         }
         if (!optionsValidator[key].test(val)) {
-            console.warn('Invalid Value ' + val + ' for ' + key);
+            Notify.warn('Invalid Value ' + val + ' for ' + key);
             return false;
         }
         var isSessionValue = this.$options[key] && this.$options[key].forwardTo === "session";
         var doc;
         if (isSessionValue) {
-            if (val === "default")
-                val = sessionSettings[key];
+            if (val === "default") val = sessionDefaults[key];
             this.editor.session.setOption(key, val);
             if (isForSession) {
                 doc = Docs.forSession(this.editor.session);
-                if (!doc)
-                    return;
-                if (val === sessionSettings[key]) {
+                if (!doc) return;
+                if (val === sessionDefaults[key]) {
                     delete doc.options[key];
-                }
-                else doc.options[key] = val;
-
+                } else doc.options[key] = val;
                 Docs.tempSave(doc.id);
                 return;
-            }
-            else {
-                appStorage.setItem(key, val);
-                sessionSettings[key] = val;
+            } else {
+                if(!noSave)
+                  appStorage.setItem(key, val);
+                sessionDefaults[key] = val;
                 for (var i in docs) {
                     doc = docs[i];
                     if (!doc.options.hasOwnProperty(key)) {
@@ -115,53 +111,47 @@ _Define(function(global) {
                 }
                 return;
             }
-        }
-        else if (isForSession) {
-            if(!options.hasOwnProperty(key))return;
+        } else if (isForSession) {
+            if (!editorDefaults.hasOwnProperty(key)) return false;
             this.editor.setOption(key, val);
             doc = Docs.forSession(this.editor.session);
             if (!doc) return;
-            if (val == options[key]) {
-                if (doc.editorOptions)
-                    delete doc.editorOptions[key];
-            }
-            else {
-                if (!doc.editorOptions)
+            if (val == editorDefaults[key]) {
+                if (doc.editorOptions) delete doc.editorOptions[key];
+            } else {
+                if (!doc.editorOptions) {
                     doc.editorOptions = {};
+                    this.editor.editorOptions = doc.editorOptions;
+                }
                 doc.editorOptions[key] = val;
             }
             Docs.tempSave(doc.id);
             return;
-        }
-        else {
-            var isForAllEditors = (editors.length == 1 || !(key == "mode" ||
-                (appConfig.perEditorCompletion && completionSettings.indexOf(key) > -1) ||
-                (appConfig.perEditorTheming && key === "theme")));
+        } else {
+            var isForAllEditors = (editors.length == 1 || !(key == "mode" || (appConfig.perEditorCompletion &&
+                completionSettings.indexOf(key) > -1) || (appConfig.perEditorTheming && key === "theme")));
             if (isForAllEditors || this.editor === editors[0]) {
-                appStorage.setItem(key, val);
-                options[key] = val;
+                if(!noSave)
+                  appStorage.setItem(key, val);
+                editorDefaults[key] = val;
             }
             if (isForAllEditors) {
                 editors.forEach(function(e) {
                     e.setOption(key, val);
                 });
-            }
-            else this.editor.setOption(key, val);
+            } else this.editor.setOption(key, val);
         }
     };
     EditorSettings.prototype.getOption = function(key) {
         if (key.startsWith("session-")) {
             key = key.substring(8);
             return this.editor.getOption(key);
-        }
-        else if(key == "mode"){
+        } else if (key == "mode") {
             return this.editor.session.getOption(key);
-        }
-        else if (sessionSettings.hasOwnProperty(key)) {
-            return sessionSettings[key];
-        }
-        else if (options.hasOwnProperty(key)) {
-            return options[key];
+        } else if (sessionDefaults.hasOwnProperty(key)) {
+            return sessionDefaults[key];
+        } else if (editorDefaults.hasOwnProperty(key)) {
+            return editorDefaults[key];
         }
         return this.editor.getOption(key);
     };
@@ -173,7 +163,6 @@ _Define(function(global) {
             this.setOption(key, optList[key]);
         }, this);
     };
-
     var BOOL = /^true|false$/;
     var NUMBER = /^\d+(\.\d+)?$/;
     var STRING = /[^'"\n\r]+/;
@@ -187,6 +176,7 @@ _Define(function(global) {
     var NEW_LINE_MODE = /(auto|windows|linux|default)/;
     var WRAP_MODE = /(off|free|printMargin|\d+|default)/;
     var FOLD_STYLE = /(markbegin|markbeginend|manual)/;
+    var LINE_SPACING = /(wide|wider|normal|narrow)/;
     var SCROLL_PAST_END = {
         test: function(val) {
             return val === 0 || (val > 0 && val < 1);
@@ -225,6 +215,10 @@ _Define(function(global) {
         "hScrollBarAlwaysVisible": BOOL,
         "indentedSoftWrap": BOOL,
         "keyboardHandler": STRING,
+        'highlightErrorRegions': BOOL,
+        'keepRedoStack': BOOL,
+        'showErrorOnClick': BOOL,
+        'lineSpacing': LINE_SPACING,
         "maxPixelHeight": NUMBER,
         "mergeUndoDeltas": BOOL,
         "navigateWithinSoftTabs": BOOL,
@@ -253,7 +247,6 @@ _Define(function(global) {
         "wrap": WRAP_MODE,
         "wrapBehavioursEnabled": BOOL
     };
-    
     for (var i in optionsValidator) {
         var s = appStorage.getItem(i);
         if (s !== null && s !== undefined && s != "undefined" && s !== "null") {
@@ -264,21 +257,20 @@ _Define(function(global) {
                 else if (s == "null") s = null;
                 else if (!isNaN(s)) s = parseInt(s);
                 if (ace.Editor.prototype.$options[i] && ace.Editor.prototype.$options[i].forwardTo === "session") {
-                    sessionSettings[i] = s;
+                    sessionDefaults[i] = s;
+                } else {
+                    editorDefaults[i] = s;
                 }
-                else {
-                    options[i] = s;
-                }
-            }
-            else {
+            } else {
                 appStorage.removeItem(i);
             }
         }
     }
-    if(sessionSettings.hasOwnProperty('mode')){
+    if (sessionDefaults.hasOwnProperty('mode')) {
         console.error('mode set in defaults');
-        delete sessionSettings.mode;
+        delete sessionDefaults.mode;
     }
-    Docs.$defaults = sessionSettings;
+    EditorSettings.prototype.validator = optionsValidator;
+    Docs.$defaults = sessionDefaults;
     global.MultiEditor = EditorSettings;
-})/*_EndDefine*/
+}) /*_EndDefine*/
