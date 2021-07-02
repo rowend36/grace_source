@@ -1,0 +1,309 @@
+.theme-vs {
+    color: $foreground|#ffffff;
+}
+
+.theme-vs .toolbar,
+.theme-vs .toolbar button {
+    background: $ACTIVITYBAR.BACKGROUND;
+    color: $ACTIVITYBAR.FOREGROUND;
+}
+
+.theme-vs .btn,
+.theme-vs .buttonBar span[ace_selected_button="true"] {
+    background: $button.background;
+    color: $button.foreground|#ffffff;
+}
+
+.theme-vs .btn:hover {
+    background: $button.hoverBackground|#777777;
+}
+
+.theme-vs .header {
+    background: $--panel.background|--sideBar.background;
+    border-bottom: 1px solid $panel.border|sideBar.foreground;
+}
+
+.theme-vs .modal,
+.theme-vs .dropdown-content,
+.theme-vs .ace_search {
+    background: $menu.background|activityBar.background;
+    color: $foreground;
+}
+
+.theme-vs .dropdown-content .material-icons {
+    color: $menu.foreground|activityBar.foreground;
+
+}
+
+.theme-vs .dropdown-content>li:hover {
+    background: $menu.selectionBackground;
+    color: $menu.selectionForeground;
+
+}
+
+.theme-vs .sidenav {
+    background: $sideBar.background;
+    border-color: $sideBar.border;
+    color: $foreground|sideBar.foreground;
+}
+
+.theme-vs label,
+.theme-vs .buttonBar span,
+.theme-vs .material-icons {
+    color: $sideBar.foreground|inherit;
+}
+
+.theme-vs .color-inactive,
+.theme-vs .ace_button{
+    opacity: 0.7;
+    color: $foreground|sideBar.foreground;
+}
+
+.theme-vs .header,
+.theme-vs .nav-main {
+    background: $activityBar.background;
+    color: $activityBar.foreground;
+    border-color: $activityBar.foreground;
+}
+
+.theme-vs .sub-header {
+    background: $sideBarSectionHeader.background;
+    color: $sideBarSectionHeader.foreground;
+}
+
+.theme-vs .fileview-container>.fileview::-webkit-scrollbar,
+.theme-vs .editor>.ace_scrollbar::-webkit-scrollbar {
+    background: $scrollbarSlider.background;
+}
+
+
+.theme-vs .fileview::-webkit-scrollbar-thumb,
+.theme-vs .editor>.ace_scrollbar::-webkit-scrollbar-thumb {
+    background-color: $scrollbarSlider.activeBackground;
+}
+
+.theme-vs .fileview::-webkit-scrollbar-thumb:hover,
+.theme-vs .editor>.ace_scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: $scrollbarSlider.hoverBackground;
+}
+
+.theme-vs .tab>a.material-icons {
+    color: inherit;
+}
+
+.theme-vs #selector {
+    background: $tab.inactiveBackground;
+}
+
+.theme-vs #selector>.tab>.active {
+    background: $tab.activeBackground;
+}
+
+.theme-vs .tab>a {
+    color: $tab.inactiveForeground;
+}
+
+.theme-vs .checked,
+.theme-vs .buttonBar span[ace_selected_button="true"],
+.theme-vs .tab>.active {
+    opacity: 1;
+    color: $tab.activeForeground;
+    border-color: $tab.activeBorderTop;
+}
+
+.theme-vs .tab>.active:before {
+    border-color: $tab.activeBorderTop;
+}
+
+.theme-vs .border-inactive {
+    border-color: $contrastBorder;
+}
+
+.theme-vs :not(.marked-file).file-item:focus {
+    background: $list.focusBackground;
+    color: $list.focusForeground;
+}
+
+.theme-vs :not(.marked-file).file-item:hover {
+    background: $list.hoverBackground;
+    color: $list.hoverForeground;
+
+}
+
+.theme-vs .modal-overlay,
+.theme-vs .sidenav-overlay {
+    background: $dropdownOverlay.background|tab.inactiveBackground;
+}
+
+.theme-vs #opendocs,
+.theme-vs #opendocs .file-item:not(.activeTab)>.material-icons {
+    background: $list.inactiveSelectionBackground;
+    color: $list.inactiveSelectionForeground;
+}
+
+.theme-vs #opendocs>.activeTab,
+.theme-vs #opendocs>.activeTab .material-icons {
+    background: $list.activeSelectionBackground;
+    color: $list.activeSelectionForeground|foreground;
+}
+
+.theme-vs #status-bar {
+    background: $statusBar.background;
+    color: $statusBar.foreground|#eeeeee;
+}
+
+.theme-vs ::-webkit-input-placeholder {
+    color: $input.placeholderForeground|#777777;
+}
+
+.theme-vs ::-moz-placeholder {
+    color: $input.placeholderForeground|#777777;
+}
+
+.theme-vs :-ms-input-placeholder {
+    color: $input.placeholderForeground|#777777;
+}
+
+.theme-vs ::-ms-input-placeholder {
+    color: $input.placeholderForeground|#777777;
+}
+
+.theme-vs ::placeholder {
+    color: $input.placeholderForeground|#777777;
+}
+
+.theme-vs btn-flat {
+    color: $textLink.foreground;
+}
+
+.theme-vs .btn-flat:active {
+    color: $textLink.activeForeground;
+}
+
+.theme-vs input:not([type]),
+.theme-vs input[type="text"],
+.theme-vs select,
+.theme-vs .buttonBar,
+.theme-vs input[type="search"],
+.theme-vs input[type="number"] {
+    background: $input.background;
+    color: $input.foreground|++++foreground;
+}
+
+.theme-vs.theme-dark input:not([type]),
+.theme-vs.theme-dark input[type="text"],
+.theme-vs.theme-dark select,
+.theme-vs.theme-dark .buttonBar,
+.theme-vs.theme-dark input[type="search"],
+.theme-vs.theme-dark input[type="number"] {
+    background: $input.background;
+    color: $input.foreground|--foreground;
+}
+
+.theme-vs .border-secondary,
+.theme-vs select,
+.theme-vs .ace_prompt_container .ace_focus:first-child,
+.theme-vs input:not([type]):focus:not([readonly]),
+.theme-vs input[type="text"]:focus:not([readonly]),
+.theme-vs input[type="search"]:focus:not([readonly]),
+.theme-vs input[type="number"]:focus:not([readonly]) {
+    border-color: $button.background;
+}
+
+.theme-vs [type="checkbox"]:checked+span:not(.lever):before {
+    border-right-color: $button.foreground|#ffffff;
+    border-bottom-color: $button.foreground|#ffffff;
+}
+
+.theme-vs [type="checkbox"]:checked+span:not(.lever):after {
+    background: $button.background;
+    border-color: $button.background;
+}
+
+.theme-vs [type="checkbox"]:not(:checked)+span:not(.lever):after {
+    border-color: $-button.background;
+}
+
+.theme-vs.theme-dark [type="checkbox"]:not(:checked)+span:not(.lever):after {
+    border-color: $+button.background;
+}
+
+.theme-vs .ace_editor .ace_text-layer {
+    background: none;
+}
+
+.theme-vs .ace_editor {
+    background: $editor.background;
+    color: $editor.foreground;
+}
+
+.theme-vs .ace_editor .ace_active-line {
+    background: $editor.lineHighlightBackground;
+}
+
+.theme-vs .ace_editor .ace_gutter-cell {
+    color: $editorLineNumber.foreground;
+}
+
+.theme-vs .ace_editor .ace_gutter-active-line {
+    color: $editorLineNumber.activeForeground;
+}
+
+.theme-vs .ace_editor.ace_autocomplete {
+    background: $editorSuggestWidget.background;
+    color: $editorSuggestWidget.foreground;
+}
+
+.theme-vs .ace_editor.ace_autocomplete .ace_marker-layer .ace_active-line {
+    background: $editorSuggestWidget.selectedBackground;
+    color: $editorSuggestWidget.highlightForeground;
+}
+
+.theme-vs .ace_gutter {
+    background: $editorGutter.background;
+}
+
+.theme-vs .error-text {
+    color: $errorForeground|#e51c23;
+}
+
+.theme-vs .ace_tooltip,
+.theme-vs .symbol-tooltip {
+    background: $editorWidget.background;
+    color: $editorWidget.foreground|foreground;
+    border-color: $editorWidget.border;
+}
+
+.theme-vs .ace_marker-layer .ace_bracket {
+    background: $editorBracketMatch.background;
+}
+.theme-vs .ace_marker-layer .ace_selection{
+    background: $editor.selectionBackground|editor.selectionHighlightBackground;
+}
+.theme-vs .ace_marker-layer .ace_selected-word{
+    background: $editor.wordHighlightBackground|editor.inactiveSelectionBackground;
+}
+.theme-vs .ace_bad_regex .ace_search_field:active,
+.theme-vs .ace_bad_regex input:not([type]):focus,
+.theme-vs .ace_bad_regex input[type="text"]:focus,
+.theme-vs .ace_bad_regex input[type="search"]:focus {
+    border-color: $inputValidation.errorBorder;
+    background: $inputValidation.errorBackground;
+    color: $inputValidation.errorForeground;
+}
+/* unneeded 
+    "statusBar.debuggingBackground": "#b15a91",
+    "statusBar.noFolderBackground": "#011627",
+    "statusBarItem.activeBackground": "#03648a",
+    "statusBarItem.hoverBackground": "#03648a",
+    "inputValidation.infoBackground": "#219fd5",
+    "inputValidation.infoBorder": "#219fd5",
+    "inputValidation.warningBackground": "#f7ecb5",
+    "inputValidation.warningBorder": "#f7ecb5",
+    "inputValidation.warningForeground": "#000000",
+*/
+/*
+ugly
+#status-filename{
+    background:$statusBarItem.prominentBackground;
+} */

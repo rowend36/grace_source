@@ -40,13 +40,13 @@ _Define(function(global) {
         } else pending.push(opts);
     };
     var warn = function(text, duration) {
-        notify("<i class='orange-text material-icons toast-icon'>warning</i>" + text, duration || (text.length > 100 ? 5000 : 2000), warningClasses);
+        notify("<i class='orange-text material-icons toast-icon'>warning</i>" + text, duration || (text.length > 20 ? (text.length*100) : 2000), warningClasses);
     };
     var info = function(text, duration) {
-        notify("<i class='white-text material-icons toast-icon'>error</i>" + text, duration || (text.length > 100 ? 5000 : 2000), infoClasses);
+        notify("<i class='white-text material-icons toast-icon'>error</i>" + text, duration || (text.length > 20 ? (text.length*100) : 2000), infoClasses);
     };
     var error = function(text, duration) {
-        notify("<i class='red-text material-icons toast-icon'>error</i>" + text, duration || (text.length > 100 ? 5000 : 2000), errorClasses);
+        notify("<i class='red-text material-icons toast-icon'>error</i>" + text, duration || (text.length > 20 ? (text.length*100) : 2000), errorClasses);
     };
     var ask = function(text, yes, no) {
         var answer = confirm(text);
@@ -218,9 +218,9 @@ _Define(function(global) {
     };
     var getText = function(text, func, defText, value_completer) {
         if (Array.isArray(value_completer)) {
-            value_completer = value_completer.sort()
+            value_completer = value_completer.sort();
         }
-        text = text.split("\n").join("</br>")
+        text = text.split("\n").join("</br>");
         var dialog = createInputDialog(text, func, function() {
             return defText;
         }, func, value_completer && (Array.isArray(value_completer) ? {
@@ -231,7 +231,7 @@ _Define(function(global) {
                     });
                 },
                 update: function(input, text) {
-                    return input.value=text;
+                    return (input.value=text);
                 }
             } :
             value_completer));
@@ -247,4 +247,4 @@ _Define(function(global) {
         prompt: getText,
         ask: ask,
     };
-}) /*_EndDefine*/
+}); /*_EndDefine*/

@@ -120,6 +120,7 @@ _Define(function(global) {
         'documents-loaded': null,
         'app-paused': null,
         'app-resumed': null,
+        'theme-change': null,
         'view-change': null,
         'fully-loaded': null,
         'filebrowsers': null,

@@ -1,4 +1,4 @@
-_Define(function (global) {
+_Define(function(global) {
   "use strict";
   var FileBrowser = global.FileBrowser;
   var Hierarchy = global.Hierarchy;
@@ -10,6 +10,7 @@ _Define(function (global) {
   var ScrollSaver = global.ScrollSaver;
   var NestedRenderer = global.NestedRenderer;
   var isDirectory = global.FileUtils.isDirectory;
+  var Icons = global.FileIcons;
   /**@constructor
    * 
    */
@@ -21,15 +22,7 @@ _Define(function (global) {
     //getOrCreateViews return viewholders to store attr,class,visibility
     //pagesize is infinite, pageStart is 0
     this.cache = new FastCache(
-      new RecyclerViewCache(function () {
-        var view = document.createElement("div");
-        view.innerHTML =
-          "<li class=\"file-item\" style='position:absolute;top:0px;'><span><i class = 'type-icon material-icons'>folder</i></span><span class='filename'>" +
-          '</span><span class="dropdown-btn right" data-target="">' +
-          '<i class="material-icons" >more_vert</i>' +
-          "</span><span class= 'file-info'></span></li></li>";
-        return $(view.children[0]);
-      }, null),
+      new RecyclerViewCache(this.createFileItem.bind(this), null),
       true
     );
     this.renderer = renderer || new RecyclerRenderer();
@@ -37,9 +30,15 @@ _Define(function (global) {
     FileBrowser.call(this, id, rootDir, fileServer, noReload);
   }
   RecyclerStub.prototype = Object.create(FileBrowser.prototype);
+  RecyclerStub.prototype.createFileItem = function() {
+    var view = document.createElement("div");
+    view.innerHTML = this.viewTemplate;
+    view.children[0].style.position = 'absolute';
+    return $(view.children[0]);
+  };
   RecyclerStub.prototype.constructor = RecyclerStub;
   RecyclerStub.prototype.superClass = FileBrowser.prototype;
-  RecyclerStub.prototype.createView = function (stub) {
+  RecyclerStub.prototype.createView = function(stub) {
     this.superClass.createView.apply(this, arguments);
     this.scrollElement = $(document.createElement("div"));
     this.scrollElement.css("position", "absolute");
@@ -53,31 +52,32 @@ _Define(function (global) {
     if (this.renderer) this.renderer.views = [];
   };
   RecyclerStub.prototype.pageSize = 1000;
-  RecyclerStub.prototype.destroy = function () {
+  RecyclerStub.prototype.destroy = function() {
     this.renderer.detach();
     this.renderer.views = null;
     this.renderer.beforeRender = true;
     this.cache = null;
     this.superClass.destroy.apply(this, arguments);
   };
-  RecyclerStub.prototype.onBeforeRender = function () {
+  RecyclerStub.prototype.onBeforeRender = function() {
     var scroll;
     if (this.scroller && this.renderer.height > this.renderer.viewport.y * 2)
       scroll = ScrollSaver.saveScroll(this.scroller);
-    //this.renderer.invalidate(Infinity);
-    //if(this.debugRect)this.debugRect.update();
-    //else if(!this.parentStub)this.debugRect = global.ViewportVisualizer.create(this.root[0],this.renderer);
+    // this.renderer.invalidate(Infinity);
+    // if(this.debugRect)this.debugRect.update();
+    // else if(!this.parentStub)this.debugRect = global.ViewportVisualizer.create(this.root[0],this.renderer);
     this.root.css(
       "height",
-      this.paddingTop + this.renderer.height + this.paddingBottom + "px"
+      this.paddingTop + this.renderer.height + this.paddingBottom + window.innerHeight / 2 +
+      "px"
     );
     this.scrollElement.css(
       "height",
       this.paddingTop +
-        this.renderer.height +
-        this.paddingBottom +
-        window.innerHeight / 2 +
-        "px"
+      this.renderer.height +
+      this.paddingBottom + window.innerHeight / 2 +
+      "px"
+
     );
     this.bottomElement &&
       this.bottomElement.css("top", this.renderer.height + "px");
@@ -87,7 +87,7 @@ _Define(function (global) {
     }
   };
 
-  RecyclerStub.prototype.handleScroll = function (element) {
+  RecyclerStub.prototype.handleScroll = function(element) {
     if (this.ignoreScroll) {
       this.ignoreScroll = false;
       return;
@@ -99,9 +99,9 @@ _Define(function (global) {
     this.superClass.handleScroll.apply(this, arguments);
   };
 
-  RecyclerStub.prototype.updateVisibleItems = function (force) {
+  RecyclerStub.prototype.updateVisibleItems = function(force) {
     if (force) {
-      for (var i = Math.min(this.pageEnd, this.pageSize); i > 0; ) {
+      for (var i = Math.min(this.pageEnd, this.pageSize); i > 0;) {
         if (this.childViews[--i].bound) {
           this.childViews[i].unbind();
         }
@@ -112,14 +112,14 @@ _Define(function (global) {
     this.renderer.invalidate(-1);
   };
 
-  RecyclerStub.prototype.getOrCreateView = function (i) {
+  RecyclerStub.prototype.getOrCreateView = function(i) {
     if (!this.childViews[i]) {
       this.childViews[i] = new FileItemHolder(this);
       this.renderer.register(i, this.childViews[i]);
     }
     return this.childViews[i];
   };
-  RecyclerStub.prototype.closeInlineDialog = function () {
+  RecyclerStub.prototype.closeInlineDialog = function() {
     if (this.inlineDialogStub) this.inlineDialogStub.removeClass("destroyed");
     if (this.inlineDialog) this.inlineDialog.detach();
     this.inlineDialog = this.inlineDialogStub = null;
@@ -128,7 +128,7 @@ _Define(function (global) {
       this.inlineDialogViewHolder = null;
     }
   };
-  RecyclerStub.prototype.showInlineDialog = function (el, m, status, p) {
+  RecyclerStub.prototype.showInlineDialog = function(el, m, status, p) {
     if (el) el = this.getElement(el.attr("filename"));
     this.superClass.showInlineDialog.apply(this, [
       el,
@@ -143,21 +143,21 @@ _Define(function (global) {
         renderer: this.renderer,
         //prevent detaching because it does nothing
         height: Infinity,
-        render: function () {
+        render: function() {
           this.view.css("top", this.y + "px");
         },
         offset: this.backButton ? this.itemHeight : 0,
-        compute: function () {
+        compute: function() {
           return getHeight(this.view, this) - this.offset;
         },
-        detach: function (index) {
+        detach: function(index) {
           this.visible = false;
         },
       };
       this.renderer.register(0, this.inlineDialogViewHolder);
     }
   };
-  RecyclerStub.prototype.renderView = function (index, view) {
+  RecyclerStub.prototype.renderView = function(index, view) {
     view.attrs = {};
     view.attr("filename", this.hier[index]);
     view.classes.length = 0;
@@ -170,14 +170,14 @@ _Define(function (global) {
     }
     this.superClass.renderView.apply(this, [index, view.view]);
   };
-  RecyclerStub.prototype.getElement = function (name) {
+  RecyclerStub.prototype.getElement = function(name) {
     for (var i in this.childViews) {
       if (this.childViews[i].attr("filename") == name)
         return this.childViews[i];
     }
     return $("nothing");
   };
-  RecyclerStub.prototype.createTreeView = function () {
+  RecyclerStub.prototype.createTreeView = function() {
     var stub = this;
     stub.tree = new RecyclerChildStub(
       stub.root,
@@ -214,19 +214,20 @@ _Define(function (global) {
   FileItemHolder.prototype = Object.create(RecyclerViewHolder.prototype);
   FileItemHolder.prototype.constructor = FileItemHolder;
   /*Overrides*/
-  FileItemHolder.prototype.compute = function () {
+  FileItemHolder.prototype.compute = function() {
     return (
       (this.hidden ? 0 : this.height) +
       (this.widget ? getHeight(this.widget, this) : 0)
     );
   };
   Object.defineProperty(FileItemHolder.prototype, "0", {
-    get: function () {
+    get: function() {
       this.find("");
       return this.bound[0];
     },
   });
-  FileItemHolder.prototype.render = function (
+  var stats = global.renderStats;
+  FileItemHolder.prototype.render = function(
     viewport,
     index,
     insertBefore,
@@ -237,12 +238,14 @@ _Define(function (global) {
       if (!this.visible || restack) {
         var next = this.widget[0].nextElementSibling;
         if (insertBefore && next != insertBefore) {
+          stats.insert++;
           this.browser.root[0].insertBefore(this.widget[0], insertBefore);
         } else if (
           next &&
           !insertBefore &&
-          i != this.renderer.renderlist.length - 1
+          index != this.renderer.renderlist.length - 1
         ) {
+          stats.append++;
           this.browser.root[0].appendChild(this.widget[0]);
         }
         arguments[2] = this.widget[0];
@@ -255,30 +258,32 @@ _Define(function (global) {
       //override for buggy typeicon
       var filename = this.attr("filename");
       if (isDirectory(filename)) {
-        if (cbs && cbs[filename] && !cbs[filename].renderer.hidden) {
-          this.view.find(".type-icon").text("folder_open");
-        } else this.view.find(".type-icon").text("folder");
+        if (cbs) {
+          if (cbs[filename] && !cbs[filename].renderer.hidden) {
+            Icons.renderEl(this.view.find(".type-icon"), "folder_open", filename);
+          } else Icons.renderEl(this.view.find(".type-icon"), "folder_close", filename);
+        } else Icons.renderEl(this.view.find(".type-icon"), "folder", filename);
       }
       if (this.widget) arguments[2] = this.widget[0];
       arguments[3] = true;
     }
     RecyclerViewHolder.prototype.render.apply(this, arguments);
   };
-  FileItemHolder.prototype.unbind = function () {
+  FileItemHolder.prototype.unbind = function() {
     if (!this.view) {
       this.cache.push(this.bound);
       this.lastY = null;
     }
     this.bound = null;
   };
-  FileItemHolder.prototype.detach = function () {
+  FileItemHolder.prototype.detach = function() {
     if (this.bound) {
       this.view = null;
       this.bound.addClass("destroyed");
     }
     RecyclerViewHolder.prototype.detach.apply(this, arguments);
   };
-  FileItemHolder.prototype.bindView = function () {
+  FileItemHolder.prototype.bindView = function() {
     var view = this.view;
     var filename = this.browser.hier[this.index];
 
@@ -296,12 +301,14 @@ _Define(function (global) {
     }
     if (isDirectory(filename)) {
       var cbs = this.browser.childStubs;
-      if (cbs && cbs[filename] && !cbs[filename].renderer.hidden) {
-        view.find(".type-icon").text("folder_open");
-      } else view.find(".type-icon").text("folder");
+      if (cbs) {
+        if (cbs[filename] && !cbs[filename].renderer.hidden) {
+          Icons.renderEl(view.find(".type-icon"), "folder_open", filename);
+        } else Icons.renderEl(view.find(".type-icon"), "folder_close", filename);
+      } else Icons.renderEl(view.find(".type-icon"), "folder", filename);
     }
   };
-  FileItemHolder.prototype.find = function (el) {
+  FileItemHolder.prototype.find = function(el) {
     //origin of buggy type-icon
     if (el === ".type-icon")
       return this.view ? this.view.find(el) : $("nothing");
@@ -317,7 +324,7 @@ _Define(function (global) {
     }
     return this.bound.find(el);
   };
-  FileItemHolder.prototype.after = function (el) {
+  FileItemHolder.prototype.after = function(el) {
     var view = document.createElement("div");
     view.innerHTML = el;
     view = view.children[0];
@@ -325,16 +332,18 @@ _Define(function (global) {
     view.style.top = this.y + this.height + "px";
     var insertBefore = this.view && this.view[0].nextElementSibling;
     if (insertBefore) {
+      stats.insert++;
       this.browser.root[0].insertBefore(view, insertBefore);
     } else {
+      stats.append++;
       this.browser.root[0].appendChild(view);
     }
     this.widget = $(view);
-    this.widget.before = function () {
+    this.widget.before = function() {
       return this;
     };
     var self = this;
-    this.widget.detach = function () {
+    this.widget.detach = function() {
       view.parentElement.removeChild(view);
       self.widget = null;
       self.renderer.invalidate(self);
@@ -342,7 +351,7 @@ _Define(function (global) {
     this.renderer.invalidate(self);
     return this;
   };
-  FileItemHolder.prototype.attr = function (
+  FileItemHolder.prototype.attr = function(
     text,
     value = FileItemHolder.prototype.null
   ) {
@@ -358,10 +367,10 @@ _Define(function (global) {
       this.attrs[text] = value;
     }
   };
-  FileItemHolder.prototype.next = function (el) {
+  FileItemHolder.prototype.next = function(el) {
     return this.widget;
   };
-  FileItemHolder.prototype.addClass = function (text) {
+  FileItemHolder.prototype.addClass = function(text) {
     if (this.view) {
       this.view.addClass(text);
     } else if (this.bound) this.bound.addClass(text);
@@ -370,13 +379,13 @@ _Define(function (global) {
       this.hide();
     }
   };
-  FileItemHolder.prototype.hasClass = function (text) {
-    return this.view
-      ? this.view.hasClass(text)
-      : this.classes.indexOf(text) > -1;
+  FileItemHolder.prototype.hasClass = function(text) {
+    return this.view ?
+      this.view.hasClass(text) :
+      this.classes.indexOf(text) > -1;
   };
   FileItemHolder.prototype.null = {};
-  FileItemHolder.prototype.removeClass = function (text) {
+  FileItemHolder.prototype.removeClass = function(text) {
     if (this.view) {
       this.view.removeClass(text);
     } else if (
@@ -396,7 +405,7 @@ _Define(function (global) {
     this.stub = stub;
   }
   RecyclerNavBehaviour.prototype = {
-    getPrev: function (current, root, dir, $default) {
+    getPrev: function(current, root, dir, $default) {
       var element = this.stub.parentStub.getElement(
         this.stub.parentStub.filename(this.stub.rootDir)
       );
@@ -407,7 +416,7 @@ _Define(function (global) {
       }
       return (element.view || element.bound)[0];
     },
-    getNext: function (current, root, dir, $default) {
+    getNext: function(current, root, dir, $default) {
       var parent = this.stub.parentStub;
       var index = parent.hier.indexOf(parent.filename(this.stub.rootDir));
       var element = parent.childViews[index + 1];
@@ -419,7 +428,7 @@ _Define(function (global) {
       }
       return (element.view || element.bound)[0];
     },
-    detect: function () {
+    detect: function() {
       return this.stub.root[0];
     },
     horizontal: true,
@@ -484,7 +493,7 @@ _Define(function (global) {
   RecyclerChildStub.prototype.constructor = RecyclerChildStub;
   Object.assign(RecyclerChildStub.prototype, ChildStub.prototype);
   RecyclerChildStub.prototype.superChildStub = RecyclerStub.prototype;
-  RecyclerChildStub.prototype.onChildRender = function () {
+  RecyclerChildStub.prototype.onChildRender = function() {
     this.root.css(
       "height",
       this.paddingTop + this.renderer.height + this.paddingBottom + "px"
@@ -492,8 +501,7 @@ _Define(function (global) {
   };
   RecyclerChildStub.prototype.mixinChildStub = ChildStub.prototype;
   RecyclerChildStub.prototype.constructor = RecyclerChildStub;
-
-  RecyclerChildStub.prototype.scrollItemIntoView = function (
+  RecyclerChildStub.prototype.scrollItemIntoView = function(
     filename,
     updatePage
   ) {
@@ -566,9 +574,9 @@ _Define(function (global) {
       scrollParent.scrollLeft += finalLeft;
     }
   };
-  RecyclerChildStub.prototype.expandFolder = function (name, callback) {
+  RecyclerChildStub.prototype.expandFolder = function(name, callback) {
     var el = this.getElement(name);
-    var callback2 = function () {
+    var callback2 = function() {
       this.extraSpace[this.hier.indexOf(name)] = this.childStubs[
         name
       ].renderer.height;
@@ -581,7 +589,7 @@ _Define(function (global) {
       );
     }
     var icon = el.find(".type-icon");
-    icon.text("folder_open");
+    Icons.renderEl(icon, "folder_open", name);
     if (!this.childStubs[name]) {
       //will be redone in render
       //var childStub = NestedBCache.pop(TempNode);
@@ -614,7 +622,7 @@ _Define(function (global) {
       else callback2();
     }
   };
-  RecyclerChildStub.prototype.getOffsetTop = function () {
+  RecyclerChildStub.prototype.getOffsetTop = function() {
     var top = 0;
     var parent = this;
     while (parent.getParent()) {
@@ -624,7 +632,7 @@ _Define(function (global) {
     top += parent.root[0].getBoundingClientRect().top;
     return top;
   };
-  RecyclerChildStub.prototype.clearChildStubs = function () {
+  RecyclerChildStub.prototype.clearChildStubs = function() {
     for (var i in this.childStubs) {
       this.childStubs[i].renderer.detach();
       this.childStubs[i].root[0].navBehaviour = null;
@@ -632,11 +640,11 @@ _Define(function (global) {
     }
     this.mixinChildStub.clearChildStubs.apply(this, arguments);
   };
-  RecyclerChildStub.prototype.foldFolder = function (name) {
+  RecyclerChildStub.prototype.foldFolder = function(name) {
     this.mixinChildStub.foldFolder.bind(this).apply(this, arguments);
     var fb = this.childStubs[name];
-    if(fb.inSelectMode)
-        fb.exitSelectMode();
+    if (fb.inSelectMode)
+      fb.exitSelectMode();
     fb.renderer.hide();
     this.handleScroll();
   };

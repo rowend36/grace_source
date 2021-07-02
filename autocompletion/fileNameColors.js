@@ -1,6 +1,5 @@
 _Define(function(global) {
     var FileUtils = global.FileUtils;
-    var docs = global.docs;
     var Utils = global.Utils;
     var Docs = global.Docs;
 
@@ -9,14 +8,16 @@ _Define(function(global) {
     var appConfig = global.registerAll({
         "fileCompletion": {
             "currentDirs": ["$PROJECT_DIR"],
-            "mountPaths":[["~","$PROJECT_DIR"]],
+            "mountPaths": [
+                ["~", "$PROJECT_DIR"]
+            ],
             "maxFileSearchDepth": 1,
             "maxMatches": 10
         }
     }, "autocompletion");
     global.registerValues({
         "currentDirs": "By defualt, current project directory and directory name of current file will be searched. You can add more paths with this option. This should be an absolute path. You can also add globs such as /home/* (Note: this will match contents from all folders in /home/ not the contents of home). $PROJECT_DIR represents your projectDir. If maxFileSearchDepth>0, the directory of the current file is also searched first",
-        "mountPaths":"A list of paths that will be substituted before resolving e.g ['/public/','/home/www/'] will list files from /home/www/ when you type /public/. If the given path is relative, it is resolved according to currentDirs option. Ensure you end both paths with trailing slashes.",
+        "mountPaths": "A list of paths that will be substituted before resolving e.g ['/public/','/home/www/'] will list files from /home/www/ when you type /public/. If the given path is relative, it is resolved according to currentDirs option. Ensure you end both paths with trailing slashes.",
         "maxFileSearchDepth": {
             doc: "How many directories above the current directory should be checked",
             "default": 1
@@ -36,9 +37,10 @@ _Define(function(global) {
     ConfigEvents.on("autocompletion", update);
 
     function gatherFileNames(folder, filename, roots, cb) {
-        config.mountPaths.some(function(mount){
-            if(folder.startsWith(mount[0])){
-                folder = mount[1]+folder.substring(mount[0].length);
+        var baseScore = folder ? 500 : filename ? 300 : 250;
+        config.mountPaths.some(function(mount) {
+            if (folder.startsWith(mount[0])) {
+                folder = mount[1] + folder.substring(mount[0].length);
                 return true;
             }
         });
@@ -92,19 +94,24 @@ _Define(function(global) {
                 }));
             } else folder[1].getFiles(folder[0], function(e, r) {
                 if (r) {
+                    r.forEach(function(e) {
+
+                    });
                     files = files.concat(r.map(function(e) {
+                        var score = baseScore + (e[0] == "." ? 98 : e[e.length - 1] != "/" ? 99 : 100) - (3 * i);
+                        if (e.startsWith(filename)) {
+                            found++;
+                            score += 100;
+                        }
                         return {
                             iconClass: " symbol-completion-folder",
                             message: "filename",
                             meta: folder[0],
                             value: e,
-                            score: (e[0] == "." ? 698 : e[e.length - 1] != "/" ? 699 : 700) - (3 * i),
+                            score: score,
                             completer: global.fileNameCompleter
                         };
                     }));
-                    r.forEach(function(e) {
-                        if (e.startsWith(filename)) found++;
-                    });
                     if (found >= config.maxMatches)
                         abort.abort();
                 }
@@ -122,7 +129,8 @@ _Define(function(global) {
             var completions = editor.completer.completions;
             if (completions.filterText) {
                 var ranges = editor.selection.getAllRanges();
-                for (var i = 0, range; range = ranges[i]; i++) {
+                for (var i = 0, range;
+                    (range = ranges[i]); i++) {
                     range.start.column -= completions.filterText.length;
                     editor.session.remove(range);
                 }
@@ -135,30 +143,46 @@ _Define(function(global) {
         getCompletions: function(editor, session, pos, prefix, callback) {
             var token = editor.session.getTokenAt(pos.row, pos
                 .column);
+            //requirement 1 -  must be a string or comment
             if (!token || !/string|comment/.test(token.type)) {
                 return callback(null);
             }
             var file = token.value.substring(0, pos.column - token.start);
-            file = file.split(" ").pop();
+
+            var hasSpace = false;
+            file = file.replace(/\\ /g, " ");
+            if (file.indexOf(" ") > -1) {
+                hasSpace = true;
+                file = file.split(" ").pop();
+            }
             if (token.type.indexOf("comment") > -1) {
+                hasSpace = true;
                 if (file.startsWith("/*"))
                     file = file.substring(2);
-            } else file = file.replace(/['"`]/, "");
+            } else {
+                file = file.replace(/['"`]/, "");
+            }
             file = file.replace(/\\\\/g, "/");
-            if (file.indexOf("/") < 0) {
+
+            //requirement 2, don't complete ordinary words
+            //unless at the beginning of a string
+            if (hasSpace && file.indexOf("/") < 0) {
                 return callback(null);
             }
+
             var doc = Docs.forSession(session);
             file = FileUtils.normalize(file);
-            var folder = FileUtils.dirname(file);
-            if (FileUtils.isDirectory(file)) {
-                folder = file;
-                file = "";
-            } else if (folder == null) {
-                folder = file;
-                file = "";
-            } else file = file.substring(folder == "/" ? 1 : folder.length + 1);
 
+            var folder;
+            if (FileUtils.isDirectory(file) || !file) {
+                folder = file;
+                file = "";
+            } else {
+                folder = FileUtils.dirname(file);
+                if (folder != "") {
+                    file = file.substring(folder == "/" ? 1 : folder.length + 1);
+                }
+            }
             //dirname removes trailing slash except for root directory
             var possibleRoots = [];
             if (folder[0] != "/" && config.maxFileSearchDepth > 0)
@@ -178,36 +202,40 @@ _Define(function(global) {
     update();
 });
 _Define(function(global) {
-    var FileUtils = global.FileUtils;
     var docs = global.docs;
     var Utils = global.Utils;
-    var Docs = global.Docs;
     //make this a line completer
     var completions = global.Completions;
     var ConfigEvents = global.ConfigEvents;
     var appConfig = global.registerAll({
         colors: {
-            prefixes: ["color:", "background-color:", "style.color=", "style.backgroundColor=", "border:## ##"],
-            colors: ["red", "blue", "orange"]
+            presets: ["red", "blue", "orange"]
         }
-    }, "autocompletion")
+    }, "autocompletion");
     var config = appConfig.colors;
-    global.registerValues({}, "autocompletion");
-
-    var regex = /rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+(?:\s*,\s*\d+\s*)?\)|\#(?:[\da-f]{6,8}|[\da-f]{3,4})/g;
+    global.registerValues({
+        "presets": "An Array of color presets. Best loaded as a separate file. Each item can either be an object of the form \n\
+{\n\
+    value:string, - The value inserted when selected\n\
+    caption?string, - The name in autocompletion menu\n\
+    color?:string?\n - The color used for preview\n\
+} or a plain string representing all of them"
+    }, "autocompletion.colors");
+    var prefixes = ["color:", "background-color:", "style.color=", "style.backgroundColor=", "background:", "style.background=", "#","rgb(","rgba("];
+    var regex = /rgba?\(\s*(\d*\.)?\d+\s*,\s*(\d*\.)?\d+\s*,\s*(\d*\.)?\d+(?:\s*,\s*(\d*\.)?\d+\s*)?\)|\#(?:[\da-f]{6,8}|[\da-f]{3,4})/g;
 
     function matchLine(prefix, line) {
-        line = line.replace(/^\s*|\s*$/g, "").replace(/\s+/g, " ").replace(/['"`]$/, "");
+        line = line.replace(/^\s*|\s*$/g, "").replace(/\s+/g, " ").replace(/['"`]/g, "");
         prefix = Utils.regEscape(prefix)
             .replace(/\\#\\#/g, "\\s?.+\\s?")
-            .replace(/\W+/g, "\\s?$&\\s?");
+            .replace(/\W+/g, "\\s?$&\\s?")+"$";
         try {
-            return new RegExp(prefix).test(line);
+            return new RegExp(prefix).exec(line);
         } catch (e) {
-            Notify.error("Invalid color regex");
+            global.Notify.error("Invalid color regex");
+            return false;
         }
     }
-
     function update() {
         if (global.colorCompleter.registered !== Boolean(appConfig.enableColorCompletion)) {
             global.colorCompleter.registered = Boolean(appConfig.enableColorCompletion);
@@ -217,11 +245,19 @@ _Define(function(global) {
         }
     }
     ConfigEvents.on("autocompletion", update);
-    var registry = {}
+    var registry = {};
 
-    function gatherColors() {
-        var p = config.colors.slice(0);
+    function uniq(arr) {
+        var prev;
+        return arr.sort().filter(function(e) {
+            return e == prev ? false : (prev = e);
+        });
+    }
+
+    function gatherColors(removePrefix) {
+        var p = config.presets.slice(0);
         for (var i in docs) {
+            var doc = docs[i];
             if (!registry[i] || doc.getRevision() != registry[i].rev) {
                 registry[i] = {
                     rev: doc.getRevision()
@@ -230,10 +266,8 @@ _Define(function(global) {
                 regex.lastIndex = 0;
                 var colors = t.match(regex);
                 if (colors) {
-                    var prev;
-                    colors = colors.sort().filter(function(e) {
-                        return e == prev ? false : (prev = e)
-                    });
+                    //TODO Utils.uniq
+                    colors = uniq(colors);
                 }
                 registry[i].colors = colors;
             }
@@ -241,31 +275,81 @@ _Define(function(global) {
                 p = p.concat(registry[i].colors);
             }
         }
-        var prev = "";
-        p = p.sort().filter(function(e) {
-            return e == prev ? false : (prev = e)
-        });
+        p = uniq(p);
+        var score = 600;
+        var prefixOffset = 0;
+        if (removePrefix){
+            prefixOffset = removePrefix.length;
+            p = p.filter(function(e) {
+                return (e.caption || e.value || e).startsWith(removePrefix);
+            });
+            score += 300;
+        }
         return p.map(
             function(e) {
                 return {
                     iconClass: " symbol-completion-color",
                     message: 'color',
                     value: e.value || e,
-                    caption: e.caption || e,
-                    score: 600,
+                    completer: global.colorCompleter,
+                    color: e.color || (typeof e == "string" ? e : null),
+                    caption: (e.caption || e.value || e).substring(prefixOffset),
+                    score: score,
                 };
             }
         );
     }
     global.colorCompleter = {
         registered: false,
+        insertMatch: function(editor, data) {
+            var completions = editor.completer.completions;
+            if (completions.filterText || this.filterPrefix) {
+                var len = completions.filterText.length + this.filterPrefix.length;
+                var suffix = this.filterSuffixes[this.filterPrefix];
+                var ranges = editor.selection.getAllRanges();
+                var range;
+                if (suffix) {
+                    for (var j = 0;
+                        (range = ranges[j]); j++) {
+                        if ((editor.session.getLine(range.end.row) || "")[range.end.column] == suffix) {
+                            range.end.column++;
+                        }
+                    }
+                }
+                for (var i = 0;
+                    (range = ranges[i]); i++) {
+                    range.start.column -= len;
+                    editor.session.remove(range);
+                }
+            }
+            editor.execCommand("insertstring", data.value);
+        },
+        filterPrefix: "",
+        filterSuffixes: {
+            "#":"",
+            "rgba(": ")",
+            "rgb(": ")"
+        },
         getCompletions: function(editor, session, pos, prefix, callback) {
             //check mode
             var line = editor.session.getLine(pos.row).slice(0, pos.column - prefix.length);
-            if (config.prefixes.some(function(e) {
-                    return matchLine(e, line);
-                })) callback(null, gatherColors());
-            else callback(null);
+            if (prefixes.some(function(e) {
+                    var result = matchLine(e, line);
+                    if(result){
+                        if(this.filterSuffixes.hasOwnProperty(result[0]))
+                            this.filterPrefix=result[0];
+                        else this.filterPrefix = "";
+                        return true;
+                    }
+                    return false;
+                }, this)) {
+                callback(null, gatherColors(this.filterPrefix));
+            } else callback(null);
+        },
+        getDocTooltip: function(item) {
+            if (!item.docHTML && item.color) {
+                item.docHTML = "<span class='color-preview' style='background:" + item.color + "'></span>";
+            }
         }
     };
     update();

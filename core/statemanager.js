@@ -4,6 +4,7 @@ _Define(function(global) {
     //in mobile devices
     //you can either add state change listeners
     //or use the AutoCloseable interface
+    //TODO disable in iframes
     global.manageState = function(window) {
         if (global.State) return global.State;
         var obj = {};

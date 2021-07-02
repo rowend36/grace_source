@@ -49,10 +49,14 @@ _Define(function(global) {
     }
 
     function genSpaces(amount, sep) {
-        if (amount <= 0) return "";
+        if (!amount || amount < 0) return "";
         if (sep === undefined) sep = " ";
         if (amount < 2) return sep;
-        return new Array(amount + 1).join(sep);
+        if (amount < 10000) {
+            return new Array(amount + 1).join(sep);
+        }
+        var half = amount >> 1;
+        return genSpaces(amount - half, sep) + genSpaces(half, sep);
     }
 
     function printArray(obj, step) {
@@ -137,14 +141,15 @@ _Define(function(global) {
         }
     }
 
-    function extend(prop, superClass, mixin) {
-        var mixins = Array.prototype.slice.call(arguments, 2);
+    function extend(prop, superClass, mixins) {
+        mixins = Array.prototype.slice.call(arguments, 2);
         var a = prop.prototype;
         prop.prototype = Object.create(superClass.prototype);
         for (var i in mixins) {
             Object.assign(prop.prototype, mixins[i].prototype);
         }
         Object.assign(prop.prototype, a);
+        prop.prototype.constructor = prop;
         prop.super = superClass.apply.bind(superClass);
     }
 
@@ -155,7 +160,7 @@ _Define(function(global) {
             timeout = null;
             func.apply(ctx, args);
             ctx = args = null;
-        }
+        };
         var call = function() {
             ctx = this, args = arguments;
             if (!timeout) {
@@ -163,15 +168,17 @@ _Define(function(global) {
             }
         };
         call.now = function() {
-            func.apply(null, arguments);
-            call.cancel()
-        }
+            ctx = this;
+            args = arguments;
+            call.cancel();
+            later();
+        };
         call.cancel = function() {
             if (timeout) {
                 clearTimeout(timeout);
                 ctx = args = null;
             }
-        }
+        };
         return call;
     }
 
@@ -182,22 +189,35 @@ _Define(function(global) {
             timeout;
         var context, args;
         var later = function() {
-            last = new Date().getTime()
+            last = new Date().getTime();
             timeout = null;
-            func.apply(context, args)
+            func.apply(context, args);
             context = args = null;
-        }
-        return function() {
-            context = this
+        };
+        var call = function() {
+            context = this;
             args = arguments;
             if (timeout) return;
-            var now = new Date().getTime()
+            var now = new Date().getTime();
             if (now - last > wait) {
-                later()
+                later();
             } else {
                 timeout = setTimeout(later, wait - (now - last));
             }
-        }
+        };
+        call.now = function() {
+            context = this;
+            args = arguments;
+            call.cancel();
+            later();
+        };
+        call.cancel = function() {
+            if (timeout) {
+                clearTimeout(timeout);
+                context = args = null;
+            }
+        };
+        return call;
     }
 
     function debounce(func, wait) {
@@ -210,12 +230,12 @@ _Define(function(global) {
             var later = function() {
                 timeout = null;
                 func.apply(context, args);
-            }
+            };
             if (timeout) {
                 clearTimeout(timeout);
             }
             timeout = setTimeout(later, wait);
-        }
+        };
     }
     /*The most powerful async method ever built*/
     /*Now spoilt by bad api, a method should have 2-3 arguments, anything longer is a scam*/
@@ -237,10 +257,10 @@ _Define(function(global) {
                 while (a--) {
                     next();
                 }
-            }
+            };
             waiting = 0;
         }
-        var id = id_++
+        var id = id_++;
         if (cancellable) {
             cancel = function(e) {
                 if (!cancelled) {
@@ -249,12 +269,12 @@ _Define(function(global) {
                     cancelled = e || true;
                 }
                 next();
-            }
+            };
         }
         var next = function() {
             if (i >= list.length) {
                 if ((--parallel) == 0 && !unfinished) {
-                    if(finish){
+                    if (finish) {
                         finish(cancelled);
                         finish = null;
                     }
@@ -268,13 +288,12 @@ _Define(function(global) {
                 var item = list[i];
                 each(item, i++, next, cancel);
             }
-        }
+        };
         for (var j = parallel; j > 0; j--) {
             next();
         }
         return resume;
     }
-    var tasks;
     //like throttle but ensures argumnts are not lost
     function Batch(sleep, wake) {
         this.tasks = new Array();
@@ -303,25 +322,26 @@ _Define(function(global) {
             }
             _batchExecute(self);
             return true;
-        }
-    }
+        };
+    };
     var _batchExecute = function(ctx) {
         //a simple strategy would be make getter that checks if timeout and difference between waitUntil and currentTIME and uses it to guess running load
         ctx.timeout = null;
         var deadline = ctx.wakeTime + new Date().getTime();
         var batchSize = ctx.batchSize;
+        var i = 0,
+            tasks = ctx.tasks,
+            t = tasks.length;
         try {
             if (deadline > 0)
-                for (var i = 0,
-                        tasks = ctx.tasks,
-                        t = tasks.length; i++ < t;) {
+                for (; i++ < t;) {
                     var task = tasks.shift();
                     //the first task can try to use batchSize to execute a batch of tasks at once
                     //since ctx.tasks is a public property
                     task.f.apply(task.ctx, task.args);
                     if ((i % batchSize) == 0) {
                         if (new Date().getTime() > deadline) break;
-                        else batchSize += (batchSize >> 1)
+                        else batchSize += (batchSize >> 1);
                     }
                 }
         } finally {
@@ -337,18 +357,18 @@ _Define(function(global) {
             ctx.waitUntil = endT + sleep;
             if (i < t) ctx.timeout = setTimeout(ctx.$execute, sleep);
         }
-    }
+    };
     var toSizeString = function(size, nameType) {
         var sizes = (nameType == "full" ? ["bytes", "kilobytes", "megabytes", "gigabytes", "terabytes"] : ["bytes",
             "kb", "Mb", "Gb", "Tb"
-        ])
+        ]);
         var i = 0;
         while (size > 1024) {
             i++;
             size /= 1024.0;
         }
-        return (Math.round(size * 100) / 100.0) + " " + sizes[i]
-    }
+        return (Math.round(size * 100) / 100.0) + " " + sizes[i];
+    };
     var createCounter = function(cb) {
         var counter = {};
         var count = 0;
@@ -356,7 +376,7 @@ _Define(function(global) {
         counter.increment = function() {
             count++;
         };
-        counter.decrement = function(err, res) {
+        counter.decrement = function(err) {
             count--;
             if (err) errors.push(err);
             if (count === 0 && cb) {
@@ -367,11 +387,11 @@ _Define(function(global) {
             }
         };
         return counter;
-    }
+    };
     var times = {
         "": 1
     };
-    times["milli"] = times["millisecond"] = times["ms"] = times["millisec"] = times[""]
+    times["milli"] = times["millisecond"] = times["ms"] = times["millisec"] = times[""];
     times["sec"] = times["second"] = times["s"] = times[""] * 1000;
     times["min"] = times["minute"] = times["m"] = times["s"] * 60;
     times["hr"] = times["hour"] = times["h"] = times["min"] * 60;
@@ -447,8 +467,8 @@ _Define(function(global) {
             if (self.aborted) return typeof abortCode == 'function' ? abortCode.apply(this, arguments) :
                 abortCode;
             return func.apply(this, arguments);
-        }
-    }
+        };
+    };
     AbortSignal.prototype._abort = function(cause) {
         this.aborted = cause || true;
         var triggers = this.triggers;
@@ -457,18 +477,30 @@ _Define(function(global) {
             triggers[--i].apply(null, arguments);
         }
         return true;
-    }
+    };
     AbortSignal.prototype.notify = function(func) {
         if (this.aborted) setImmediate(func, [this.aborted]);
         else if (this.triggers.indexOf(func) < 0) this.triggers.push(func);
-    }
+    };
     AbortSignal.prototype.unNotify = function(func) {
         var index;
         if (!this.aborted && (index = this.triggers.indexOf(func)) > -1) this.triggers.splice(index, 1);
-    }
+    };
     AbortSignal.prototype.clear = function() {
         this.aborted = true;
         this.triggers = null;
+    };
+
+    function htmlEncode(string) {
+        var entityMap = {
+            "<": "&lt;",
+            ">": "&gt;",
+            "&": "&amp;"
+        };
+        return String(string).replace(/[<>&]/g, function(s) {
+            if (!s) return '';
+            return entityMap[s];
+        });
     }
     var id_count = 0;
     global.Utils = {
@@ -481,7 +513,7 @@ _Define(function(global) {
         },
         guardEntry: function(func, _throw, errorText) {
             var guard = false;
-            if (arguments.length < 3) errorText = 'Attempt to call' + func.name + ' while a call ongoing ignored'
+            if (arguments.length < 3) errorText = 'Attempt to call' + func.name + ' while a call ongoing ignored';
             return function() {
                 if (guard) {
                     var error = new Error(errorText);
@@ -497,8 +529,15 @@ _Define(function(global) {
                 } finally {
                     guard = false;
                 }
-            }
+            };
         },
+        ifSet: function(obj, prop, value) {
+            if (obj[prop] != value) {
+                obj[prop] = value;
+            }
+            return true;
+        },
+        htmlEncode: htmlEncode,
         withTry: function(func, err) {
             if (arguments.length == 1) err = false;
             //intentions should be clear when necessary
@@ -509,7 +548,7 @@ _Define(function(global) {
                     console.error(e);
                 }
                 return err;
-            }
+            };
         },
         noop: function() {},
         assert: function(cond, e) {
@@ -544,7 +583,7 @@ _Define(function(global) {
                         fn.apply(this, arguments);
                     }, emitter);
                 }
-            }
+            };
         },
         genID: function(s) {
             return s + "" + ("" + new Date().getTime()).substring(2) + (((++id_count) % 90) + 10);
@@ -566,21 +605,26 @@ _Define(function(global) {
         except: function(l) {
             return function(e) {
                 return l !== e;
-            }
+            };
         },
         setImmediate: setImmediate,
         not: function(func) {
             return function() {
                 return !func.apply(this, arguments);
-            }
+            };
+        },
+        notIn: function(arr) {
+            return function(e) {
+                return arr.indexOf(e) < 0;
+            };
         },
         plural: function(no, name) {
             return no + " " + name + (no > 1 ? "s" : "");
         },
         inherits: extend,
         toChars: function(str) {
-            return Array.prototype.map.call(str, function(e, i) {
-                return e.charCodeAt(0)
+            return Array.prototype.map.call(str, function(e) {
+                return e.charCodeAt(0);
             }).toString();
         },
         createCounter: createCounter,
@@ -595,7 +639,7 @@ _Define(function(global) {
         track: track,
         throttle: throttle,
         regEscape: function regExpEscape(s) {
-            return s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')
+            return s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
         },
     };
-}) /*_EndDefine*/
+}); /*_EndDefine*/

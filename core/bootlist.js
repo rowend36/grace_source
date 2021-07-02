@@ -1,20 +1,27 @@
-_Define(function (global) {
+_Define(function(global) {
     var extname = global.FileUtils.extname;
 
     function loadScript(script, cb) {
         var scr = document.createElement("script");
         scr.src = script;
-        scr.onload = function () {
+        scr.onload = function() {
             cb();
         };
         document.body.appendChild(scr);
+    }
+
+    function loadResource(url, cb) {
+        $.ajax(url).then(function(data) {
+            global[url] = data;
+            cb();
+        });
     }
 
     function loadStyle(style, cb) {
         var styleEl = document.createElement("link");
         styleEl.href = style;
         styleEl.setAttribute("rel", "stylesheet");
-        styleEl.onload = function () {
+        styleEl.onload = function() {
             cb();
         };
         document.body.appendChild(styleEl);
@@ -28,10 +35,10 @@ _Define(function (global) {
         this.load = this.next.bind(this);
         this.deps = [];
     }
-    Imports.prototype.add = function () {
-        this.deps.push.apply(this.deps,arguments);
+    Imports.prototype.add = function() {
+        this.deps.push.apply(this.deps, arguments);
     };
-    Imports.prototype.next = function () {
+    Imports.prototype.next = function() {
         if (this.deps.length < 1) {
             return this.onLoad && this.onLoad();
         }
@@ -58,12 +65,15 @@ _Define(function (global) {
             this[nextItem.id] = true;
         }
         if (nextItem.ignoreIf) return this.next();
+        if (nextItem.returns && global[nextItem.returns]) {
+            return this.next();
+        }
         if (nextItem.name) {
             console.debug(nextItem.name);
         }
         if (nextItem.func)
             setTimeout(
-                (function () {
+                (function() {
                     try {
                         nextItem.func();
                     } catch (e) {
@@ -82,14 +92,33 @@ _Define(function (global) {
             loadScript(nextItem.script, this.load);
         } else if (nextItem.style) {
             loadStyle(nextItem.style, this.load);
+        } else if (nextItem.resource) {
+            loadResource(nextItem.resource, this.load);
         } else throw new Error("Unknown dependency " + nextItem);
     };
-    Imports.define = function (paths, start, func) {
+    /*
+    paths: [string|resource],
+    start?: a function called on first load
+    func?: a function called with the arguments passed to return function
+    returns function: if func is not defined and start does not return a function,
+     then this will assume the argument is a function and call it with all returned resources
+    */
+    Imports.define = function(paths, start, func) {
         var cachedArgs = [];
-        var bootList = new Imports(function () {
+        if (!(start || func)) {
+            var names = paths.map(function(e) {
+                return e.returns;
+            }).filter(Boolean);
+            func = function(i) {
+                i.apply(this, names.map(function(e) {
+                    return global[e];
+                }));
+            };
+        }
+        var bootList = new Imports(function() {
             bootList = null;
             func = (start && start()) || func;
-            cachedArgs.forEach(function (i) {
+            cachedArgs.forEach(function(i) {
                 try {
                     func.apply(i[0], i[1]);
                 } catch (e) {
@@ -99,15 +128,22 @@ _Define(function (global) {
             start = bootList = paths = cachedArgs = undefined;
         });
 
-        paths.forEach(function (e) {
+        paths.forEach(function(e) {
             bootList.add(e);
         });
-        return function () {
+        return function() {
             if (cachedArgs) {
                 cachedArgs.push([this, arguments]);
                 if (!bootList.started) bootList.next();
             } else return func.apply(this, arguments);
         };
     };
+    Imports.promise = function(deps) {
+        var load = Imports.define(deps);
+        var promise = new Promise(function(r, j) {
+            load(r);
+        });
+        return promise;
+    };
     global.Imports = Imports;
-}) /*_EndDefine*/;
+}) /*_EndDefine*/ ;

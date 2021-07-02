@@ -47,6 +47,7 @@ _Define(function(global) {
         theme: "ace/theme/cobalt",
         hideNonLatinChars: false,
         readOnly: false,
+        annotateScrollbar: true,
         wrap: false,
         htmlBeautify: true,
         autoBeautify: true,
@@ -140,7 +141,8 @@ _Define(function(global) {
                 editors.forEach(function(e) {
                     e.setOption(key, val);
                 });
-            } else this.editor.setOption(key, val);
+            }
+            this.editor.setOption(key, val);
         }
     };
     EditorSettings.prototype.getOption = function(key) {
@@ -187,11 +189,12 @@ _Define(function(global) {
         test: function(val){
             return BOOL.test(val) || val=='always';
         }
-    }
+    };
     var optionsValidator = {
         "animatedScroll": BOOL,
         "autoBeautify": BOOL,
         "htmlBeautify": BOOL,
+        "annotateScrollbar": BOOL,
         "behavioursEnabled": BOOL,
         "copyWithEmptySelection": BOOL,
         "cursorStyle": CURSOR_STYLE,

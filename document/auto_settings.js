@@ -8,6 +8,7 @@ _Define(function(global) {
     "!root": "Get default options for a document based on a list of rules.\n Each rule takes consist of a glob (or null which matches unsaved documents) and a set of options e.g ['*.js',{mode:'ace/mode/javascript'},{}] Any of the editor options can be added. Additional options include encoding and autosave. Flags of the form fl-<flag> e.g fl-formatter are also   supported. *Note paths are matched as absolute paths.  \nThe optional third argument allows exact matching based on the already computed attributes. Data attributes eg \'data-valid\' can be added to be matched by later matches.  This rules are only used when the file is first opened so to see any changes, you have to reopen the document."
   }, "documents.optionRules");
   var FileUtils = global.FileUtils;
+  var table = global.tabulate;
   var Settings = global.Editors.getSettingsEditor().validator;
   var appEvents = global.AppEvents;
   var Notify = global.Notify;
@@ -110,19 +111,9 @@ _Define(function(global) {
           caption: "Show Document Info",
           onclick: function(){
             var doc = global.getActiveDoc();
+            var editor = global.getEditor();
+            var instance = editor.smartCompleter?editor[editor.smartCompleter.name]:null;
             if(!doc)Notify.info("No active documment");
-            var table = function (data) {
-                    var str = "<table>";
-                    for (var i in data) {
-                        str +=
-                            "<tr><td>" +
-                            i +
-                            "</td><td>" +
-                            data[i] +
-                            "</td></tr>";
-                    }
-                    return str + "</table>";
-                };
             Notify.modal({
               header: "Document Info",
               body: table({
@@ -133,7 +124,14 @@ _Define(function(global) {
                 "Line Mode": doc.session.getNewLineMode(),
                 "Detected New Line": JSON.stringify(doc.session.getDocument().$autoNewLine),
                 "Autosave": doc.allowAutoSave || false,
-                "Flags": JSON.stringify(doc.flags),
+                "Enabled flags": JSON.stringify(doc.flags),
+                "Completion Providers": editor.completers && editor.completers.map(function(e){
+                  return e.name || e.constructor.name;
+                }),
+                "Loaded Documents": instance?Object.keys(instance.docs):"",
+                "Annotation Providers": doc.session.listWorkers().map(function(e){
+                  return e.id;
+                })
               }),
               footers: ["close"]
             });

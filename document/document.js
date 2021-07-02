@@ -25,7 +25,7 @@ _Define(function(global){
         this.setPath(path);
         
         //circular reference
-        var session = this.session = new EditSession(this, mode);
+        this.session = new EditSession(this, mode);
         
         if (orphan) {
             this.orphan = orphan;
@@ -119,7 +119,7 @@ _Define(function(global){
     };
     
     Doc.prototype.isTemp = function() {
-        return this.path.startsWith('temp://');
+        return this.path.startsWith('temp:/');
     };
     
     
@@ -198,7 +198,7 @@ _Define(function(global){
                 };
             }).filter(function(e) {
                 if (e.start.row > e.end.row) {
-                    //no longer needed
+                    //Corrupted folds: no longer needed
                     return false;
                 }
                 return true;
@@ -241,7 +241,7 @@ _Define(function(global){
         return (this.editorOptions && this.editorOptions.readOnly);
     };
     Doc.prototype.setValue = function(e, isClean) {
-        AceDocument.prototype.setValue.apply(this,[e,isClean]);
+        AceDocument.prototype.setValue.call(this,e);
         
         var u = this.session.$undoManager;
         if (u && u.$undoStack.length === 1 && u.$redoStack.length === 0 && u.$undoStack[0].length === 1) {
@@ -343,8 +343,6 @@ _Define(function(global){
         doc.lastSave = rev || doc.getRevision();
         //last save checksum, for now we use length
         doc._LSC = doc.getChecksum();
-        //the other way to change this value
-        //are to refresh
         doc.dirty = false;
         //todo put this data elsewhere
         //like in a smaller header

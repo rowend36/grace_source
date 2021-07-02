@@ -1,12 +1,21 @@
 
+.color-preview{
+    display: block;
+    min-height: 20px;
+    min-width: 40px;
+    border: 2px solid black;
+    border-bottom-color: white;
+    border-left-color: #777777;
+    border-right-color: #777777;
+}
 .Ace-Tern-completion:before {
-    border-radius: 8px;
+    border-radius: 0.5em;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.2) inset;
     color: white;
     -moz-box-sizing: border-box;
     -webkit-box-sizing: border-box;
     box-sizing: border-box;
 }
-
 .Ace-Tern-completion-unknown:before {
     content: '?';
     background: #4bb;
@@ -186,18 +195,17 @@
     font-size: 0.95em;
 }
 .symbol-tooltip {
-    border: 1px solid silver;
     border-radius: 3px;
-    padding: 2px 5px;
-    padding-top: 15px;
-    padding-right: 15px;
+    padding: 5px;
+    padding-right: 25px;
     font-size: 14px;
-    white-space: pre-wrap;
+    pointer-events: auto;
+    white-space: pre;
     max-width: 50em;
     max-height: 30em;
     overflow-y: auto;
     position: absolute;
-    z-index: 90;
+    z-index: 180;
     -webkit-box-shadow: 2px 3px 5px rgba(0, 0, 0, .2);
     -moz-box-shadow: 2px 3px 5px rgba(0, 0, 0, .2);
     box-shadow: 2px 3px 5px rgba(0, 0, 0, .2);
@@ -210,16 +218,12 @@
     color: #444;
 }
 .bigfont .symbol-tooltip{
-    font-size: 17px;
+    font-size: 16px;
 }
 .smallfont .symbol-tooltip{
     font-size: 12px;
 }
-.theme-dark .symbol-tooltip{
-    color: #eee;
-    border: #444;
-    background: #333;
-}
+
 .tag-tooltip-header{
     font-size: 1.1em;
     font-weight: bold;
@@ -244,9 +248,7 @@
     color: red;
 }
 
-.symbol-tooltip-boxclose:hover {
-    background-color: yellow;
-}
+
 
 .symbol-tooltip-boxclose:before {
     content: '-';

@@ -1,16 +1,8 @@
 _Define(function(global) {
-    function htmlEncode(string) {
-        var entityMap = {
-            "<": "&lt;",
-            ">": "&gt;",
-            "&": "&amp;"
-        };
-        return String(string).replace(/[<>]/g, function(s) {
-            if (!s) return '';
-            return entityMap[s];
-        });
-    }
+    var htmlEncode = global.Utils.htmlEncode;
     var visit = global.FocusManager.visit;
+    var focus = global.FocusManager.focusIfKeyboard;
+    var EditSession = global.EditSession;
 
     function remove(node) {
         if (node.$closeThisTip) throw 'Error: Tip in use';
@@ -91,15 +83,17 @@ _Define(function(global) {
         return this.makeTooltip(null, null, content, editor, true, timeout);
     };
     UI.prototype.makeTooltip = function(x, y, content, editor, closeOnCursorActivity, fadeOutDuration, onClose) {
-        var node = elt("div", this.cls + "tooltip");
+        var node = elt("div", "ace_tooltip "+this.cls + "tooltip");
         if (typeof content === 'string')
             node.innerHTML = content;
         else node.appendChild(content);
         document.body.appendChild(node);
-        var closeBtn = document.createElement('a');
+        var closeBtn = document.createElement('button');
         closeBtn.setAttribute('title', 'close');
         closeBtn.setAttribute('class', this.cls + 'tooltip-boxclose');
-        node.appendChild(closeBtn);
+        if (node.firstChild)
+            node.insertBefore(closeBtn, node.firstChild);
+        else node.appendChild(closeBtn);
 
         function closeThisTip(e, fade) {
             if (editor) {
@@ -110,7 +104,7 @@ _Define(function(global) {
                 }
                 editor.off('changeSession', closeThisTip);
                 if (e)
-                    focus(editor);
+                    focus(editor.textInput.getElement(), true);
             }
             if (node.$closeThisTip) node.$closeThisTip = undefined;
             if (node.parentNode) {
@@ -188,9 +182,24 @@ _Define(function(global) {
     };
     UI.prototype.moveTooltip = function(tip, x, y, editor, max_width, max_height) {
         tip.style.top = 0;
-        tip.style.bottom = tip.style.right = tip.style.left = "";
-        max_width = max_width || tip.offsetWidth || 360;
+        tip.style.bottom = tip.style.right = tip.style.left =
+            tip.style.maxWidth = tip.style.maxHeight = "";
+        
+        //get maximum height
+        tip.style.whiteSpace = "pre-wrap";
         max_height = max_height || tip.offsetHeight || 100;
+        //get maximum width
+        tip.style.whiteSpace = "pre";
+        max_width = max_width || tip.offsetWidth || 360;
+        var screenWidth = document.body.clientWidth;
+
+        if (max_height > screenWidth || max_height > max_width) {
+            tip.style.paddingRight = '5px';
+            tip.style.paddingTop = '25px';
+        } else {
+            tip.style.paddingTop = '5px';
+            tip.style.paddingRight = '35px';
+        }
         if (x === null || y === null) {
             var location = getCursorPosForTooltip(editor);
             x = location.left;
@@ -198,41 +207,55 @@ _Define(function(global) {
         }
         var rect = editor.renderer.scroller.getBoundingClientRect(); //position of scroller on screen
 
-        var margins = editor.getPopupMargins();
+        var margins = editor.getPopupMargins(true);
         var screenHeight = document.body.clientHeight;
         var lineHeight = editor.renderer.lineHeight;
         var top = y + rect.y;
-        var el = tip;
+        var left = x - 50 + rect.x;
+        var smallHeight = false;
+        if (screenWidth>screenHeight*1.5 && screenHeight<360 && max_height > 150) {
+            top = margins.marginTop;
+            //small view_height
+            smallHeight = true;
+        }
         var spaceBelow = screenHeight - margins.marginBottom - top - 1.2 * lineHeight;
         var spaceAbove = top - margins.marginTop - lineHeight;
-        var maxH = max_height;
+        // var maxH = max_height;
         var allowTopdown = spaceAbove > spaceBelow && spaceBelow < max_height;
         //if allow and space above greater than space below
         if (allowTopdown) {
-            el.style.maxHeight = spaceAbove + "px";
-            el.style.top = "";
-            el.style.bottom = Math.max(screenHeight - top + lineHeight, margins.marginBottom) + "px";
+            tip.style.maxHeight = spaceAbove + "px";
+            tip.style.top = "";
+            tip.style.bottom = Math.max(screenHeight - top + lineHeight, margins.marginBottom) + "px";
         } else {
-            el.style.maxHeight = spaceBelow + "px";
-            el.style.top = top + lineHeight + "px";
-            el.style.bottom = "";
+            tip.style.maxHeight = spaceBelow + "px";
+            tip.style.top = top + lineHeight + "px";
+            tip.style.bottom = "";
         }
-
-        var screenWidth = document.body.clientWidth;
-        el.style.display = "block";
-        var left = x - 50 + rect.x;
-        if (max_width > screenWidth) {
+        tip.style.display = "block";
+        if (smallHeight) {
+            left += 50;
+            max_width = Math.min(max_width, screenWidth / 2);
+            if (left > max_width) {
+                tip.style.left = '10px';
+            }
+            else {
+                tip.style.right='10px';
+            }
+        } else {
+            if (left + max_width > screenWidth)
+                left = screenWidth - max_width;
+            tip.style.left = Math.max(10, left) + "px";
+        }
+        tip.style.maxWidth = max_width + "px";
+        if (max_width >= screenWidth) {
             max_width = screenWidth - 20;
+            tip.style.whiteSpace = "pre-wrap";
         }
-        if (left + max_width > screenWidth)
-            left = screenWidth - max_width;
-
-        el.style.left = Math.max(10, left) + "px";
-        el.style.maxWidth = max_width + "px";
     };
     UI.prototype.closeArgHints = function(ts) {
         if (ts.argHintTooltip && ts.argHintTooltip.$closeThisTip) ts.argHintTooltip.$closeThisTip();
-    }
+    };
     UI.prototype.renameDialog = function(ts, editor, data) {
         this.closeAllTips();
         var div = elt("p", "", data.refs.length + " references found");
@@ -242,6 +265,7 @@ _Define(function(global) {
         var tip = this.makeTooltip(null, null, elt('h6', 'tooltip-header', 'Rename ', elt('span', "tooltip-name", (data.name || ""))), editor, false);
         tip.style.padding = '15px';
         tip.style.minWidth = '300px';
+        tip.style.minHeight = '150px';
         tip.appendChild(div);
         tip.appendChild(newNameLabel);
         tip.appendChild(newNameInput);
@@ -291,6 +315,7 @@ _Define(function(global) {
             if (animatedScroll) {
                 editor.setAnimatedScroll(false);
             }
+            ts.markPos(editor);
             ts.goto(editor, ev.item, function() {
                 self.moveTooltip(refs.tip, null, null, editor);
                 //close any tips that moving this might open, except for the ref tip
@@ -302,21 +327,23 @@ _Define(function(global) {
         });
 
         this.moveTooltip(refs.tip, null, null, editor);
-        refs.tip.style.paddingRight = 0;
+        refs.tip.style.minHeight = '150px';
+
     };
 
     UI.prototype.showArgHints = function showArgHints(ts, editor, argpos) {
         if (ts.cachedArgHints.isClosed) {
-            return
+            return;
         }
         var html = ts.genArgHintHtml(ts.cachedArgHints, argpos);
         if (ts.argHintTooltip && typeof html == 'string') {
-            ts.argHintTooltip.firstChild.innerHTML = html;
+            ts.argHintTooltip.lastChild.innerHTML = html;
             this.moveTooltip(ts.argHintTooltip, null, null, editor);
         } else {
             this.closeAllTips();
+            var el;
             if (typeof(html) == 'string') {
-                var el = document.createElement('div');
+                el = document.createElement('div');
                 el.innerHTML = html;
             } else el = html;
             ts.argHintTooltip = this.makeTooltip(null, null, el, editor, false, null, function(e) {
@@ -326,20 +353,21 @@ _Define(function(global) {
                 ts.argHintTooltip = null;
             });
         }
-    }
+    };
 
     UI.prototype.createToken = function(part, extraClass) {
-        return "<span class='doc-" + part.kind + (extraClass ? " doc-" + extraClass : "") + "'>" + htmlEncode(part.text) + "</span>"
-    }
+        return "<span class='doc-" + part.kind + (extraClass ? " doc-" + extraClass : "") + "'>" + htmlEncode(part.text) + "</span>";
+    };
 
     var ItemList = global.ItemList;
     var FocusManager = global.FocusManager;
     var renderer;
     //copied from SearchTab
     var Counter = function(text) {
-        this.lastLinePos = -1;
-        this.getPos(0);
-    }
+        this.lastLinePos = 0;
+        this.indexToPosition(-1);
+        this.text = text;
+    };
     Counter.prototype.indexToPosition = function(offset) {
         var match;
         if (offset < this.lastLinePos) {
@@ -351,7 +379,7 @@ _Define(function(global) {
         while (offset >= this.nextLinePos) {
             this.lastLinePos = this.nextLinePos;
             this.line++;
-            match = this.regex.exec(text);
+            match = this.regex.exec(this.text);
             if (match) {
                 this.nextLinePos = match.index + match[0].length;
             } else this.nextLinePos = Infinity;
@@ -371,12 +399,12 @@ _Define(function(global) {
         this.editor = editor;
         References.super(this, ["references", data.refs, container]);
         Object.assign(renderer.config, this.editor.renderer.layerConfig);
-        renderer.config.themeClass = "ace_editor " + editor.renderer.$theme;
+        renderer.config.themeClass = "ace_editor " + (editor.renderer.theme.isDark ? "ace_dark " : "") + editor.renderer.$theme;
         renderer.config.width = window.innerWidth * 3;
         renderer.config.lineHeight = "auto";
     }
 
-    function normalize(tsData, ref) {
+    function normalizeRef(tsData, ref, path) {
         if (!tsData || !tsData.doc) return null;
         if (!(ref.start || ref.span)) return null;
         var start, end, session, autoClose;
@@ -392,24 +420,33 @@ _Define(function(global) {
             session = tsData.doc;
         } else {
             var counter = new Counter(tsData.doc);
-            start = counter.indexToPosition(ref.start);
-            end = counter.indexToPosition(ref.end);
-            if (tsData.doc.length < 10000) {
+            start = ref.start || counter.indexToPosition(ref.span.start);
+            end = ref.end || counter.indexToPosition(ref.span.start + ref.span.length);
+            if (tsData.doc.length < 10 || ref.start) {
+                //no better way to get substring
                 session = new global.EditSession(tsData.doc);
             } else {
-                var s = Math.max(start - 1000, 0);
-                var e = Math.min(tsData.doc.length, s + 3000);
-                offStart = counter.indexToPosition(s);
+                var s = Math.max(ref.span.start - 1000, 0);
+                var e = Math.min(tsData.doc.length, s + 2000);
+                var offStart = counter.indexToPosition(s);
                 if (offStart.row == start.row) {
                     start.column -= offStart.column;
                     if (offStart.row == end.row)
                         end.column -= offStart.column;
                 } else {
-                    s -= offStart.column
+                    s -= offStart.column;
+                    offStart.column = 0;
                 }
                 var res = tsData.doc.substring(s, e);
                 var linesBefore = global.Utils.repeat(offStart.row, "\n");
-                session = new EditSession(linesBefore, res);
+                session = new EditSession(linesBefore + res, res);
+                global.Utils.assert(session.getTextRange({
+                    start,
+                    end
+                }) == tsData.doc.substr(ref.span.start, ref.span.length), tsData.doc.substr(ref.span.start, ref.span.length) + ' !=! ' + session.getTextRange({
+                    start,
+                    end
+                }));
 
                 autoClose = true;
                 var mode = global.modelist.getModeForPath(path).mode;
@@ -423,7 +460,7 @@ _Define(function(global) {
             end: end,
             session: session,
             autoClose: autoClose
-        }
+        };
     }
 
     References.prototype.itemClass = 'references-item';
@@ -440,7 +477,7 @@ _Define(function(global) {
         }
         parts.push("</span>");
         element.innerHTML = parts.join("");
-        data = normalize(this.ts.docs[data.file], data);
+        data = normalizeRef(this.ts.docs[data.file], data, data.file);
         if (data) {
             var lines = renderer.render([data], data.session);
             lines.style.fontFamily = this.editor.renderer.$fontFamily || "";
@@ -449,7 +486,7 @@ _Define(function(global) {
         }
         global.styleClip(element);
         return element;
-    }
+    };
     // References.prototype.getHtml = function(index){
     //     return this.items[index].file;
     // }

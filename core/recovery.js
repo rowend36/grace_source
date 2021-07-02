@@ -6,6 +6,7 @@ _Define(function(global) {
     }
 
     function setBreakpoint(id, handle) {
+        return;
         if (handle) {
             var stack = hasFailures(id);
             if (stack) {

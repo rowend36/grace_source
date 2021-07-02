@@ -97,10 +97,15 @@ _Define(function(global) {
     // "templating": "no-user-config"
   }, "formatting.prettier");
   var sharedPrettier = {
-    script: "./tools/format/prettier.js",
+    script: "./tools/format/libs/prettier.js",
     ignoreIf: window.prettier
   };
-
+  /*
+  @callback(value,pos,shouldPad) cb
+   - @param value - the new value
+   - @param pos - the new cursor position
+   - @param shouldPad - whether beautifier has added back the baseIndent, usually means the beautifier did not do anything as a result of error
+  */
   function pretty(val, opts, cb, data) {
     var mode = this.mode || (data && data.session.$mode.$id || "").split("/").pop();
     var config = appConfig.prettier;
@@ -111,41 +116,47 @@ _Define(function(global) {
       useTabs: opts.indent_char == '\t',
       plugins: prettierPlugins,
     }, config, opts.options);
+    var err = null;
     try {
       val = prettier.format(val, pOpts);
-      cb(val);
     } catch (e) {
-      cb(val, null, false);
+      err = e;
+      console.error(e);
       Notify.error(e);
     }
+    cb(val, null, !err);
   }
 
   function beautifier(name) {
     return function(val, opts, cb, data) {
       opts = Object.assign(opts, appConfig.js_beautify, opts.options);
       opts.options = undefined;
+      //jsbeautify keeps indent if it is not yet trimmed
+      var shouldPad = data && data.trimmed;
+      var err = null;
       try {
-        cb(window[name](val, opts), null, data && data.trimmed);
+        val = window[name](val, opts);
       } catch (e) {
-        cb(val, null, false);
+        err = e;
         Notify.error(e);
       }
+      cb(val, null, err ? false : shouldPad);
     };
   }
   var beautifiers = {
-    "prettier_js": Imports.define([sharedPrettier, "./tools/format/parser-babel.js"], null, pretty),
-    "prettier_css": Imports.define([sharedPrettier, "./tools/format/parser-postcss.js"], null, pretty),
-    "prettier_md": Imports.define([sharedPrettier, "./tools/format/parser-markdown.js"], null, pretty),
-    "prettier_php": Imports.define([sharedPrettier, "./tools/format/parser-php.js"], null, pretty),
-    "js_beautify": Imports.define(["./tools/format/beautify.min.js"], null, beautifier("js_beautify")),
+    "prettier_js": Imports.define([sharedPrettier, "./tools/format/libs/parser-babel.js"], null, pretty),
+    "prettier_css": Imports.define([sharedPrettier, "./tools/format/libs/parser-postcss.js"], null, pretty),
+    "prettier_md": Imports.define([sharedPrettier, "./tools/format/libs/parser-markdown.js"], null, pretty),
+    "prettier_php": Imports.define([sharedPrettier, "./tools/format/libs/parser-php.js"], null, pretty),
+    "js_beautify": Imports.define(["./tools/format/libs/beautify.min.js"], null, beautifier("js_beautify")),
     "html_beautify": Imports.define([{
-      script: "./tools/format/beautify.min.js",
+      script: "./tools/format/libs/beautify.min.js",
       ignoreIf: window.js_beautify
     }, {
-      script: "./tools/format/beautify-css.min.js",
+      script: "./tools/format/libs/beautify-css.min.js",
       ignoreIf: window.css_beautify
-    }, "./tools/format/beautify-html.min.js"], null, beautifier("html_beautify")),
-    "css_beautify": Imports.define(["./tools/format/beautify-css.min.js"], null, beautifier("css_beautify"))
+    }, "./tools/format/libs/beautify-html.min.js"], null, beautifier("html_beautify")),
+    "css_beautify": Imports.define(["./tools/format/libs/beautify-css.min.js"], null, beautifier("css_beautify"))
   };
   sharedPrettier = null;
   var config = global.libConfig;
@@ -202,33 +213,37 @@ _Define(function(global) {
   }
 
   function setValue(session, value, sel, originalRangeStart, range, formatAll, unselect) {
-    var deltas;
-    if (typeof value == 'object') {
-      if (!value[0] || value[0].start) {
-        deltas = value;
-      } else deltas = Docs.diffToAceDeltas(value, formatAll ? 0 : originalRangeStart.row, formatAll ? 0 : originalRangeStart
-        .column);
-    } else deltas = Docs.generateDiff(formatAll ? session.getValue() : session.getTextRange(range), value, formatAll ? 0 :
-      originalRangeStart.row, formatAll ? 0 : originalRangeStart.column);
-    var end = range.start;
-    session.markUndoGroup();
-    for (var i = 0; i < deltas.length; i++) {
-      session.doc.applyDelta(deltas[i]);
-    }
-    if (0 < deltas.length) {
-      end = deltas[deltas.length - 1].end;
-    }
-    if (!formatAll) {
-      if (unselect) {
-        sel.setSelectionRange(Range.fromPoints(sel.cursor, sel.cursor));
+    try {
+      var deltas;
+      if (typeof value == 'object') {
+        if (!value[0] || value[0].start) {
+          deltas = value;
+        } else deltas = Docs.diffToAceDeltas(value, formatAll ? 0 : originalRangeStart.row, formatAll ? 0 : originalRangeStart
+          .column);
+      } else deltas = Docs.generateDiff(formatAll ? session.getValue() : session.getTextRange(range), value, formatAll ? 0 :
+        originalRangeStart.row, formatAll ? 0 : originalRangeStart.column);
+      var end = range.start;
+      session.markUndoGroup();
+      for (var i = 0; i < deltas.length; i++) {
+        session.doc.applyDelta(deltas[i]);
       }
-      /*else {
-                sel.setSelectionRange(Range.fromPoints(range.start, end));
-            }
+      if (0 < deltas.length) {
+        end = deltas[deltas.length - 1].end;
+      }
+      if (!formatAll) {
+        if (unselect) {
+          sel.setSelectionRange(Range.fromPoints(sel.cursor, sel.cursor));
         }
-        else {
-            sel.setSelectionRange(Range.fromPoints(originalRangeStart, originalRangeStart));
-        */
+        /*else {
+                  sel.setSelectionRange(Range.fromPoints(range.start, end));
+              }
+          }
+          else {
+              sel.setSelectionRange(Range.fromPoints(originalRangeStart, originalRangeStart));
+          */
+      }
+    } catch (e) {
+      console.error(e);
     }
   }
   /**
@@ -281,8 +296,6 @@ _Define(function(global) {
     //#endregion
     //#region get value, set mode
     var value = session.getTextRange(range);
-    var originalValue = value; //for debugging
-    var type = null;
     if (removeBlanks) {
       //remove multiple blank lines, trailing spaces and multispace between words
       value = value.replace(/ +$|(\S ) +(\S)/gm, "$1$2").replace(/((?:\r\n|\n|\r){3})(?:\r\n|\n|\r)*/g, "$1");
@@ -322,8 +335,8 @@ _Define(function(global) {
       else Notify.warn('Unable to find beautifier for this file');
       return false;
     };
-    beautifier(value, options, function(value, pos, trimmed) {
-      if (trimmed !== false) {
+    beautifier(value, options, function(value, pos, shouldPad) {
+      if (shouldPad !== false) {
         value = value.replace(/\r\n|\r|\n/g, '$&' + indent).trim();
       }
       if (range.end.column === 0) {
@@ -331,7 +344,9 @@ _Define(function(global) {
       }
       setValue(session, value, sel, pos || originalRangeStart, range, formatAll, unselect);
     }, {
+      //the indent to be padded with
       baseIndent: indent,
+      //whether we need to add indent to result due to incomplete selection
       trimmed: needsAlign,
       cursor: originalRangeStart,
       editor: editor,

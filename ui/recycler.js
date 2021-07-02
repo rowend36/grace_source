@@ -1,5 +1,11 @@
 _Define(function(global) {
     "use strict";
+
+    var stats = global.renderStats = {
+        append: 0,
+        insert: 0,
+        detach: 0
+    };
     var Errors = {
         INVALID_INDEX: 'No child at index {index}',
         NOT_CHILD: 'View is not a child of this renderer'
@@ -130,6 +136,7 @@ _Define(function(global) {
         for (var i = 0; i < arr.length; i++) {
             arr[i] = factory();
             arr[i].addClass('destroyed');
+            stats.append++;
             el.appendChild(arr[i][0]);
         }
         return arr;
@@ -143,7 +150,7 @@ _Define(function(global) {
             e.length = 0;
         });
         toClear = [];
-    }, 5000);
+    }, 30000);
 
     function postClear(array) {
         clear();
@@ -166,8 +173,10 @@ _Define(function(global) {
             el = this.factory();
         }
         if (before) {
+            stats.insert++;
             (container || this.container).insertBefore(el[0] || el, before);
         } else {
+            stats.append++;
             (container || this.container).appendChild(el[0] || el);
         }
         return el;
@@ -177,7 +186,7 @@ _Define(function(global) {
         //Also possible
         //el.addClass('destroyed');
         this.els.push(el);
-        if(this.els.length===1)
+        if (this.els.length === 1)
             postClear(this.els);
     };
     RecyclerViewCache.prototype.clone = function(el) {
@@ -198,8 +207,10 @@ _Define(function(global) {
         if (this.els.length > 0) {
             var el = this.els.pop();
             if (before) {
+                stats.insert++;
                 (container || this.container).insertBefore(el[0] || el, before);
             } else {
+                stats.append++;
                 (container || this.container).appendChild(el[0] || el);
             }
             return el;
@@ -248,14 +259,19 @@ _Define(function(global) {
         } else {
             if (restack) {
                 if (insertBefore) {
+                    stats.insert++;
                     this.view[0].parentElement.insertBefore(this.view[0], insertBefore);
-                } else this.view[0].parentElement.appendChild(this.view[0]);
+                } else {
+                    stats.append++;
+                    this.view[0].parentElement.appendChild(this.view[0]);
+                }
             }
-            if (this.lastY != this.y) {
-                this.lastY = this.y;
-            }
+
         }
-        this.view.css("top", this.y + 'px');
+        if (this.lastY != this.y) {
+            this.lastY = this.y;
+            this.view.css("top", this.y + 'px');
+        }
     };
     RecyclerViewHolder.prototype.detach = function(index) {
         if (!this.visible) return;
@@ -284,9 +300,7 @@ _Define(function(global) {
     RecyclerViewHolder.prototype.show = function() {
         if (!this.hidden) return;
         this.hidden = false;
-        //if (this.visible) {
         this.invalidate();
-        //}
     };
     var SCROLL_UP = 2;
     var SCROLL_DOWN = 1;
@@ -308,7 +322,7 @@ _Define(function(global) {
     /*Overrides*/
     RecyclerRenderer.prototype.DEFAULT_VIEWPORT = {
         y: -window.innerHeight,
-        height: Math.max(window.innerHeight * 2.5,1400)
+        height: Math.max(window.innerHeight * 2.5, 1400)
     };
     window.addEventListener('resize', function() {
         RecyclerRenderer.prototype.DEFAULT_VIEWPORT.height = window.innerHeight * 2.5;
@@ -362,7 +376,7 @@ _Define(function(global) {
     };
     RecyclerRenderer.prototype.getViewport = function(viewport) {
         if (viewport) {
-            throw 'Error: use scrollTo to change viewport'
+            throw 'Error: use scrollTo to change viewport';
         }
         return this.viewport;
     };
@@ -453,7 +467,7 @@ _Define(function(global) {
                 renderlist[s].render(viewport, s, insertBefore);
             }
         }
-        
+
         this.changes = 0;
     };
     RecyclerRenderer.prototype.detach = function() {
@@ -499,7 +513,7 @@ _Define(function(global) {
         this.invalidate(index - 1);
     };
     /** @param {(number|RecyclerViewHolder)} start - The view whose height or display has changed. Pass -1 to invalidate the whole view
-    */
+     */
     RecyclerRenderer.prototype.invalidate = function(start) {
         if (typeof(start) == 'object') {
             start = this.views.indexOf(start);
@@ -511,7 +525,7 @@ _Define(function(global) {
     };
     RecyclerRenderer.prototype.scrollTo = function(scrollTop, topMargin) {
         //we clip bottom in render because of invalidates
-        scrollTop = Math.max(0, scrollTop - (topMargin || window.innerHeight));
+        scrollTop = Math.max(0, scrollTop - (topMargin || -this.DEFAULT_VIEWPORT.y));
         if (scrollTop < this.viewport.y) {
             this.changes |= SCROLL_UP;
         } else if (scrollTop > this.viewport.y) {
@@ -522,14 +536,17 @@ _Define(function(global) {
     };
     RecyclerRenderer.prototype.schedule = function(viewport) {
         if (this.renderTimeout) return;
-        this.renderTimeout = ( /*window.requestAnimationFrame || */ setTimeout)((function() {
-            this.renderTimeout = null;
-            this.compute();
-            if (this.changes)
-                this.render();
-        }).bind(this), 17);
+        if (this.changes)
+            this.renderTimeout = ( /*window.requestAnimationFrame || */setTimeout)((function() {
+                this.compute();
+                this.renderTimeout = null;
+                stats.append = 0;
+                stats.detach = 0;
+                stats.insert = 0;
+                if (this.changes)
+                    this.render();
+            }).bind(this), 34);
     };
-
     //RecyclerRenderer+RecyclerViewHolder
     //= NestedRenderer
     //Warning: NestedRenderer never releases its
@@ -540,6 +557,7 @@ _Define(function(global) {
         RecyclerRenderer.apply(this);
         this.stub = view;
         this.root = root;
+        stats.append++;
         root.appendChild(view[0]);
         this.stub.css('position', 'absolute');
     }
@@ -568,7 +586,6 @@ _Define(function(global) {
         this.view.hide();
         this.view = null;
         this.lastY = null;
-        //this.start = 0;
     };
     NestedRenderer.prototype.render = function(viewport, index, insertBefore, restack) {
         this.visible = true;
@@ -579,8 +596,12 @@ _Define(function(global) {
                 this.view.show();
             }
             if (insertBefore) {
+                stats.insert++;
                 this.root.insertBefore(this.view[0], insertBefore);
-            } else this.root.appendChild(this.view[0]);
+            } else {
+                stats.append++;
+                this.root.appendChild(this.view[0]);
+            }
         }
 
         if (this.lastY != this.y) {
@@ -611,4 +632,4 @@ _Define(function(global) {
     global.NestedRenderer = NestedRenderer;
     global.RecyclerViewHolder = RecyclerViewHolder;
     global.RecyclerViewCache = RecyclerViewCache;
-}) /*_EndDefine*/
+}); /*_EndDefine*/

@@ -1,11 +1,48 @@
 _Define(function(global) {
     var config = global.registerAll({
+        // "css": {
+        //     "ignore": ["*should not be qualified*"],
+        //     "setInfo": [],
+        //     "setWarning": [],
+        //     "setError": []
+        // },
+        // "typescript": {
+        //     "ignore": [],
+        //     "setInfo": [],
+        //     "setWarning": [],
+        //     "setError": []
+        // },
+        // "javascript": {
+        //     "ignore": [],
+        //     "setInfo": [],
+        //     "setWarning": [],
+        //     "setError": []
+        // },
+        // "jsx": {
+        //     "ignore": [],
+        //     "setInfo": [],
+        //     "setWarning": [],
+        //     "setError": []
+        // },
+        // "tsx": {
+        //     "ignore": [],
+        //     "setInfo": [],
+        //     "setWarning": [],
+        //     "setError": []
+        // },
+        "all": {
+            "ignore": ["*should not be qualified*"],
+            "setInfo": [],
+            "setWarning": [],
+            "setError": []
+        },
+        "setError": [],
         "jshint": {
             // JSHint Default Configuration File (as on JSHint website)
             // See http://jshint.com/docs/ for more details
 
             "maxerr": 101, // {int} Maximum error before stopping
-            "passfail":true,
+            "passfail": true,
             // Enforcing
             "bitwise": false, // true: Prohibit bitwise operators (&, |, ^, etc.)
             "camelcase": false, // true: Identifiers must be in camelCase
@@ -89,6 +126,7 @@ _Define(function(global) {
             // Custom Globals
         }
     }, "linting");
+    var Utils = global.Utils;
     global.registerValues({
             "!root": "See http://jshint.com/docs/ for more details",
             "maxerr": "{int} Maximum error before stopping",
@@ -172,21 +210,29 @@ _Define(function(global) {
             "wsh": "Windows Scripting Host",
             "yui": "Yahoo User Interface",
             // Custom Globals
-            "globals": "additional predefined global variables"
+            "globals": "Additional predefined global variables"
+        },
+        "linting.jshint");
+    global.registerValues({
+            "all.ignore": "A list of warnings/errors to suppress, suppressed warnings will be replaced with a single annotation. You can use * to represent any extra characters. Try to use the actual linting configuration before falling back to this option"
         },
         "linting.jshint");
     //Hack to save this as a single value
-    var jshintGlobals = global.getObj("linting.jshint.globals",{});
+    var jshintGlobals = global.getObj("linting.jshint.globals", {});
     global.Config.setHandler("linting.jshint.globals", {
         getValue: function() {
             return jshintGlobals;
         },
-        updateValue: function(from,overwrite) {
-            if(!from || typeof from!='object' || Array.isArray(from)){
+        updateValue: function(from, overwrite,opts) {
+            if (!from || typeof from != 'object' || Array.isArray(from)) {
                 global.Notify.error("Invalid option value for jshint.globals");
                 return true;
             }
-            if(overwrite)global.putObj("linting.jshint.globals", from);
+            if(opts && opts.depth){
+                //this should be loadsettings:deepSet or aceinlinediff:extend when opts.depth>1
+                from = Object.assign(jshintGlobals,from);
+            }
+            if (overwrite) global.putObj("linting.jshint.globals", from);
             jshintGlobals = from;
             liveUpdate();
         }
@@ -196,20 +242,16 @@ _Define(function(global) {
             var workers = global.Annotations.listWorkers(docs[id].session);
             workers.forEach(update);
         }
-    },300);
+    }, 300);
     var docs = global.docs;
-    for (var id in docs) {
-        trackDoc(docs[id]);
-    }
     var appEvents = global.AppEvents;
-    appEvents.on("createDoc", function(e) {
-        trackDoc(e.doc);
-    });
 
     function setOptions(id, worker) {
         switch (id) {
             case "ace/mode/javascript":
-                worker.call("setOptions", [Object.assign({},config.jshint,{globals:jshintGlobals})]);
+                worker.call("setOptions", [Object.assign({}, config.jshint, {
+                    globals: jshintGlobals
+                })]);
         }
     }
 
@@ -217,9 +259,61 @@ _Define(function(global) {
         setOptions(e.id, e.worker);
     }
 
+    function transform(e) {
+        return new RegExp("^" + Utils.regEscape(String(e)).replace(/\s\s+/, " ").replace(/\\\*/g, ".*") + "$");
+    }
+    var filterAll = function(anno) {
+        // var mode = this.session.getMode().$id.split("/").pop();
+        //todo use the source of the annotation
+        var regexIgnore = config.all.ignore.map(transform);
+        var regexError = config.all.setError.map(transform);
+        var regexInfo = config.all.setInfo.map(transform);
+        var regexWarning = config.all.setWarning.map(transform);
+        if (!(regexIgnore.length ||
+                regexWarning.length ||
+                regexInfo.length ||
+                regexError.length
+            )) return anno;
+        var found = 0;
+        anno = anno.filter(function(e) {
+            function test(t) {
+                return t.test(e.text);
+            }
+            if (regexIgnore.some(test)) {
+                found++;
+                return false;
+            }
+            if (regexError.some(test)) {
+                e.type = 'error';
+            } else if (regexWarning.some(test)) {
+                e.type = 'warning';
+            } else if (regexInfo.some(test)) {
+                e.type = 'info';
+            }
+            return true;
+        });
+        if (found) {
+            anno.push({
+                row: this.session.getLength(),
+                column: 0,
+                text: "Suppressed " + Utils.plural(found, "warning") + ".",
+                type: 'info'
+            });
+        }
+        return anno;
+    };
+
     function trackDoc(doc) {
+        doc.session.annotationFilters = [filterAll.bind(doc)];
         doc.session.on("startWorker", update);
         var workers = global.Annotations.listWorkers(doc.session);
         workers.forEach(update);
     }
+    for (var id in docs) {
+        trackDoc(docs[id]);
+    }
+    appEvents.on("createDoc", function(e) {
+        trackDoc(e.doc);
+    });
+
 });

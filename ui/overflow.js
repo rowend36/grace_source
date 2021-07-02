@@ -7,8 +7,8 @@ _Define(function(global) {
   var Navigation = global.Navigation;
 
   /*@param {Boolean} keepFocus - whether the overflow should avoid stealing focus
-  * @param {string} align - how to align . One of right(align with right edge),left (align with left edge), full (take the full screen), center (center on screen), responsive-right (align right on wide screens and take full screen on mobile)
-  */
+   * @param {string} align - how to align . One of right(align with right edge),left (align with left edge), full (take the full screen), center (center on screen), responsive-right (align right on wide screens and take full screen on mobile)
+   */
   function Overflow(keepFocus, align) {
     if (keepFocus === undefined) keepFocus = true;
     if (align === undefined) align = 'right';
@@ -18,18 +18,19 @@ _Define(function(global) {
     var nav = [];
     var root, current;
     var self = this;
+    var isSmallScreen = window.innerWidth < 600;
 
     function getElement() {
       return childElems[nav.join(">")];
     }
 
     function showOverflow(name, parent, event) {
-      var isSmallScreen = window.innerWidth < 600;
       //no data for specified path
       if (!current[name]) {
         return;
       }
       if (current == root) {
+        isSmallScreen = window.innerWidth < 600;
         if (!inRecreate) {
           anchor = parent;
           addOverlay();
@@ -42,12 +43,12 @@ _Define(function(global) {
       current = hier;
       var elem = childElems[nav.join(">")];
       var changed = false;
-      if(hier["!update"]){
-        hier["!update"].forEach(function(e){
+      if (hier["!update"]) {
+        hier["!update"].forEach(function(e) {
           changed = e(hier) || changed;
         });
       }
-      if(changed && elem){
+      if (changed && elem) {
         elem.onclick = null;
         elem.remove();
         elem = null;
@@ -65,7 +66,7 @@ _Define(function(global) {
       //anchor is the first parent ie the button that initiated the overflow
       Overflow.positionContainer(elem, isSmallScreen ? anchor : parent, document.body, align, nav.length > 1 && !isSmallScreen);
       elem.style.zIndex = (++Overflow.count) + 1100;
-      if(inRecreate)$(elem).show();
+      if (inRecreate) $(elem).show();
       else
         $(elem).fadeIn();
       Navigation.addRoot(elem, self.close);
@@ -73,25 +74,25 @@ _Define(function(global) {
 
     function hideOverflow(e) {
       var b = getElement();
-      if(inRecreate)$(b).hide();
-      else
-        $(b).fadeOut();
       Navigation.removeRoot(b);
       --Overflow.count;
       nav.pop();
       current = currentTarget() || root;
-      if (nav.length == 0 && !inRecreate) {
-        removeOverlay();
-        AutoCloseable.close(id);
-        self.ondismiss && self.ondismiss(e);
-      } else {
-        //do nothing
+      if (inRecreate) $(b).hide();
+      else {
+        if (nav.length == 0) {
+          //used for onOverlayClick
+          removeOverlay();
+          AutoCloseable.close(id);
+          self.ondismiss && self.ondismiss(e);
+        }
+        $(b).fadeOut();
       }
     }
 
     var overlay;
 
-    function addOverlay(append) {
+    function addOverlay() {
       if (!overlay) {
         overlay = document.createElement('div');
         overlay.style.position = "absolute";
@@ -99,6 +100,7 @@ _Define(function(global) {
           overlay.style.left =
           overlay.style.right =
           overlay.style.bottom = 0;
+        overlay.style.opacity = 0;
         overlay.onclick = handleBodyClick;
         if (keepFocus)
           FocusManager.trap($(overlay), true);
@@ -108,7 +110,7 @@ _Define(function(global) {
       overlay.style.zIndex = Overflow.count + 1100;
     }
 
-    function removeOverlay(detach) {
+    function removeOverlay() {
       Overflow.count--;
       overlay.remove();
     }
@@ -151,7 +153,11 @@ _Define(function(global) {
       var span = closest(e.target, true);
       if (!span) return;
       var id2 = span.getAttribute('id');
+      if (!id2) return;
       var data = current[id2];
+      if (data.hasChild) {
+        data.anchor = isSmallScreen ? anchor : span;
+      }
       if (self.onclick && self.onclick(e, id2, span, data)) {
         //do nothing
       } else if (data.onclick) {
@@ -162,7 +168,7 @@ _Define(function(global) {
       } else if (data.childHier) {
         FocusManager.hintNoChangeFocus();
         showOverflow(id2, data.rebase ? anchor : span, true);
-      } else if (data.close !== false) {
+      } else if (data.close !== false || ((data.hasChild && isSmallScreen))) {
         while (nav[0]) {
           hideOverflow();
         }
@@ -194,16 +200,17 @@ _Define(function(global) {
       showOverflow('root', el, shift);
     };
     self.hide = closeable.close;
+
     self.onOverlayClick = function(e) {
       var parent = closest(document.elementFromPoint(e.clientX, e.clientY));
       while (current != root && getElement() != parent) {
         hideOverflow(e);
       }
     };
-    
+
     //closeable interface for navigation
     self.close = hideOverflow;
-    
+
     //For now only supports depth of 1 since previous overflows are not visible on mobile
     self.update = function(w) {
       var el = childElems.root;
@@ -228,23 +235,24 @@ _Define(function(global) {
         }
       }
     };
+
     function toggle(e) {
-        if (root) {
-          if (nav.length < 1)
-            showOverflow("root", e.currentTarget);
-          else {
-            closeable.close();
-          }
+      if (root) {
+        if (nav.length < 1)
+          showOverflow("root", e.currentTarget);
+        else {
+          closeable.close();
         }
-        e.stopPropagation();
       }
-      
+      e.stopPropagation();
+    }
+
     self.createTrigger = function(btn) {
       if (keepFocus)
         FocusManager.trap($(btn), true);
       $(btn).on("click", toggle);
     };
-    
+
     //wierd name but it stuck setData is more like it
     self.setHierarchy = function(w, changed) {
       var store = [].concat(nav);
@@ -284,23 +292,76 @@ _Define(function(global) {
     };
   }
   Overflow.count = 0;
-
+  Overflow.defaultLabel = function(label) {
+      return {
+        isHeader: true,
+        className: 'mt-10',
+        caption: "<label class='sub-header'>" + Utils.htmlEncode(label) + "</label>"
+      };
+    };
+    var ifSet = Utils.ifSet;
+    var notIn = Utils.notIn;
+    var createProxyArray = function(obj,key,arr1,arr2){
+      var proxyGet =  function(){
+        arr1.push.apply(arr1,arr2.filter(notIn(arr1)));
+        return arr1;
+      };
+      Object.defineProperty(obj,key,{
+        set: function(newArr){
+          arr1 = newArr;
+        },
+        get: proxyGet
+      });
+    };
+    Overflow.assign = function(dest, src) {
+      dest["!update"]= dest["!update"]||[];
+      for (var i in src) {
+        if (src[i] == undefined) continue;
+        if (dest[i] && src[i]) {
+          if (i == "!update") {
+            dest[i].push.apply(dest[i], src[i]);
+            continue;
+          }
+          if (src[i].childHier && dest[i].childHier) {
+            Overflow.assign(dest[i].childHier, src[i].childHier);
+            var hier = dest[i].childHier;
+            Object.assign(dest[i], src[i]);
+            dest[i].childHier = hier;
+            continue;
+          }
+        }
+        ifSet(dest,i,src[i]);
+      }
+    };
+  Overflow.minIconPercent = 0.7;
   Overflow.createElement = function(hier, id) {
     var menu = document.createElement("ul");
     var noCaret = true,
-      noIcon = true;
+      numIcons = 0;
     menu.setAttribute("id", id);
     menu.className = "dropdown-content";
-    var sorted = [];
+    var sorted = [
+      []
+    ];
+    var p = 0;
     for (var h in hier) {
-      if (hier[h] && h[0]!="!")
-        sorted.push(h);
+      if (hier[h] && h[0] != "!") {
+        if (hier[h].isHeader) {
+          sorted.push([]);
+          p++;
+        }
+        sorted[p].push(h);
+      }
     }
-    sorted = sorted.sort(function(a, b) {
-      var t = hier[a].sortIndex || 100;
-      var l = hier[b].sortIndex || 100;
-      return l > t ? -1 : l < t ? 1 : ((hier[a].isHeader ? 0 : 1) - (hier[b].isHeader ? 0 : 1)) || a.localeCompare(b);
+    sorted.forEach(function(e) {
+      e.sort(function(a, b) {
+        var t = hier[a].sortIndex || 100;
+        var l = hier[b].sortIndex || 100;
+        return l > t ? -1 : l < t ? 1 : ((hier[a].isHeader ? 0 : 1) - (hier[b].isHeader ? 0 : 1)) || (hier[a].caption || hier[a]).localeCompare(hier[b].caption || hier[b]);
+      });
     });
+    var numHeaders = sorted.length-1;
+    sorted = [].concat.apply([], sorted);
     for (var j in sorted) {
       var i = sorted[j];
       var item = document.createElement("li");
@@ -311,7 +372,7 @@ _Define(function(global) {
         var a = document.createElement("a");
         a.className = "dropdown-item";
         if (hier[i].icon) {
-          if (noIcon) noIcon = false;
+          numIcons++;
           var icon = document.createElement('span');
           icon.className = 'material-icons dropdown-icon';
           icon.innerHTML = hier[i].icon;
@@ -332,7 +393,7 @@ _Define(function(global) {
       menu.appendChild(item);
     }
     if (!noCaret) menu.className += " dropdown-has-caret";
-    if (!noIcon) menu.className += " dropdown-has-icon";
+    if ((numIcons/(sorted.length-numHeaders))>Overflow.minIconPercent) menu.className += " dropdown-has-icon";
     return menu;
   };
   Overflow.defaultAlignment = "right";
@@ -351,10 +412,10 @@ _Define(function(global) {
     var c = vertical ? 'Height' : 'Width';
     var w = itemSize;
     var W = size || window['inner' + c];
-    if (rect[a] < W - w) {
-      return [rect[a]];
-    } else if (rect[b] > w) {
+    if (rect[b] > w) {
       return [undefined, W - rect[b]];
+    } else if (rect[a] < W - w) {
+      return [rect[a]];
     } else {
       return [0, 0];
     }
@@ -375,7 +436,7 @@ _Define(function(global) {
 
 
     var isShifted = false;
-    
+
     //shift element to the right of trigger
     if (allowShift) {
       if ((rect.right > 0) && (maxW - rect.right > (w + 10))) {
@@ -384,31 +445,31 @@ _Define(function(global) {
         el.style.left = "auto";
       }
     }
-    
+
     var top;
     var canBeAbove = y > h - (isShifted ? offset : 0) + 10;
     var canBeBelow = maxH - y - (isShifted ? offset : 0) > h + 15;
-    if (vPos == "below" || (vPos != "above" && (maxH - y) > (y - offset)*0.8)) {
-      if (canBeBelow) {//position below
+    if (vPos == "below" || (vPos != "above" && (maxH - y) > (y - offset) * 0.8)) {
+      if (canBeBelow) { //position below
         top = y + 5 - (isShifted ? offset : 0);
-      } else if (maxH - y > 250) {//fix maximum height
+      } else if (maxH - y > 250) { //fix maximum height
         h = maxH - y - 25;
         $(el).css('height', h);
         top = y + 5 - (isShifted ? offset : 0);
-      } else if (canBeAbove) {//position above, not sure how this is possible
+      } else if (canBeAbove) { //position above, not sure how this is possible
         top = y - h - offset - 10 + (isShifted ? offset : 0);
-      } else {//fill screen
+      } else { //fill screen
         if (h > maxH - 10) {
           h = maxH - 20;
           $(el).css('height', h);
           top = 10;
         } else top = maxH - h - 10;
       }
-    } else if (canBeAbove) {//position above
+    } else if (canBeAbove) { //position above
       top = y - h - offset - 10 + (isShifted ? offset : 0);
-    } else if (canBeBelow) {//position below
+    } else if (canBeBelow) { //position below
       top = y + 5 + (isShifted ? offset : 0);
-    } else {//fill screen
+    } else { //fill screen
       if (h > maxH - 10) {
         h = maxH - 20;
         $(el).css('height', h);
@@ -431,7 +492,7 @@ _Define(function(global) {
       el.style.left = Math.min(rect.left + 10, maxW - w - 10) + "px";
       el.style.right = "auto";
     } else {
-      var space = align == "full" ? 20 : align == "responsive-right" ? Math.min(20, (maxW - w) / 2) : (maxW - w) / 2;//center no margin
+      var space = align == "full" ? 20 : align == "responsive-right" ? Math.min(20, (maxW - w) / 2) : (maxW - w) / 2; //center no margin
       //full
       el.style.right = space + "px";
       el.style.left = space + "px";
@@ -447,13 +508,21 @@ _Define(function(global) {
       select = select || ev.target;
       ev.preventDefault();
     }
-    var opts = select.getElementsByTagName('option');
+    var opts = $(select).find("option,optgroup");
     var items = [];
     for (var i = 0; i < opts.length; i++) {
-      items.push({
-        value: opts[i].value,
-        caption: opts[i].innerHTML
-      });
+      if (opts[i].tagName == 'OPTGROUP') {
+        items.push({
+          isHeader: true,
+          className: i ? 'mt-10' : '',
+          caption: "<label class='sub-header'>" + opts[i].getAttribute('label') + "</label>"
+        });
+      } else {
+        items.push({
+          value: opts[i].value,
+          caption: opts[i].innerHTML
+        });
+      }
     }
     var dropdown = new Overflow(false, "responsive-right");
     dropdown.setHierarchy(items);
@@ -466,6 +535,7 @@ _Define(function(global) {
       dropdown.setHierarchy(null);
     };
   };
+  $(document.body).on('mousedown', 'select', Overflow.openSelect);
 }); /*_EndDefine*/
 _Define(function(global) {
   var menuItems = {

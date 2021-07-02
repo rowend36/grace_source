@@ -213,8 +213,8 @@ _Define(function(global) {
             }
             if (typeof glob == "string") {
                 glob = FileUtils.globToRegex(glob);
-                filter = function(i,path) {
-                    return FileUtils.isDirectory(i) || (path+i).match(glob);
+                filter = function(i, path) {
+                    return FileUtils.isDirectory(i) || (path + i).match(glob);
                 };
 
             } else filter = glob;
@@ -232,6 +232,11 @@ _Define(function(global) {
                     if (callback) callback(err, !err && filtered);
                 });
             else b.getFiles(path, callback);
+        };
+        self.readdir = function(path, callback) {
+            self.getFiles(path, function(e, res) {
+                callback(e, res && res.map(FileUtils.removeTrailingSlash));
+            });
         };
         return self;
     }
@@ -260,11 +265,7 @@ _Define(function(global) {
             }.bind(this)
         );
         this.icon = "storage";
-        this.readFile = function(path, opts, callbac) {
-            var callback = function(e, r) {
-                console.assert(e || r || r === "");
-                callbac && callbac(e, r);
-            };
+        this.readFile = function(path, opts, callback) {
             var encoding;
             if (opts) {
                 if (typeof opts === "function") {
@@ -366,7 +367,7 @@ _Define(function(global) {
                 server + "/copy", {
                     path: path,
                     dest: dest,
-                    overwrite: overwrite,
+                    overwrite: overwrite || null,
                 },
                 callback
             );
@@ -376,7 +377,7 @@ _Define(function(global) {
                 server + "/move", {
                     path: path,
                     dest: dest,
-                    overwrite: overwrite,
+                    overwrite: overwrite || null,
                 },
                 callback
             );
@@ -392,7 +393,7 @@ _Define(function(global) {
             request(
                 server + "/info", {
                     path: path,
-                    isLstat: !!opts,
+                    isLstat: opts || null,
                 },
                 callback &&
                 function(e, s) {
@@ -531,6 +532,40 @@ _Define(function(global) {
         this.load = noop;
     };
     global.StubFileServer = StubFileServer;
+    
+    //wish we did not have to keep a separate object
+    var factories = {};
+    FileUtils.registerFsExtension = function(id,caption, factory,config) {
+        if(caption){
+            FileUtils.registerFileServer(id, caption, function(params) {
+                params.type = "!extensions";
+                params.factoryId = id;
+                return factory(params);
+            },config);
+        }
+        if (factory) {
+            factories[id]=factory;
+            FileUtils.ownChannel(id, function(stub) {
+                stub.$inject();
+            });
+        }
+    };
+
+    function load(params) {
+        if (factories[params.factoryId]) {
+            return factories[params.factoryId](params);
+        } else {
+            var stub = new StubFileServer(null, load);
+            stub.load = Utils.noop;
+            FileUtils.postChannel("server-" + params.factoryId, stub);
+            return stub;
+        }
+    }
+    FileUtils.registerFileServer(
+        "!extensions",
+        "Extension",
+        load
+    );
 }); /*_EndDefine*/
 //lightningfs
 _Define(function(global) {
@@ -581,9 +616,9 @@ _Define(function(global) {
                 global.getBrowserFileServer
             );
         }
-        fs.icon = "memory"
+        fs.icon = "memory";
         fs.id = "inApp";
-        fs.cachedFs = fs;
+        fs.isCached = true;
         return fs;
     };
     FileUtils.registerFileServer(

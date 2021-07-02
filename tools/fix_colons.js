@@ -3,10 +3,13 @@ _Define(function(global) {
     var defaultProvider = function(editor, range) {
         var begin = range ? range.start.row : 0;
         var end = range ? range.end.row : Infinity;
+        var endC = range?range.end.column:Infinity;
         var spark = [];
         var anno = editor.getAnnotations();
         for (var i = anno.length - 1; i >= 0; i--) {
-            if (anno[i].row >= begin && anno[i].row < end && anno[i].raw == "Missing semicolon.") {
+            if ((anno[i].row >= begin && (anno[i].row < end || (anno[i].row == end && anno[i].column < endC))) && anno[i].raw == "Missing semicolon.") {
+                end = anno[i].row;
+                endC = anno[i].column;
                 spark.push(anno[i]);
             }
         }

@@ -1,0 +1,150 @@
+.theme-accent{
+    background: DARK_5;
+    color:LIGHT_11;
+}
+/*region-converts the editor theme to match application*/
+.theme-accent .ace_editor {
+    background: LIGHT_9;
+}
+.theme-accent .ace_search{
+    background:  DARK_4;
+    border-color: white;
+    color: white;
+}
+.theme-accent .ace_gutter {
+    background: LIGHT_5;
+}
+
+.theme-accent .ace_editor .ace_active-line {
+    background-color: LIGHT_7;
+}
+
+.theme-accent .ace_editor .ace_gutter-active-line {
+    background-color: LIGHT_4;
+}
+
+.theme-accent .ace_dark {
+    background: DARK_8;
+}
+
+.theme-accent .ace_dark .ace_gutter {
+    background: DARK_6;
+}
+.theme-accent .ace_dark .ace_active-line {
+    background-color: DARK_7;
+}
+
+.theme-accent .ace_dark .ace_gutter-active-line {
+    background-color: DARK_5;
+}
+
+.theme-accent .dropdown-content>li a{
+    color: white;
+}
+.theme-accent .modal,
+.theme-accent .ace_prompt_container,
+.theme-accent .dropdown-content
+{
+    /*darken-2*/
+    background: DARK_4;
+}
+.theme-accent .header{
+    background: DARK_6;
+}
+
+
+.theme-accent .fileview::-webkit-scrollbar-thumb,
+.theme-accent .editor>.ace_scrollbar::-webkit-scrollbar-thumb {
+    background-color: LIGHT_5;
+}
+
+.theme-accent .ace_button:active,
+.theme-accent .ace_searchbtn:active,
+.theme-accent button:active {
+    background-color: LIGHT_8;
+}
+
+
+.theme-accent .btn .material-icons,
+.theme-accent .header .material-icons {
+    color: inherit;
+}
+.theme-accent label{
+    color: LIGHT_10;
+}
+.theme-accent .buttonBar span,
+.theme-accent .tab>a,
+.theme-accent .ace_button,
+.theme-accent .tab>a:not(.active) .material-icons,
+.theme-accent .color-inactive {
+    color: #dddddd;
+    opacity: 0.7;
+}
+
+
+.theme-accent .border-secondary,
+.theme-accent .ace_prompt_container .ace_focus:first-child,
+.theme-accent input:not([type]):not([readOnly]),
+.theme-accent input[type="text"]:not([readOnly]),
+.theme-accent input[type="search"]:not([readOnly]),
+.theme-accent input[type="number"]:not([readOnly]) {
+    border-color: LIGHT_10;
+}
+.theme-accent input:not([type]):not([readOnly]),
+.theme-accent input[type="text"]:not([readOnly]),
+.theme-accent input[type="search"]:not([readOnly]),
+.theme-accent input[type="number"]:not([readOnly]) {
+    background: DARK_6;
+}
+.theme-accent .nav-main,
+.theme-accent .toolbar{
+    background: DARK_4;
+}
+.theme-accent #controls>li,
+.theme-accent #hierarchy_tab>.sub-header,
+.theme-accent #hierarchy_tab>#project_view,
+.theme-accent #hierarchy_tab>#opendocs
+{
+    background: DARK_5;
+}
+
+.theme-accent #controls>li:last-child,
+.theme-accent #hierarchy_tab,
+.theme-accent #settings{
+    background: DARK_7;
+}
+.theme-accent .buttonBar span[ace_selected_button=true],
+.theme-accent .material-icons,
+.theme-accent .btn-flat,
+.theme-accent button,
+.theme-accent .tab>a,
+.theme-accent .mod-key-active,
+.theme-accent .checked {
+    color: #ffffff;
+    opacity:1;
+}
+.theme-accent .buttonBar span{
+    background: DARK_7;
+}
+.theme-accent .buttonBar span[ace_selected_button="true"]{
+    background: DARK_0;
+    color: white;
+}
+.theme-accent #controls .sub-header:hover{
+    background: DARK_6;
+}
+
+/*Checkboxes*/
+.theme-accent [type="checkbox"]:checked+span:not(.lever):after {
+    background: #2196f3;
+    border-color: #2196f3;
+}
+.theme-accent [type="checkbox"]:checked+span:not(.lever):before {
+    border-bottom-color: white;
+    border-right-color: white;
+}
+
+.theme-accent [type="checkbox"]:not(:checked)+span:not(.lever):after {
+    border-color: GRAY_12;
+}
+

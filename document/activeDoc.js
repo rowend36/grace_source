@@ -4,15 +4,12 @@ _Define(function(global) {
     var Notify = global.Notify;
     var docs = global.docs;
     var FileUtils = global.FileUtils;
-    var Utils = global.Utils;
     var Editors = global.Editors;
     var getEditor = global.getEditor;
     var addDoc = global.addDoc;
-    var SettingsDoc = global.SettingsDoc;
     var FocusManager = global.FocusManager;
     var State = global.State;
     var appConfig = global.appConfig;
-    var DocsTab;
     var currentDoc;
     /*
      * @method switchToDoc
@@ -119,6 +116,24 @@ _Define(function(global) {
 
 
     global.DocumentCommands = [{
+        name: "refreshFile",
+        bindKey: {
+            win: "Ctrl-R",
+            mac: "Command-Alt-R"
+        },
+        exec: function(){
+            docs[currentDoc].refresh();
+        }
+    },{
+        name: "openFile",
+        bindKey: {
+            win: "Ctrl-O",
+            mac: "Command-O"
+        },
+        exec: function(){
+            FileUtils.pickFile(null,global.Utils.noop);
+        }
+    },{
         name: "newFile",
         bindKey: {
             win: "Ctrl-N",
@@ -140,6 +155,7 @@ _Define(function(global) {
     }, {
         name: 'Save Checkpoint',
         exec: function(editor, args) {
+            var doc = docs[currentDoc];
             doc.$clearRevertStack();
 
             function save(name) {
@@ -159,13 +175,13 @@ _Define(function(global) {
     }, {
         name: 'Goto Checkpoint',
         exec: function(editor, args) {
+            var doc = docs[currentDoc];
             doc.$clearRevertStack();
 
             function restore(name) {
                 var res = docs[currentDoc].gotoCheckpoint(name);
                 if (args && args.cb) args.cb(res);
             }
-            var warning = "";
             if (!doc.stateID)
                 Notify.warn("Current state not saved");
             if (args && args.name) {
@@ -177,8 +193,9 @@ _Define(function(global) {
                 }));
         }
     }, {
-        name: 'Toggle Checkpoint',
+        name: 'Cycle Checkpoint',
         exec: function() {
+            var doc = docs[currentDoc];
             var name = "auto-checkpoint-";
             var lastBlob = doc.stateID == "cp-" + name + 1 || Docs.hasBlob(
                 currentDoc, "cp-" + name + 1) ? 1 : 2;
@@ -189,6 +206,7 @@ _Define(function(global) {
     }, {
         name: 'Goto Checkpoint and Delete',
         exec: function(editor, args) {
+            var doc = docs[currentDoc];
             doc.$clearRevertStack();
 
             function restore(name) {
@@ -196,7 +214,6 @@ _Define(function(global) {
                 docs[currentDoc].deleteCheckpoint(name);
                 if (args && args.cb) args.cb(res);
             }
-            var warning = "";
             if (args && args.name) {
                 restore(name);
             } else {
@@ -211,13 +228,13 @@ _Define(function(global) {
     }, {
         name: 'Delete Checkpoint',
         exec: function(editor, args) {
+            var doc = docs[currentDoc];
             doc.$clearRevertStack();
 
             function restore(name) {
                 docs[currentDoc].deleteCheckpoint(name);
-                if (args && args.cb) args.cb(res);
+                if (args && args.cb) args.cb();
             }
-            var warning = "";
             if (args && args.name) {
                 restore(name);
             } else Notify.prompt('Enter name', restore, docs[currentDoc]
@@ -244,7 +261,7 @@ _Define(function(global) {
             win: "Ctrl-Shift-S",
             mac: "Command-Shift-S"
         },
-        exec: function(editor) {
+        exec: function() {
             FileUtils.saveAs(currentDoc);
         }
     }];
@@ -298,7 +315,7 @@ _Define(function(global) {
                         var editor = getEditor();
                         var completer = editor.smartCompleter;
                         completer = editor[completer.name] || completer;
-                        if(completer.findRefs){
+                        if (completer.findRefs) {
                             completer.findRefs(editor);
                         }
                     }
@@ -310,18 +327,19 @@ _Define(function(global) {
                         var editor = getEditor();
                         var completer = editor.smartCompleter;
                         completer = editor[completer.name] || completer;
-                        if(completer.rename){
+                        if (completer.rename) {
                             completer.rename(editor);
                         }
                     }
-                }, "jumpToDef": {
+                },
+                "jumpToDef": {
                     caption: "Jump To Definition",
                     close: true,
                     onclick: function() {
                         var editor = getEditor();
                         var completer = editor.smartCompleter;
                         completer = editor[completer.name] || completer;
-                        if(completer.jumpToDef){
+                        if (completer.jumpToDef) {
                             completer.jumpToDef(editor);
                         }
                     }
@@ -329,7 +347,7 @@ _Define(function(global) {
 
             }
         },
-        "format":{
+        "format": {
             caption: "Format",
             icon: "edit",
             close: true,
@@ -343,7 +361,7 @@ _Define(function(global) {
         menu.addOption(i, menuItems[i]);
     }
     menu.addOption(
-        "console",{
+        "console", {
             caption: "Show Console",
             icon: "bug_report",
             close: true,
@@ -352,7 +370,7 @@ _Define(function(global) {
                 eruda._entryBtn.show();
                 eruda._devTools.toggle();
             }
-        },true);
+        }, true);
     Editors.addCommands(global.DocumentCommands);
     global.getActiveDoc = function() {
         return docs[currentDoc];

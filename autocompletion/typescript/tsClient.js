@@ -6,8 +6,8 @@ _Define(function(exports) {
     var getDoc = S.getDoc;
     var createCommands = S.createCommands;
     var docValue = S.docValue;
+    /**@constructor*/
     var TsServer = function(transport, options) {
-        var self = this;
         BaseServer.call(this, options);
         this.transport = transport;
         this.docs = Object.create(null);
@@ -57,7 +57,7 @@ _Define(function(exports) {
             ts.transport.postMessage(message, function(error, version) {
                 if (error || version != expected) {
                     //possible corruption, force full refresh
-                    ts.invalidateDoc(this.docs[i]);
+                    ts.invalidateDoc(ts.docs[name]);
                 }
                 // console.log('got '+version+' instead of '+expected+' doc iz '+doc.version)
                 cb && cb(error);
@@ -81,7 +81,6 @@ _Define(function(exports) {
             });
         },
         requestDefinition: function(editor, cb) {
-            var ts = this;
             this.send("getDefinitionAtPosition", editor, function(e, res) {
                 if (!e && res && res[0]) {
                     var def = res[0];
@@ -195,7 +194,7 @@ _Define(function(exports) {
     function buildCompletions(completions, ts) {
         var entries;
         if (completions && completions.entries) {
-            var MAX = completions.isMemberCompletion ? 5000 : 500;
+            var MAX = completions.isMemberCompletion ? 5000 : 700;
             entries = completions.entries.map(function(e) {
                 return {
                     value: e.name,
@@ -243,7 +242,7 @@ _Define(function(exports) {
                     end: session && toAceLoc(session, e.textSpan.start + e.textSpan.length),
                     //used in requestRename
                     span: session ? null : e.textSpan
-                }
+                };
             })
         };
         data.name = name;

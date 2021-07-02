@@ -2,7 +2,7 @@ _Define(function(global) {
   var args = {
     /*The ones we're still falling back to isogit for*/
     analyze: ["?force", "?onProgress"],
-    completeMerge: ["ourOid", "theirOid", "ours", "theirs", "author", "committer", "signingKey", "message"],
+    completeMerge: ["?href", "baseOid", "?base", "?message", "ourOid", "theirOid", "ours", "theirs", "author", "committer", "?signingKey", "tree"],
     merge: ["theirs", "author", "name", "email", "dryRun", "fastForwardOnly", "onProgress"],
     setDir: ["dir", "gitdir"],
     init: [],
@@ -55,8 +55,14 @@ _Define(function(global) {
   var igit = global.IGitProvider;
   var appConfig = global.allConfigs.git;
   var pleaseCache = global.createCacheFs;
-  var mergeHelper = global.requireMerge();
-  var analyze = global.analyze;
+  //The wacky nature of Imports.define is seeping through
+  var Imports = global.Imports;
+  var mergeHelper = Imports.promise.bind(null,[
+    "./tools/git/libs/diff3/diff3.js", {
+      script: "./tools/git/interactive_merge.js",
+      returns: "InteractiveMerge"
+    }
+  ]);
   var gc = global.AppEvents;
   var Utils = global.Utils;
   var http = global.http;
@@ -83,8 +89,15 @@ _Define(function(global) {
 
   function isoGitCall(name) {
     return function(opts) {
+      console.log(name, opts);
       // igit.assert(name, opts);
-      return window.git[name](this.getOpts(opts));
+      return window.git[name](this.getOpts(opts)).then(function(res) {
+        console.log(res);
+        return res;
+      }, function(err) {
+        console.log(err);
+        throw err;
+      });
     };
   }
   for (var i in igit.args) {
@@ -136,21 +149,35 @@ _Define(function(global) {
   Git.prototype.statusAll = function(opts) {
     igit.assert('statusAll', opts);
     return window.git.statusMatrix(this.getOpts(opts)).then(function(e) {
-      return e.forEach(function(t, i) {
+      return e.forEach(function(t) {
         return opts.onEach(t[0], getStatus(t));
       });
     });
   };
+  Git.prototype.analyze = function(opts){
+    igit.assert('analyze', opts);
+    opts = this.getOpts(opts);
+    return Imports.promise([{
+      script: "./tools/git/analyze_helper.js",
+      returns: "gitAnalyze"
+    }]).then(function(analyze){
+      console.log(opts);
+      return analyze(opts);
+    });
+  };
   Git.prototype.merge = function(opts) {
-    return mergeHelper.merge(this.getOpts(opts));
+    igit.assert('merge', opts);
+    opts = this.getOpts(opts);
+    return mergeHelper().then((function(helper) {
+      return helper.merge(opts);
+    }).bind(this));
   };
   Git.prototype.completeMerge = function(opts) {
     igit.assert('completeMerge', opts);
-    return mergeHelper.completeMerge(this.getOpts(opts));
-  };
-  Git.prototype.analyze = function(opts) {
-    igit.assert('analyze', opts);
-    return analyze(this.getOpts(opts));
+    opts = this.getOpts(opts);
+    return mergeHelper().then((function(helper) {
+      return helper.completeMerge(opts);
+    }));
   };
   Git.prototype.setDir = Git;
   Git.prototype.cached = function() {
@@ -170,7 +197,7 @@ _Define(function(global) {
   var Git = global.Git;
   var Utils = global.Utils;
   var FileUtils = global.FileUtils;
-  var JGit = function(dir, gitdir, fs, cache) {
+  var JGit = function(dir, gitdir) {
     JGit.super(this, arguments); //until we can imolement all methods
     call("setDir", [dir, gitdir || null]);
   };
@@ -216,10 +243,13 @@ _Define(function(global) {
   var apply = Utils.batch(function(methodName, args, cb, parse) {
     var result, error;
     try {
-      result = jgit[methodName].apply(jgit, args ? args.$getter ? args.$getter() : args : []);
+      args = args ? args.$getter ? args.$getter() : args : [];
+      console.log(methodName, args);
+      result = jgit[methodName].apply(jgit, args);
       if (parse) {
         result = parse(result);
       }
+      console.log(result);
     } catch (e) {
       console.error(jgit.getError());
       console.log(e);
@@ -227,6 +257,7 @@ _Define(function(global) {
     }
     cb(error, result);
   });
+
   function batchCall(methodName, arr) {
     if (currentOp && currentOp.type == methodName) {
       currentOp.list.push(arr[0]);
@@ -236,7 +267,7 @@ _Define(function(global) {
         type: methodName,
         list: arr
       };
-      currentOp =i;
+      currentOp = i;
       var promise = currentOp.promise = call(methodName, {
         $getter: function() {
           if (i == currentOp) currentOp = null;
@@ -255,7 +286,7 @@ _Define(function(global) {
       }, parse);
     });
   }
-  JGit.prototype.init = function(gitdir) {
+  JGit.prototype.init = function() {
     return call("init");
   };
   JGit.prototype.batchSize = 1000;
@@ -310,7 +341,7 @@ _Define(function(global) {
   JGit.prototype.addRemote = function(opts) {
     return call("addRemote", [opts.remote, opts.url]);
   };
-  JGit.prototype.listRemotes = function(opts) {
+  JGit.prototype.listRemotes = function() {
     return call("listRemotes", null, jsonParse);
   };
   JGit.prototype.resolveRef = function(opts) {
@@ -403,7 +434,7 @@ _Define(function(global) {
   JGit.prototype.listFiles = function(opts) {
     return call("listFiles", [string(opts && opts.ref)], jsonParse);
   };
-  JGit.prototype.log = function(opts) {
+  JGit.prototype.log = function() {
     return call("log", null, jsonParse);
   };
   JGit.prototype.branch = function(opts) {
@@ -413,6 +444,9 @@ _Define(function(global) {
     return call("deleteBranch", [opts.ref]);
   };
   JGit.prototype.listBranches = function(opts) {
+    if (opts && opts.remote) {
+      return Git.prototype.listBranches.call(this, opts);
+    }
     return call("listBranches", [string(opts && opts.remote)], jsonParse);
   };
   JGit.prototype.currentBranch = function() {

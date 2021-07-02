@@ -29,6 +29,7 @@ _Define(function(global) {
     var useRecycler = appConfig.useRecyclerViewForSearchResults;
     var Hierarchy = global.RHierarchy || global.Hierarchy;
     var SearchList = global.SearchList;
+    var bind = global.createSearch;
     var FindFileServer = global.FindFileServer;
     //var ViewportVisualizer = global.ViewportVisualizer;
     var Utils = global.Utils;
@@ -64,9 +65,10 @@ _Define(function(global) {
         this.searchInput[0].value = appConfig.lastSearch;
         var moreEl = el.find("#showMoreResults");
         var loadEl = el.find("#loading");
-        var stopBtn = loadEl.children(".red");
+        var stopBtn = loadEl.find("#searchStop");
         var undoButton = $("#undoReplaceBtn");
         var searchInfo = el.find('#searchInfo');
+        var emptyEl = el.find(".no-results");
         undoButton.hide();
         var searchInFolder = this.searchInFolder = function(folder, server) {
             project = {
@@ -83,7 +85,6 @@ _Define(function(global) {
                 self.previewBrowser.fileServer = project.fileServer;
                 self.previewBrowser.setRootDir(project.rootDir);
             }
-            configure("searchOpenDocs", false, "search");
         };
         var quickFilter, includeFilter, excludeFilter;
         var filterFiles = function(name, path) {
@@ -96,7 +97,7 @@ _Define(function(global) {
             return (isDirectory ? quickFilter.test(rel) : (!includeFilter || includeFilter.test(rel))) && !(
                 excludeFilter && excludeFilter.test(rel));
         };
-        var init = this.init = function() {
+        this.init = function() {
             var project = FileUtils.getProject();
             if (project.fileServer) {
                 searchInFolder(project.rootDir, project.fileServer);
@@ -116,6 +117,7 @@ _Define(function(global) {
                 modalEl = createModal(self);
                 self.previewBrowser = new Hierarchy(modalEl.find(".fileview"), project.rootDir, project
                     .fileServer);
+                self.previewBrowser.setShowFileInfo(false);
                 self.previewBrowser.setRootDir(project.rootDir);
                 self.previewBrowser.folderDropdown = "search-dropdown";
                 self.previewBrowser.childFolderDropdown = "search-dropdown";
@@ -141,6 +143,8 @@ _Define(function(global) {
                         self.previewBrowser.stub.hide();
                     }
                     configure("searchOpenDocs", val, "search");
+                    modalEl.find('input[type=text]').attr('disabled',appConfig.searchOpenDocs);
+                    el.find("#searchConfig").toggleClass('color-inactive',appConfig.searchOpenDocs);
                 });
                 modalEl.modal({
                     dismissible: false,
@@ -163,7 +167,16 @@ _Define(function(global) {
                 document.body.appendChild(modalEl[0]);
             }
             modalEl.modal("open");
+            var dotstar = global.allConfigs.files.dotStar;
+            if (dotstar) {
+                modalEl.find("#dot-star-status").html('enabled');
+            } else
+                modalEl.find("#dot-star-status").html('disabled');
+
             searchInTabs.checked = appConfig.searchOpenDocs;
+            modalEl.find('input[type=text]').attr('disabled',appConfig.searchOpenDocs);
+            el.find("#searchConfig").toggleClass('color-inactive',appConfig.searchOpenDocs);
+        
             filterInput.val(appConfig.searchTabFilter);
             excludeInput.val(appConfig.searchTabExclude);
             if (appConfig.searchOpenDocs) {
@@ -207,7 +220,7 @@ _Define(function(global) {
                 possibleNewSearch();
                 renderResults(doc, ranges);
             } else(useWorker ? workerSearch : asyncSearch)(filename, project.fileServer, currentTimeout,
-            searchId);
+                searchId);
         };
         var empty = function() {
             lastResult = true;
@@ -235,12 +248,11 @@ _Define(function(global) {
             searchResults.clear();
             searchedDocs.length = 0;
             searchInfo.text("");
-            try{
+            try {
                 self.search.$assembleRegExp(self.search.$options);
-            }
-            catch(e){
-               showSearchStarted();
-               return showSearching(" ","<span class='red-text'>"+e.message+"</span>");
+            } catch (e) {
+                showSearchStarted();
+                return showSearching(" ", "<span class='error-text'>" + e.message + "</span>");
             }
             useWorker = appConfig.useSearchWorker;
             configure("lastSearch", self.searchInput.val(), "search");
@@ -396,11 +408,10 @@ _Define(function(global) {
             terminate();
             var callback = function(doc, ck, clear) {
                 if (!doc) {
-                    if (ck == "binary" && lastWarned!=id){
+                    if (ck == "binary" && lastWarned != id) {
                         Notify.error('Unable to open binary file');
                         lastWarned = id;
-                    }
-                    else Notify.error("Error Reading "+path);
+                    } else Notify.error("Error Reading " + path);
                     possibleNewSearch();
                     renderResults();
                     return;
@@ -426,6 +437,7 @@ _Define(function(global) {
             FileUtils.getDoc(path, fileServer, callback);
         }
         var lastWarned = -1;
+
         function asyncSearch(path, fileServer, timeout, id) {
             if (id != searchId) return;
             var doc;
@@ -443,9 +455,9 @@ _Define(function(global) {
                 return;
             }
             if (FileUtils.isBinaryFile(path)) {
-                if(lastWarned != id){
-                Notify.error('Unable to open binary file');
-                lastWarned = id;
+                if (lastWarned != id) {
+                    Notify.error('Unable to open binary file');
+                    lastWarned = id;
                 }
                 possibleNewSearch();
                 renderResults();
@@ -487,27 +499,31 @@ _Define(function(global) {
         var showSearchPaused = function() {
             loadEl.hide();
             moreEl.attr('disabled', false);
-            moreEl.show();
+            moreEl.toggle();
         };
-        var onDir = function(dir){
-            showSearching(dir||"","Iterating ");
+        var onDir = function(dir) {
+            showSearching(dir || "", "Iterating ");
         };
         var dot = 0;
         var showSearching = Utils.delay(function(name, status) {
-            dot = (dot+1)%4;
-            var path  = (name || ' .'+Utils.repeat(dot,"."));
+            dot = (dot + 1) % 4;
+            var path = (name || ' .' + Utils.repeat(dot, "."));
             path = '<li class=clipper >' + path + '</li>';
             loadEl.children().eq(0).html(status);
             loadEl.children().eq(1).html(path);
             global.styleClip(loadEl.children().eq(1));
-        },30);
+        }, 30);
         var showSearchStarted = function() {
             moreEl.attr('disabled', true);
             loadEl.show();
+            emptyEl.hide();
         };
         var showSearchStopped = function() {
             loadEl.hide();
             moreEl.hide();
+            if(found<1){
+                emptyEl.show();  
+            }
         };
         var stopSearch = function() {
             searchId += 1;
@@ -518,6 +534,7 @@ _Define(function(global) {
         };
         undoButton.click(undoReplace);
         el.find("#searchConfig").click(openModal);
+        el.find("#searchConfig").toggleClass('color-inactive',appConfig.searchOpenDocs);
         el.find(".ace_search_options").children().click(function() {
             $(this).toggleClass("checked");
         });
@@ -527,30 +544,11 @@ _Define(function(global) {
         moreEl.click(moreResults);
         stopBtn.click(stopSearch);
         el.find("#toggleReplace").click(function() {
-            if (el.hasClass("show_replace")) {
-                el.removeClass('show_replace');
-                $(this).text("keyboard_arrow_down");
-            } else {
-                el.addClass('show_replace');
-                $(this).text("keyboard_arrow_up");
-            }
+            el.toggleClass("show_replace");
+            $(this).toggleClass('btn-toggle__activated',el.hasClass('show_replace'));
         });
-        var go = function(e) {
-            var ENTER = 13;
-            switch (e.keyCode) {
-                case ENTER:
-                    $(this).trigger("go", e);
-                    break;
-            }
-        };
-        var bind = function(input, btn, func) {
-            $(btn).on('click', func);
-            $(input).on('go', func);
-            $(input).on('keypress', go);
-        };
         bind("#searchInput", "#searchBtn", find);
         bind("#replaceInput", "#replaceBtn", replace);
-        bind = null;
         FileUtils.on('change-project', function(e) {
             searchInFolder(e.project.rootDir, e.project.fileServer);
         });
@@ -559,12 +557,13 @@ _Define(function(global) {
             caption: "Search In Folder",
             onclick: function(ev) {
                 searchInFolder(ev.filepath, ev.browser.fileServer);
+                configure("searchOpenDocs", false, "search");
                 ev.preventDefault();
             }
         };
         FileUtils.registerOption("files", ["folder", "create"], "search-in-folder", searchInFolderOption);
         $("#search_tab").show();
-        
+
     };
 
     function relative(b, l) {
@@ -657,7 +656,7 @@ _Define(function(global) {
                 }
                 return null;
             }
-            onmessage = function(e) {
+            self.onmessage = function(e) {
                 if (e.data.hasOwnProperty('text')) {
                     cache(e.data.path, e.data.text);
                     findAll(e.data.re, e.data.text, e.data.id);
@@ -678,28 +677,28 @@ _Define(function(global) {
     };
     var createModal = function() {
         var modalEl = $(document.createElement('div'));
-        modalEl.addClass('modal');
+        modalEl.addClass('modal modal-large');
         modalEl.html('\
-<div class="modal-content">\
-    <div class="h-30">\
-        <h5>Filter Files<button class="close-icon material-icons">close</button></h5>\
-    </div>\
-<i><span class="blue-text">DotStar</span> globbing is disabled. Hidden files will not be matched unless explicitly included.</i>\
-    <div class="h-30">\
-        <input id="includeOpenDocs" type="checkbox" checked="true" /><span>Search in open files</span>\
-    </div>\
-    <h6>Enter glob pattern:</h6>\
-    <div class="input-field inline">\
-        <input id="filterInput" placeholder="Enter patterns separated by comma" type="text" class="">\
-    </div>\
-    <h6>Folders to ignore:</h6>\
-    <div class="input-field inline">\
-        <input id="excludeInput" placeholder="Search for" type="text" class="">\
-    </div>\
-    <div class="fileview-container">\
-        <ul class="fileview">\
-        </ul>\
-    </div>\
+<button class="close-icon material-icons h-30">close</button>\
+<h6 class="modal-header h-30">Filter Files</h6>\
+<div class="panel-container">\
+<div class="panel border-inactive">\
+<div  class="mb-10"><i><span class="blue-text">DotStar</span> globbing is <span id = "dot-star-status">disabled</span>. When disabled, hidden files will not be matched unless explicitly included.</i>\
+</div>\
+<div class="h-30">\
+    <input id="includeOpenDocs" type="checkbox" checked="true" /><span>Search in open files</span>\
+</div>\
+<label>Enter glob pattern:</label>\
+<div class="input-field inline">\
+    <input id="filterInput" placeholder="Enter patterns separated by comma" type="text" class="">\
+</div>\
+<label>Folders to ignore:</label>\
+<div class="input-field inline">\
+    <input id="excludeInput" placeholder="Search for" type="text" class="">\
+</div>\
+</div>\
+<ul class="fileview">\
+</ul>\
 </div>');
         styleCheckbox(modalEl);
         modalEl.find(".close-icon").click(function() {
@@ -708,4 +707,4 @@ _Define(function(global) {
         return modalEl;
     };
     global.SearchTab = SearchTab;
-}) /*_EndDefine*/
+}); /*_EndDefine*/

@@ -136,13 +136,14 @@ _Define(
             var header = this.$el.find('.item-list-header')[0];
             header.innerHTML = this.headerText;
             var content = this.listEl;
+            var item;
             content.innerHTML = "";
             if (this.selected)
                 $(this.selected).removeClass('selected');
             this.selected = null;
             if (this.getLength() > 0) {
                 for (var i = 0; i < this.getLength(); i++) {
-                    var item = this.createItem(i);
+                    item = this.createItem(i);
                     item.setAttribute('item-list-index', i);
                     content.appendChild(item);
                 }
@@ -152,7 +153,7 @@ _Define(
                 item.innerHTML = this.emptyText;
                 content.appendChild(item);
             }
-        }
+        };
 
         function QuickList(id, items, container) {
             QuickList.super(this, arguments);
@@ -164,7 +165,7 @@ _Define(
             this.$close = this.hide.bind(this);
         }
         QuickList.prototype.getHtml = function(index) {
-            return ("" + this.items[index]).substring(0,100000).replace(/&/g,"&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            return Utils.htmlEncode(String(this.items[index]).substring(0,10000)).replace(/(?:\r\n|\r|\n)+/g,"<br/>");
         };
         QuickList.prototype.containerClass = "modal bottom-list";
         QuickList.prototype.itemClass = "bottom-list-item";

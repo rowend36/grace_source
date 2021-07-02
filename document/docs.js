@@ -1,17 +1,17 @@
 _Define(function(global) {
   "use strict";
-  /*One class to mazter them all*/
-  //todo replace confirm with Notify ask
+  /*One class to master them all*/
   var appConfig = global.registerAll({
     "allowAutoSave": false,
     "stashExpiryTime": "1day",
     "keepDocumentsOnClose": true,
     "maxStoreSize": Env.isWebView ? "50mb" : "5mb",
     "maxDocCacheSize": "20kb",
-    "maxDocDataSize": "2mb",
+    "maxDocDataSize": Env.isWebView ? "1mb" : '500kb',
     "maxUndoHistory": "Infinity",
     "clearCache": false,
     "autosaveInterval": "1min",
+    "autoCloseDocs": true,
     "nextCleanTime": 0
   }, "documents");
   global.registerValues({
@@ -20,8 +20,8 @@ _Define(function(global) {
     "stashExpiryTime": "If keepDocumentsOnClose is enabled, this specifies how long they should be kept",
     "keepDocumentsOnClose": "Allows the editor to save your undo history when a document is closed",
     "maxStoreSize": "Configures how much storage can be used in total for storing documents",
-    "maxDocCacheSize": "The maximum size of documents that must be cached for later opening. Useful if using a network file server",
-    "maxDocDataSize": "The maximum size of data that should be stored for a single document.",
+    "maxDocCacheSize": "The maximum size of documents that can be cached for later opening. Useful if using a slow network file server.",
+    "maxDocDataSize": "The maximum size of data that should be stored for a single document. Avoid setting this value higher than 1mb.",
     "nextCleanTime": "no-user-config"
   }, "documents");
   var configEvents = global.ConfigEvents;
@@ -31,7 +31,7 @@ _Define(function(global) {
       case "clearCache":
         if (ev.newValue === true) maxStoreSize = 0;
         Docs.cleanBlobs(true);
-        configure(appConfig.nextCleanTime,Math.min(appConfig.nextCleanTime,new Date().getTime()+1000*60*60*24),"documents");
+        configure(appConfig.nextCleanTime, Math.min(appConfig.nextCleanTime, new Date().getTime() + 1000 * 60 * 60 * 24), "documents");
         ev.preventDefault();
         Notify.info("Cache cleared");
         /*fall through*/
@@ -48,7 +48,6 @@ _Define(function(global) {
   var getObj = global.getObj;
   var putObj = global.putObj;
   var modelist = global.modelist;
-  var lastRun = appConfig.lastRun;
   var app = global.AppEvents;
   var Range = global.Range;
   var FileUtils = global.FileUtils;
@@ -191,7 +190,7 @@ _Define(function(global) {
     },
     refresh: function(doc, res) {
       var INCORRECT = null;
-      var FAILURE;
+      //var FAILURE;
       var SUCCESS = true;
       var ERROR = false;
       /*if (doc.getSize()) {
@@ -304,6 +303,10 @@ _Define(function(global) {
     var dmp = new diff_match_patch();
     dmp.Diff_EditCost = 50;
     dmp.Diff_Timeout = 0.4;
+    //diff can sometimes split newlines
+    //causing issues with toAceDeltas
+    from = from.replace(/\r\n|\r/g, "\n");
+    value = value.replace(/\r\n|\r/g, "\n");
     var diff = dmp.diff_main(from, value);
     dmp.diff_cleanupEfficiency(diff);
     return Docs.diffToAceDeltas(diff, start_line, start_col);
@@ -342,6 +345,23 @@ _Define(function(global) {
     callback && callback(doc);
   };
   var notified = 0;
+
+  function shrinkData(obj, targetSize) {
+    var data;
+    do {
+      if (obj.history.undo && obj.history.undo.length > 1) {
+        obj.history.undo = obj.history.undo.slice((obj.history.undo.length / 2));
+      } else if (obj.folds && obj.folds.length) obj.folds = [];
+      else if (obj.history.undo && obj.history.undo.length == 1) {
+        obj.history.undo = [];
+      } else if (obj.history.redo && obj.history.redo.length) {
+        obj.history = null;
+      } else return false; //whatever is keeping this doc from saving
+      data = JSON.stringify(obj);
+    } while (data.length > targetSize);
+    return data;
+  }
+  
   Docs.tempSave = function(id, force, cleaned) {
     if (id === undefined) {
       for (var i in docs)
@@ -351,20 +371,14 @@ _Define(function(global) {
       sessionSave.cancel();
       return;
     }
+    var data;
+    var doc = docs[id];
+    var obj = contentLoader.save(doc);
+    if (!doc) return console.warn('Temp saving closed doc');
     try {
-      var doc = docs[id];
-      var obj = contentLoader.save(doc);
-      var data = JSON.stringify(obj);
-      if (data.length > maxDocDataSize) {
-        if (!doc.warned) Notify.warn("The internal data of this file has exceeded the configured limits\nCurrent size: " +
-          doc.getPath() + "\n: " + Math.floor(data.length / 1024) + "kb > MaxDocDataSize: " + Math.floor(maxDocDataSize /
-            1024) + "kb", "clear-history-" + doc.id);
-        doc.warned = true;
-        if (obj.history.undo && obj.history.undo.length) {
-          obj.history.undo = obj.history.undo.slice((obj.history.undo.length / 2) + 1);
-        } else if(obj.folds && obj.folds.length)obj.folds = [];
-        else return;//whatever is keeping this doc from saving
-        data = JSON.stringify(obj);
+      data = JSON.stringify(obj);
+      if (data > maxDocDataSize) {
+        shrinkData(obj, maxDocDataSize);
       }
       appStorage.setItem(id, data);
       docs[id].safe = true;
@@ -379,14 +393,19 @@ _Define(function(global) {
           Docs.tempSave(id, true, true);
           return;
         } else {
-          //todo handle low space scenarios
+          //nothing can really be done
         }
       }
       if (notified < 3) {
-        Notify.error('Error caching current document');
+        Notify.error('There was an error caching ' + doc.getPath() + '. This might be as a result of low storage or wrong global configuration. Contact developer if issue persists.');
         notified++;
       }
-      console.error(e);
+      console.error(e, {
+        maxDocCacheSize: maxDocCacheSize,
+        maxDocDataSize: maxDocDataSize,
+        maxStoreSize: maxStoreSize,
+        dataSize: data.length
+      });
     }
   };
   Docs.saveAs = function(id, newpath, fileServer, callback) {
@@ -520,12 +539,20 @@ _Define(function(global) {
     Docs.dirty(id);
     sessionSave();
   };
-  Docs.createPlaceHolder = function(args) {
+  var sameQueue;
+  var clearSameQueue = Utils.debounce(function() {
+    sameQueue = false;
+  });
+  Docs.createPlaceHolder = function() {
     var doc = docs[addDoc.apply(null, arguments)];
     var grp = Utils.eventGroup(app);
+    sameQueue = true;
+    clearSameQueue();
 
     function remove() {
-      closeDoc(doc.id);
+      if (!doc.getValue() && !sameQueue) {
+        closeDoc(doc.id);
+      }
     }
     grp.once("createDoc", remove);
     grp.once("change", grp.off, doc.session);
@@ -533,7 +560,9 @@ _Define(function(global) {
       if (e.doc == doc) {
         grp.off();
       }
+      doc.isPlaceholder = null;
     });
+    doc.isPlaceholder = grp;
   };
   Docs.forSession = function(session) {
     if (session) {
@@ -730,7 +759,11 @@ _Define(function(global) {
   };
   var __factory = {};
   Docs.registerFactory = function(type, constructor) {
-    __factory[type] = constructor;
+    if(constructor){
+      //to prevent infinite looping in Docs.$loadData
+      __factory[type] = constructor;
+      FileUtils.ownChannel("docs-" + type, Docs.$loadData);
+    }
   };
   Docs.stashDoc = function(path, text) {
     var key;
@@ -781,8 +814,14 @@ _Define(function(global) {
       updateIcon(Tabs.active);
     });
     Tabs.registerPopulator('m', Docs);
-    app.once("documents-loaded", Tabs.recreate.bind(Tabs));
-    Docs.fromJSON(null, null, activeTab);
+    Tabs.fromJSON();
+    Docs.fromJSON(null, null, activeTab, function() {
+      Docs.cleanStash();
+      //A new doc might have been created
+      //Or one of the docs closed
+      //Docs.persist();
+      app.triggerForever('documents-loaded');
+    });
   };
   Docs.toJSON = function() {
     var h = {};
@@ -807,8 +846,7 @@ _Define(function(global) {
     });
     return keys;
   }
-  window.routineCheck = routineCheck;
-  Docs.fromJSON = function(json, ignoreFail, asyncStart) {
+  Docs.fromJSON = function(json, ignoreFail, idToLoadSync, cb) {
     var failures = Breaks.hasFailures("loadDocuments");
     if (!json) {
       json = getObj("docs", null);
@@ -825,15 +863,15 @@ _Define(function(global) {
       }
     }
     if (failures && !ignoreFail) {
-      return onHandlePreviousFail(json);
+      return onHandlePreviousFail(json, cb);
     }
     var load;
     var ids = Object.keys(json);
-    if (asyncStart) {
-      var i = ids.indexOf(asyncStart);
+    if (idToLoadSync) {
+      var i = ids.indexOf(idToLoadSync);
       var loaded = false;
       if (i > -1) {
-        loaded = loadOne(asyncStart, i, function() {
+        loaded = loadOne(idToLoadSync, i, function() {
           return true;
         });
       }
@@ -843,18 +881,12 @@ _Define(function(global) {
           return true;
         });
       }
-      load = function(i, index, next) {
-        setTimeout(loadOne.bind(null, i, index, next), 150);
+      load = function(id, index, next) {
+        setTimeout(loadOne.bind(null, id, index, next), 150);
       };
     } else load = loadOne;
     Breaks.breakpoint("loadDocuments", null, 2000);
-    Utils.asyncForEach(ids, load, function() {
-      Docs.cleanStash();
-      //A new doc might have been created
-      //Or one of the docs closed
-      Docs.persist();
-      app.triggerForever('documents-loaded');
-    }, 2);
+    Utils.asyncForEach(ids, load, cb, 2);
 
     function loadOne(i, index, next) {
       if (docs[i]) return next();
@@ -876,7 +908,7 @@ _Define(function(global) {
     }
   };
 
-  function onHandlePreviousFail(json) {
+  function onHandlePreviousFail(json, cb) {
     var el = $(Notify.modal({
       header: "<i class='material-icons close-icon'>error</i><h5 class='center'>Error Loading Documents</h5>",
       dismissible: false,
@@ -894,8 +926,8 @@ _Define(function(global) {
     el.find('.modal-load_all').click(function() {
       el.modal('close');
       Breaks.removeBreakpoint('loadDocuments');
-      Docs.fromJSON(json, true);
-    }).addClass('red');
+      Docs.fromJSON(json, true, null, cb);
+    }).addClass('error');
     el.find('.modal-proceed').click(function() {
       el.modal('close');
       var toDelete = [];
@@ -915,7 +947,7 @@ _Define(function(global) {
         appStorage.removeItem(id);
       }
       Breaks.removeBreakpoint('loadDocuments');
-      Docs.fromJSON(json, true);
+      Docs.fromJSON(json, true, null, cb);
     });
     global.styleCheckbox(el);
   }
@@ -928,8 +960,9 @@ _Define(function(global) {
           docs[id] = new C("", path, undefined, id);
         } else {
           //factory not registered
-          console.error('Unknown factory ' + state.factory);
-          return Breaks.removeBreakpoint(id);
+          FileUtils.postChannel('docs-'+state.factory,id,path,state);
+          console.warn('Unknown factory ' + state.factory);
+          return;
         }
       } else docs[id] = new Doc("", path, undefined, id);
       contentLoader.load(docs[id], state);
@@ -1017,7 +1050,8 @@ _Define(function(global) {
     }
     if (save)
       Docs.persist();
-    if (!doc.bound) { //TODO replace this name with isTrackingChanges
+    //TODO replace this name bound with isTrackingChanges
+    if (!doc.bound) {
       if (path) Docs.restoreStash(path, doc);
       doc.onChange = Doc.prototype.onChange.bind(doc);
       doc.onChangeMode = function() {
@@ -1088,7 +1122,7 @@ _Define(function(global) {
   }
 
   function newDoc(editor) {
-    var id = addDoc("unsaved*", "", {
+    return addDoc("unsaved*", "", {
       mode: editor ? editor.getOption('mode') : null
     });
   }
@@ -1098,12 +1132,17 @@ _Define(function(global) {
     //if need be there might be a change status
     //event but for now, it has only one listener
     //TODO add status to tabs,see nametags
+    if (docs[id])
+      $("[data-file=" + id + "]").toggleClass("status_pending", docs[id].dirty);
     if (!fromEvent && id != Tabs.active) return;
-    if (!docs[id] || !docs[id].dirty) $("#save i").css("color", "inherit");
-    else if (docs[id].allowAutoSave) $("#save i").css("color", "orange");
+    var saveEls = $("#save");
+    var color = "";
+    if (!docs[id] || !docs[id].dirty) color = "";
+    else if (docs[id].allowAutoSave) color = "status_pending";
     else {
-      $("#save i").css("color", "red");
+      color = "status_unsaved";
     }
+    saveEls.attr('class', color);
   };
   //this should be in Editors
   //it is just a legacy method now
@@ -1135,7 +1174,7 @@ _Define(function(global) {
         }
         return Notify.error(et);
       }
-      addDoc(null, doc);
+      (appConfig.autoCloseDocs ? Docs.createPlaceHolder : addDoc)(null, doc);
       doc.setClean();
       cb && cb(null, doc);
     });
@@ -1174,7 +1213,7 @@ _Define(function(global) {
       "</i>") : null);
     //+"<i class='right' style='text-transform:uppercase'>"+docs[id].getEncoding()+"</i>";
   };
-  
+
   global.$determineQuota = determineQuota;
   global.$inspect = inspectMemory;
   global.Functions.newDoc = newDoc;

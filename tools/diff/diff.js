@@ -11,7 +11,7 @@ _Define(function(global) {
     var MainMenu = global.MainMenu;
     var Imports = global.Imports;
     var getActiveDoc = global.getActiveDoc;
-    
+
     var doDiff = Imports.define(["./tools/diff/diff.css", "./tools/diff/ace-inline-diff.js"], function() {
         doDiff = doDiffLoaded;
         AceInlineDiff = global.AceInlineDiff;
@@ -38,7 +38,7 @@ _Define(function(global) {
     }
     Storage.load(
         function(id, ev) {
-            if (DocsTab.hasTab(id)) {
+            if (!DocsTab.isClosedTab(id)) {
                 var doc = docs[ev.docId];
                 if (!doc) {
                     return Storage.removeItem(id);
@@ -56,7 +56,7 @@ _Define(function(global) {
 
                     var newDoc = doc.fork(true);
                     newDoc.abortChanges();
-                    res = newDoc.session;
+                    var res = newDoc.session;
 
                     doDiff(id, res, doc.getSavePath(), safeGetPath(doc), doc, true);
                 } else {
@@ -72,24 +72,23 @@ _Define(function(global) {
             }
         },
         function(id) {
-            if (DocsTab.hasTab(id)) {
-                DocsTab.removeTab(id);
-            }
+            // if (!DocsTab.isClosedTab(id)) {
+            //     DocsTab.removeTab(id);
+            // }
+            //Now unnessary
         });
-    if (Storage.itemList.length)
-        DocsTab.recreate();
 
     function doDiffLoaded(windowId, res, filepath, filename, doc, newWindow) {
         function close() {
             Storage.removeItem(windowId);
             differ.destroy();
             Editors.closeEditor(editor);
-            if(typeof res!="string"){
-                Docs.closeSession(session);//just in case
+            if (typeof res != "string") {
+                Docs.closeSession(session); //just in case
                 res.destroy();
             }
         }
-        var diffWindow = Editors.getEditorWindow(windowId, filename, null, close, doc.id || null);
+        var diffWindow = Editors.getEditorWindow(windowId, filename, null, close, newWindow?doc.id || undefined:undefined);
         var c = diffWindow.onEnter;
         diffWindow.onEnter = function(host) {
             c(host);
@@ -108,10 +107,10 @@ _Define(function(global) {
         var session = doc.cloneSession();
         editor.setSession(session);
         var differ = AceInlineDiff.diff(editor, res, {
-            editable: true,//!doc.isReadOnly(),
+            editable: true, //!doc.isReadOnly(),
             autoupdate: newWindow,
             showInlineDiffs: true,
-            onClick: res.getValue?'swap':'copy'
+            onClick: res.getValue ? 'swap' : 'copy'
         });
         editor.execCommand("foldToLevel1");
         differ.goNextDiff(editor);

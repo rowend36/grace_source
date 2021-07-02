@@ -70,10 +70,8 @@ app.post("/copy", function(req, res) {
         }
     }, req.body.overwrite);
 });
-var ill = 0;
 app.post("/info", function(req, res) {
     var path = req.body.path;
-    var o = ill++;
     fs[req.body.isLstat ? "lstat" : "stat"](path, function(err, st) {
         if (err) {
             return doError(err, res);

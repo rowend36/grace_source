@@ -20,7 +20,7 @@ _Define(function(global) {
     "completionTimeout": "auto",
     "enableTypescript": true,
     "enableTern": true,
-    "fileLoadConfigFiles": "",
+    "preloadFiles": "",
     "maxAutoLoadSize": "5mb",
     "functionHintOnlyOnBoundaries": true,
     "maxSingleFileSize": "2mb",
@@ -28,7 +28,7 @@ _Define(function(global) {
     "snippetsToLoad": "grace.snippets",
     "enableFilenameCompletion": true,
     "enableColorCompletion": true,
-    "tagsLoadConfigFiles": "",
+    "preloadTags": "",
   }, "autocompletion");
   global.registerValues({
     '!root': 'Configure ternjs, typescript and Gtags autocompletion engines\nTo disable autocompletion entirely, see editors.enableBasicAutocompletion',
@@ -39,8 +39,8 @@ _Define(function(global) {
     'maxSingleFileSize': 'Prevent editor from hanging on autocompletion by setting this',
     "snippetsToLoad": "Load tmsnippet files. Example files are on ace github repository. Specify snippets as filepath followed by optional list of scopes. path[:scope[,scope]] eg main.snippets:javascript,typescript",
     'functionHintOnlyOnBoundaries': "When enabled, function hints will only show at ',' and beginning of argument list",
-    'tagsLoadConfigFiles': 'Comma separated list of files containing list of glob paths to load automatically for tag completion',
-    'fileLoadConfigFiles': "Comma separated list of files containing list of glob paths to load automatically for intellisense completion",
+    'preloadTags': 'Comma separated list of files containing list of glob paths to load automatically for tag completion',
+    'preloadFiles': "Comma separated list of files containing list of glob paths to load automatically for intellisense completion",
     'maxAutoLoadSize': 'The maximum total size of files to load into memory',
     'maxAutoLoadTime': 'The maximum total time load files into memory. Prevents background loading from hanging editor',
   }, "autocompletion");
@@ -62,10 +62,8 @@ _Define(function(global) {
           providers.removeCompletionProvider(prov);
         }
         break;
-      case "fileLoadConfigFiles":
-        loadFiles(function() {
-          Notify.info('Files Loaded');
-        });
+      case "preloadFiles":
+        loadFiles();
         break;
       case "snippetsToLoad":
         loadSnippets();
@@ -79,7 +77,7 @@ _Define(function(global) {
         else BaseServer.prototype.functionHintTrigger = null;
     }
   });
-
+  
   function loadSnippets() {
     var snippetManager = ace.require("ace/snippets").snippetManager;
     var files = Utils.parseList(appConfig.snippetsToLoad);
@@ -89,7 +87,7 @@ _Define(function(global) {
     var error = function(path, type) {
       Notify.info("Failed " + type + " snippet file: " + path);
     };
-    var resume = Utils.asyncForEach(files, function(name, i, n) {
+    Utils.asyncForEach(files, function(name, i, n) {
       var parts = name.split(":");
       var path = parts[0];
       if (snippetManager.files[path] && !snippetManager.files[path].isStale) return n();
@@ -112,23 +110,25 @@ _Define(function(global) {
             });
           } else snippetManager.register(m.snippets || []);
         } catch (e) {
-          console.log(e);
+          console.error(e);
           error(path, "parsing");
         }
       });
     }, null);
   }
   //load a bunch of filelists
-  //the list defaults to appConfig.fileLoadConfigFiles
-  //the lsp defaults to a combo of current smartCompleter and tags
+  //the list defaults to appConfig.preloadFiles
+  //the lsp true - current smartCompleter
+  //        object - any completer
+  //        falsy(default)  - true and Tags
   var activeOp;
   var loadFiles = function(cb, lsp, list) {
     if (activeOp) {
       activeOp.abort('Aborted for New Task');
     }
-    var abort = new Utils.AbortSignal();
-    activeOp = abort;
-    abort.notify(console.log.bind(console));
+    var currentOp = new Utils.AbortSignal();
+    activeOp = currentOp;
+    currentOp.notify(console.log.bind(console));
     var a = getEditor();
     var loadTags, loadLsp;
     if (!lsp) {
@@ -143,24 +143,25 @@ _Define(function(global) {
     var toLoad = [];
     var uniq = {};
     var p = FileUtils.getProject();
+    var isAbsolute,path;
     if (loadLsp) {
       lsp.docChanged(a);
-      var lspLoad = (list || Utils.parseList(appConfig.fileLoadConfigFiles));
+      var lspLoad = (list || Utils.parseList(appConfig.preloadFiles));
       for (var o in lspLoad) {
         var s = lspLoad[o];
-        var isAbsolute = s[0] == "/";
-        var path = FileUtils.normalize(isAbsolute ? s : FileUtils.join(p.rootDir, s));
+        isAbsolute = s[0] == "/";
+        path = FileUtils.normalize(isAbsolute ? s : FileUtils.join(p.rootDir, s));
         if (!uniq[path]) {
           toLoad.push((uniq[path] = [path, true, false, isAbsolute]));
         }
       }
     }
     if (loadTags) {
-      var tagLoad = Utils.parseList(appConfig.tagsLoadConfigFiles);
-      for (var o in tagLoad) {
-        var s = tagLoad[o];
-        var isAbsolute = s[0] == "/";
-        var path = FileUtils.normalize(isAbsolute ? s : FileUtils.join(p.rootDir, s));
+      var tagLoad = Utils.parseList(appConfig.preloadTags);
+      for (var q in tagLoad) {
+        var tagFile = tagLoad[q];
+        isAbsolute = tagFile[0] == "/";
+        path = FileUtils.normalize(isAbsolute ? tagFile : FileUtils.join(p.rootDir, tagFile));
         if (!uniq[path]) {
           toLoad.push((uniq[path] = [path, false, true, isAbsolute]));
         } else {
@@ -172,13 +173,13 @@ _Define(function(global) {
     //todo make merge list use this algorithm
     var loaded = {};
     var server = p.fileServer;
-    var loadFile = Utils.throttle(abort.control(fileLoader.loadFile.bind(fileLoader)), 70);
+    var loadFile = Utils.throttle(currentOp.control(fileLoader.loadFile.bind(fileLoader)), 70);
     //For each config file
     fileLoader.setSize(0, 0);
     var timeout = Utils.parseTime(appConfig.maxAutoLoadTime);
     if (timeout > 0) {
-      setTimeout(abort.control(function() {
-        abort.abort('Timed Out');
+      setTimeout(currentOp.control(function() {
+        currentOp.abort('Timed Out');
       }), timeout);
     }
     //Controlled
@@ -186,19 +187,18 @@ _Define(function(global) {
       var configFilePath = item[0];
       var commonRoot = item[3] ? server.getRoot() : p.rootDir;
       //This is how to use abort controller with asyncForEach
-      readNextFile = abort.control(readNextFile, stopReading);
+      readNextFile = currentOp.control(readNextFile, stopReading);
       //Read and parse the file
-      server.readFile(configFilePath, "utf8", abort.control(function(e, res) {
+      server.readFile(configFilePath, "utf8", currentOp.control(function(e, res) {
         if (e || !res) return readNextFile();
-        res = global.stripComments(res);
-        var config = JSON.parse(res);
+        var config = global.JSONExt.parse(res);
         commonRoot = config.rootDir || commonRoot;
         var extension = new RegExp(config.extensions.map(Utils.regEscape).join("$|") + "$");
         var exclude = config.exclude && FileUtils.globToRegex(config.exclude.join(","));
         //todo,make finding commonRoot easier to find by not 
         //merging folders, remove walk, maybe
         Utils.asyncForEach(config.folders, function(res, i, nextFolder, stopLoadingConfig) {
-          nextFolder = abort.control(nextFolder, stopLoadingConfig);
+          nextFolder = currentOp.control(nextFolder, stopLoadingConfig);
           var match = FileUtils.globToWalkParams(Utils.parseList(res).join(","));
           var dirmatch = match.canMatch;
           var base = match.root;
@@ -232,13 +232,13 @@ _Define(function(global) {
               });
             },
             finish: function(res, stopped) {
-              abort.unNotify(stopWalk);
+              currentOp.unNotify(stopWalk);
               if (stopped) stopLoadingConfig();
               else nextFolder();
             },
             failOnError: false
           });
-          abort.notify(stopWalk);
+          currentOp.notify(stopWalk);
         }, function(stopped) {
           if (stopped) stopReading();
           else readNextFile();
@@ -246,11 +246,11 @@ _Define(function(global) {
       }), stopReading);
     }, function() {
       console.debug('Server Load', Utils.toSize(fileLoader.getSize().size));
-      abort.clear();
-      if (abort == activeOp) {
+      currentOp.clear();
+      if (currentOp == activeOp) {
         activeOp = null;
       }
-      abort = null;
+      currentOp = null;
       cb && cb();
     }, 0, false, true);
   };
@@ -297,8 +297,7 @@ _Define(function(global) {
   }, true);
   var reduceLoad = Utils.delay(function(e) {
     //clear servers on pause
-    var editor = getEditor();
-    loadFiles.cancel && loadFiles.cancel();
+    activeOp && activeOp.abort();
     var ts = global.tsCompletionProvider;
     if (appConfig.enableTypescript) {
       providers.removeCompletionProvider(ts);
@@ -314,7 +313,7 @@ _Define(function(global) {
       providers.updateCompleter(e);
     });
     appEvents.once('app-resumed', resumeLoad);
-  }, 10000);
+  }, Env.isWebView?10000:1000);
 
   function resumeLoad(e) {
     loadSnippets();
@@ -399,6 +398,7 @@ _Define(function(global) {
               });
               return [null, true];
             } else return [path + "**", true];
+            break;
           case 'load':
             return [{
               priority: priority,
@@ -510,9 +510,9 @@ _Define(function(global) {
             "wrap_line_length": 20
           }, function(res) {
             Notify.prompt("Save config to this folder?\nEnter file name" + res, function(name) {
-              if (Utils.parseList(appConfig.fileLoadConfigFiles).indexOf(name) < 0) {
-                configure("fileLoadConfigFiles",
-                  (appConfig.fileLoadConfigFiles ? appConfig.fileLoadConfigFiles + "," : "") + name,
+              if (Utils.parseList(appConfig.preloadFiles).indexOf(name) < 0) {
+                configure("preloadFiles",
+                  (appConfig.preloadFiles ? appConfig.preloadFiles + "," : "") + name,
                   "autocompletion");
               }
               ev.browser.fileServer.writeFile(FileUtils.join(ev.filepath, name), "//GRACE_CONFIG\n" +

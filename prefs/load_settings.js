@@ -1,280 +1,4 @@
 _Define(function(global) {
-  /**@constructor*/
-  var JSONWalker = function(json, onEnter, onLeave, onToken) {
-    var ARRAY = 1,
-      OBJ = 2,
-      VALUE = 4,
-      jSON = 5,
-      END = 7,
-      ITEM = 9,
-      CLOSE_OBJ = 6,
-      CLOSE_ARR = 10,
-      END_VALUE = 11;
-    // var ch = 0;
-    // var line = 0;
-    var pos = 0;
-    var end = json.length;
-    var state = jSON;
-    var stack = [];
-    var NUMBER = /^\d+(?:\.\d*)?/;
-    var STRING = /^(\")(?:[^\"\n\\]|\\.)*(\1)/;
-    var BOOLEAN = /^(?:true|false)/;
-    var NULL = /^null/;
-
-    function read(re) {
-      var t = json.substring(pos);
-      var b = re.exec(t);
-      if (b) {
-        pos += b[0].length;
-        return true;
-      }
-      return false;
-    }
-
-    function notify(start) {
-      var a = (function() {
-        switch (state) {
-          case END:
-          case jSON:
-            return "JSON";
-          case CLOSE_OBJ:
-          case OBJ:
-            return "OBJECT";
-          case ITEM:
-            return "KEY";
-          case CLOSE_ARR:
-          case ARRAY:
-            return "ARRAY";
-          case VALUE:
-          case END_VALUE:
-            switch (stack[stack.length - 1]) {
-              case CLOSE_ARR:
-                return "ARR_VALUE";
-              case CLOSE_OBJ:
-                return "OBJ_VALUE";
-              case END:
-                return "ROOT_VALUE";
-            }
-            throw "Bad State";
-        }
-      })();
-      start ? onEnter(a, pos, json) : onLeave(a, pos, json);
-    }
-
-    function advance() {
-      notify();
-      if (stack.length) {
-        state = stack.pop();
-      } else throw new Error("Unexpected end of state");
-      eatSpace();
-    }
-    var SPACE = /\s/;
-
-    function eatSpace() {
-      while (SPACE.test(json[pos])) pos++;
-    }
-
-    function la(ch) {
-      return json[pos] == ch;
-    }
-    this.getState = function() {
-      return {
-        stack: stack.slice(0),
-        pos: pos,
-        json: json,
-      };
-    };
-    this.setState = function(s) {
-      stack = s.stack.slice(0);
-      pos = s.pos;
-      json = s.json;
-    };
-    this.insertAfter = function(text, advance) {
-      json = json.slice(0, pos) + text + json.slice(pos);
-      end += text.length;
-      if (advance) pos += text.length;
-    };
-    this.insert = function(text, index) {
-      json = json.slice(0, index) + text + json.slice(index);
-      pos += text.length;
-      end += text.length;
-    };
-
-    function eat(token) {
-      pos++;
-      onToken(token, pos, json);
-    }
-
-    function call(op, after) {
-      state = op;
-      stack.push(after);
-      if (pos == end) throw "Unexpected end of input";
-    }
-    this.walk = function() {
-      while (pos <= end) {
-        switch (state) {
-          case END_VALUE:
-            advance();
-            continue;
-          case VALUE:
-            notify(true);
-            if (read(NUMBER) || read(STRING) || read(NULL) || read(BOOLEAN)) {
-              advance();
-              continue;
-            } else if (la("{")) {
-              call(OBJ, END_VALUE);
-              continue;
-            } else if (la("[")) {
-              call(ARRAY, END_VALUE);
-              continue;
-            } else throw new Error("Unexpected token " + json[pos]);
-          case jSON:
-            notify(true);
-            call(VALUE, END);
-            continue;
-          case END:
-            if (pos != end) throw "Unexpected tokens " + json.substr(pos, 10);
-            else {
-              pos += 1;
-              break;
-            }
-            case OBJ:
-              notify(true);
-              eat("{");
-              eatSpace();
-              if (la("}")) {
-                state = CLOSE_OBJ;
-              } else state = ITEM;
-              continue;
-            case ITEM:
-              notify(true);
-              if (!read(STRING)) throw "Expected string";
-              notify();
-              eatSpace();
-              if (!la(":")) throw "Expected colon";
-              eat(":");
-              eatSpace();
-              call(VALUE, CLOSE_OBJ);
-              continue;
-            case CLOSE_OBJ:
-              if (la(",")) {
-                eat(",");
-                onToken("SEP", pos);
-                eatSpace();
-                if (la('"')) {
-                  state = ITEM;
-                  continue;
-                }
-              }
-              if (!la("}")) throw "Expected }";
-              eat("}");
-              advance();
-              continue;
-            case ARRAY:
-              notify(true);
-              eat("[");
-              eatSpace();
-              if (la("]") || la[","]) {
-                state = CLOSE_ARR;
-              } else call(VALUE, CLOSE_ARR);
-              continue;
-            case CLOSE_ARR:
-              if (la(",")) {
-                eat(",");
-                eatSpace();
-                if (!la("]")) {
-                  call(VALUE, CLOSE_ARR);
-                  continue;
-                }
-              }
-              if (!la("]")) throw "Expected ]";
-              eat("]");
-              advance();
-              continue;
-            default:
-              throw "Unknown state " + state;
-        }
-      }
-      if (state != END) throw "Counter Erorr";
-      notify();
-    };
-  };
-  JSONWalker.stripComments = function(str) {
-    var re = /(\\)|(\"|\')|(\/\*)|(\*\/)|(\/\/)|(\n)/g;
-    var lines = [];
-    var comments = [];
-    var inComment = false;
-    var inString = "";
-    var escaped = -1;
-    var inLineComment = false;
-    var i = null;
-    var j = str.indexOf("{");
-    re.lastIndex = j;
-    var k = 0;
-    for (;;) {
-      i = re.exec(str);
-      if (i) {
-        //open comment
-        if (i[3]) {
-          if (!inComment && !inString) {
-            k = i.index;
-            lines.push(str.substring(j, k));
-            inComment = true;
-          }
-        }
-        //close comment
-        else if (i[4]) {
-          if (inComment) {
-            j = i.index + 2;
-            comments.push(str.substring(k, j));
-            inComment = false;
-          } else if (!inString) {
-            //regex
-            //throw new Error('Error: Parse Error ' + i);
-          }
-        } else if (inComment) {
-          continue;
-        }
-        //open line comment
-        else if (i[5]) {
-          if (!(inComment || inLineComment || inString)) {
-            k = i.index;
-            lines.push(str.substring(j, k));
-            inLineComment = true;
-          }
-          //leave line comment
-        } else if (i[6]) {
-          if (inLineComment) {
-            j = i.index;
-            comments.push(str.substring(k, j));
-            inLineComment = false;
-          } else if (inString) {
-            //throw error
-          }
-          //enter string
-        } else if (i[2]) {
-          if (escaped != i.index) {
-            if (i[2] == inString) inString = "";
-            else inString = i[2];
-          }
-          //leave string
-        } else if (i[1]) {
-          if (inString && escaped != i.index) escaped = i.index + 1;
-        }
-      } else {
-        if (!inComment) {
-          var colon = str.lastIndexOf("}");
-          if (colon > -1)
-            lines.push(str.slice(j, colon + 1));
-        }
-        break;
-      }
-    }
-    return lines.join("");
-  };
-  global.JSONWalker = JSONWalker;
-});
-_Define(function(global) {
   var Utils = global.Utils;
   var configure = global.configure;
   var configureArr = global.configureArr;
@@ -292,7 +16,7 @@ _Define(function(global) {
   var getInfo = global.getConfigInfo;
   var FileUtils = global.FileUtils;
   var appConfig = global.appConfig;
-  var stripComments = global.JSONWalker.stripComments;
+  var JSONExt = global.JSONExt;
 
   MainMenu.addOption("clear-settings", {
     icon: "warning",
@@ -300,10 +24,10 @@ _Define(function(global) {
     sortIndex: 1000,
     onclick: function() {
       var Notify = global.Notify;
-      Notify.prompt("<h6>CLEAR ALL CONFIGURATION VALUES FROM DISK</h6>\
+      Notify.prompt("<h6 class='sub-header'>CLEAR ALL CONFIGURATION VALUES FROM DISK</h6>\
         <small><span class='blue-text'>Warning:</span> This operation is mostly harmless if you know what you are doing.</small>\
-        <p style='font-size:1rem'>You can either specify\
-        <ol> <li><span class='red-text'>true</span> to clear all values or</li><li>A comma separated string list of namespaces. Nested namespaces must be specified separately. Example\n<small><code>search, editor, keyBindings.intellisense</code></small></li></ol></p><p style='font-size:1rem'> <span class='red-text'>Restart</span> immediately after unless previous configuration might be rewritten back.</p>",
+        <p style='font-size:1rem'>In the textbox below, you can either specify\
+        <ol> <li><span class='error-text'>true</span> to clear all values or</li><li>A comma separated string list of namespaces. Nested namespaces must be specified separately. Example\n<small><code>search, editor, keyBindings.intellisense</code></small></li></ol></p><p style='font-size:1rem'> <span class='error-text'>Restart</span> immediately after unless previous configuration might be rewritten back.</p>",
         function resetAll(value) {
           if (!value) return;
           var options = allConfigs;
@@ -326,6 +50,8 @@ _Define(function(global) {
                 if (l == "editor") {
                   prefix = "";
                   data = setters.editor.getValue();
+                } else if (l == "application") {
+                  prefix = "";
                 }
                 for (var m in data) {
                   appStorage.removeItem(prefix + m);
@@ -356,17 +82,16 @@ _Define(function(global) {
   function loadProjectConfig() {
     var i = Utils.parseList(appConfig.projectConfigFile);
     Utils.asyncForEach(i, function(path, i, next) {
-      FileUtils.getConfig(path, function(res) {
+      FileUtils.getConfig(path, function(err, res) {
         next();
         if (res) {
-          var config = stripComments(res);
-          var a = JSON.parse(config);
+          var a = JSONExt.parse(res);
           global.withoutStorage(_default.bind(null, a));
         }
       });
     });
   }
-  appEvents.on("fully-loaded", function(){
+  appEvents.on("fully-loaded", function() {
     loadProjectConfig();
     FileUtils.on("change-project", loadProjectConfig);
   });
@@ -381,13 +106,12 @@ _Define(function(global) {
   FileUtils.registerOption("files", ["file"], "load-config-file", {
     caption: "Load As Configuration",
     extension: "json",
-    icon: "build",
+    icon: "settings",
     onclick: function(e) {
       e.preventDefault();
       FileUtils.getDocFromEvent(e, function(res) {
         if (res) {
-          var config = stripComments(res);
-          var a = JSON.parse(config);
+          var a = JSONExt.parse(res);
           global.withoutStorage(_default.bind(null, a));
         }
       }, true, true);
@@ -411,39 +135,66 @@ _Define(function(global) {
 
   function type(value) {
     if (Array.isArray(value)) {
-      return "arr";
+      return "array";
     }
     if (value && typeof value == "object") {
-      return "obj";
+      return "object";
     }
-    return "primitive";
+    return "plain value";
   }
-  //todo remove overwrite parameter, add a lock appStorage.setzitem
-  function _default(newValue, oldValue, path, overwrite) {
+
+  var notIn = Utils.notIn;
+  //todo remove overwrite parameter, add a lock appStorage.setItem also
+  function _default(newValue, oldValue, path, saveToMemory, pathDepth) {
     if (!oldValue) {
       if (path) oldValue = allConfigs[path];
       else oldValue = allConfigs;
     }
     if (!oldValue) {
       Notify.warn("Unknown group " + path);
-      return true;
+      return false;
     }
     var prefix = path ? path + "." : (path = "");
     var failed = false;
     for (var j in newValue) {
       var obj = newValue[j];
-      var p = j.lastIndexOf(".");
-      if (p > -1) {
+      var isDeepPath = 0;
+      var isExtend = false;
+      var isReduce = false;
+      var isDeep = j.indexOf(".") > -1;
+      if (isDeep) {
+        if (pathDepth) {
+          /*We need to start documenting these errors*/
+          Notify.error('Plugin Error 304: Contact Plugin Maintainer');
+          return false;
+        }
         var k = j.split(".");
-        do {
+        isDeepPath = k.length - 1;
+        while (k.length > 1) {
           var t = {};
           t[k.pop()] = obj;
           obj = t;
-        } while (k.length > 1);
+        }
         j = k[0];
       }
+      if (j[j.length - 1] == "+") {
+        isExtend = true;
+        j = j.slice(0,-1);
+      } else if (j[j.length - 1] == "-") {
+        isReduce = true;
+        j = j.slice(0,-1);
+      }
       if (setters[prefix + j]) {
-        setters[prefix + j].updateValue(obj, overwrite);
+        if (isExtend || isReduce && !setters[prefix + j].allowExtensions) {
+          Notify.error("Cannot use +/- operator on subtree, string or boolean values");
+          failed = true;
+          continue;
+        }
+        setters[prefix + j].updateValue(obj, saveToMemory, {
+          depth: pathDepth || isDeepPath || 0,
+          extend: isExtend,
+          reduce: isReduce
+        });
         continue;
       }
       if (!oldValue.hasOwnProperty(j)) {
@@ -453,58 +204,72 @@ _Define(function(global) {
       }
       var type1 = type(oldValue[j]);
       if (type(obj) != type1) {
-        Notify.error("Invalid Value Type " + (type(obj)) + " for " + oldValue[j] + " " + prefix + j);
+        Notify.error("Invalid value type for " + prefix+j+". Expected "+type1+" got " + (pathDepth?"path selector":type(obj)));
         failed = true;
         continue;
       }
       var old = oldValue[j];
-      if (type1 == 'arr') {
+      if (type1 == 'array') {
+        if (isExtend) {
+          obj = old.filter(notIn(obj)).concat(obj);
+        } else if (isReduce) {
+          obj = old.filter(notIn(obj));
+        }
         if (arrEquals(obj, old)) continue;
         configureArr(j, obj, path);
-      } else if (type1 == "obj") {
-        if (_default(obj, old, prefix + j, overwrite)) failed = true;
-        //only trigger events for non objects
-        continue;
-      } else if (obj != old) {
-        configure(j, obj, path);
-      } else continue;
+      } else {
+        if (isExtend || isReduce) {
+          Notify.error("Cannot use +/- operator on subtree, string or boolean values");
+          failed = true;
+          continue;
+        }
+        if (type1 == "object") {
+          if (!_default(obj, old, prefix + j, saveToMemory, pathDepth ? pathDepth - 1 : isDeepPath ? isDeepPath - 1 : undefined)) failed = true;
+          //only trigger events for non objects
+          continue;
+        } else if (obj != old) {
+          configure(j, obj, path);
+        } else continue;
+      }
       try {
+        /*prevent default or throw error to revert configuration*/
         if (!configEvents.trigger(path, {
             config: j,
             oldValue: old,
             newValue: obj,
-            overwrite: overwrite
+            overwrite: saveToMemory
           }).defaultPrevented)
           continue;
       } catch (e) {
+        console.error(e);
         Notify.error('Unknown error setting ' + j);
       }
       failed = true;
-      if (type1 == 'arr') configureArr(j, old, path);
+      if (type1 == 'array') configureArr(j, old, path);
       else configure(j, old, path);
     }
-    return failed;
+    return !failed;
   }
   var setters = {
     editor: {
       getValue: function() {
         return Object.assign({}, getEditor().getOptions(), Docs.$defaults);
       },
-      updateValue: function(from, overwrite) {
+      updateValue: function(from, saveToMemory) {
         var failed;
         var editor = getEditor();
         for (var i in from) {
           //no global mode
           if (i == "mode") continue;
           if (editor.getOption(i) != from[i]) {
-            if (editor.setOption(i, from[i], !overwrite) === false) failed = true;
+            if (editor.setOption(i, from[i], !saveToMemory) === false) failed = true;
           }
         }
         return failed;
       }
     }, //todo rename overwrite
     keyBindings: {
-      updateValue: function(from, overwrite) {
+      updateValue: function(from, saveToMemory) {
         var failed = false;
         var editor = getEditor();
         var bindings = getBindings(editor);
@@ -512,7 +277,7 @@ _Define(function(global) {
           var value = from[i];
           if (i == "$shadowed") continue;
           if (typeof value == 'object') {
-            global.Config.apply(value, null, "keyBindings." + i);
+            _default(value, null, "keyBindings." + i);
             continue;
           }
           if (!bindings.hasOwnProperty(i)) {
@@ -521,13 +286,13 @@ _Define(function(global) {
             // failed = true;
           }
           if (!value) {
-            setBinding("", bindings[i], editor, !overwrite, i);
+            setBinding("", bindings[i], editor, !saveToMemory, i);
           } else {
             if (!isValid(value)) {
               Notify.warn("Unknown keystring " + value);
               failed = true;
             }
-            if (bindings[i] != value) setBinding(i, value, editor, !overwrite);
+            if (bindings[i] != value) setBinding(i, value, editor, !saveToMemory);
           }
         }
         return failed;
@@ -543,7 +308,7 @@ _Define(function(global) {
     do {
       obj = obj[paths[i]];
       if (!obj) {
-        if(errObj)errObj.lastPathSegment = i;
+        if (errObj) errObj.missingPathIndex = i;
         return errObj;
       }
       ++i;
@@ -552,31 +317,33 @@ _Define(function(global) {
   }
 
   function deepSet(obj, paths, value) {
-      
-      for(var i = 0;i < paths.length - 1;++i) {
-        obj = obj[paths[i]] || (obj[paths[i]] = {});
-      }
-      obj[paths[i]]=value;
+    for (var i = 0; i < paths.length - 1; ++i) {
+      obj = obj[paths[i]] || (obj[paths[i]] = {});
+    }
+    obj[paths[i]] = value;
   }
 
   function getSettingsJson() {
     var doc_settings = {};
     var keys = Object.keys(allConfigs).sort();
+    /*Guarantee the following keys come first*/
     doc_settings.application = undefined;
     doc_settings.documents = undefined;
     doc_settings.editor = undefined;
     doc_settings.files = undefined;
-    var error = {},parent;
+    var error = {},
+      parent;
     for (var i = 0; i < keys.length; i++) {
       var path = keys[i];
       var key;
       if (getInfo(path) === NO_USER_CONFIG) continue;
       if (path.indexOf(".") > 0) {
+        /*Add nested configuration*/
         var parts = path.split(".");
         key = parts.pop();
         parent = deepGet(doc_settings, parts, error);
         if (parent == error) {
-          Notify.warn("Orphaned group " + path);
+          Notify.warn("Unknown configuration " + parts.slice(0, parent.missingPathIndex + 1).join("."));
           continue;
         }
       } else {
@@ -585,20 +352,27 @@ _Define(function(global) {
       }
       var values = allConfigs[path];
       parent[key] = {};
+      /*Copy values from global configuration*/
       for (var j in values) {
         if (getInfo(path + "." + j) == NO_USER_CONFIG) continue;
         parent[key][j] = values[j];
       }
     }
+    /*Add the values for setters*/
     for (var k in setters) {
-      deepSet(doc_settings, k.split("."), Object.assign(deepGet(doc_settings, k.split("."))||{},setters[k].getValue()));
+      var setterPath = k.split(".");
+      /*
+        Merge the value with any already registered values allowing nested setters.
+      */
+      var value = Object.assign(deepGet(doc_settings, setterPath) || {}, setters[k].getValue());
+      deepSet(doc_settings, setterPath, value);
     }
     return doc_settings;
   }
 
-  function overlay() {
-    //todo make configuration runtime editable  
-  }
+  //Todo function overlay() {
+  //   //todo make configuration runtime editable  
+  // }
   var Config = {
     apply: _default,
     getJson: getSettingsJson,
@@ -616,17 +390,22 @@ _Define(function(global) {
   var MainMenu = global.MainMenu;
   var addDoc = global.addDoc;
   var app = global.AppEvents;
+  var JSONExt = global.JSONExt;
   var JSONWalker = global.JSONWalker;
-  var stripComments = JSONWalker.stripComments;
   var Config = global.Config;
   var getBeautifier = global.getBeautifier;
   var regex = /(.{50})(.{0,30}$|.{0,20}([\.,]|(?= ))) ?/g;
   var wrap = function(text) {
     return text.replace(regex, "$1$2\n");
   };
-  var INFO_TEXT = wrap(
-    "/** Grace configuration is in the form of a single tree. Any configuration you load is automatically used to update the tree. Arrays are overwritten. Any thing you add before the first brace and after the last brace is ignored (to allow eslint javascript syntax checks). Comments are allowed. Beside that, the only supported syntax is JSON primitives(keys must be wrapped with double quotes). You can specify options as either single path e.g application.applicatonTheme or as nested objects. Since the configuration does not remember history except by reset or overwrite, it is more easier to just add a project configuration for options you expect to change often. Note: The options will be kept as long as the editor is open even if you close the project. Beside the projectConfig, 3 other files are loaded by grace, autocompletion.filesToLoad, autocompletion.tagsToLoad and application.lintFilter. None is compulsory. */\nvar _CONFIG_ = "
-  );
+  var INFO_START_TEXT = "var _CONFIG_ = ";
+  var INFO_END_TEXT = wrap(
+    "/*\nThe accepted syntax for this file is a variant of Javascript Object Notation(JSON) with comments. Besides comments, any other text you insert before the first brace ({) or after the last brace(}) is ignored (so configuration can be commonjs modules). Single line and block comments are allowed. Besides that, the only supported syntax is JSON primitives(keys must be wrapped with double quotes). You can specify options as either a single path e.g application.applicatonTheme or as nested objects.\n \
+Grace stores configuration in the form of a single tree consisting of smaller subtrees. Any configuration you load is automatically used to update the tree.\n \
+Nested subtrees are merged recusrsively while other data types including arrays overwrite any existing values in the tree.\n \
+You can however, extend array data using (+/- syntax e.g 'arrayData+':[additional values])\n \
+Once a configuration file is loaded, it cannot be unloaded, only overwritten. However, in exchange, multiple configuration files can be loaded. Opening or closing a project causes all configuration files to be reread. So the user can add a configuration file for options that must be reset when a project is closed.\n \
+Except when specified otherwise. All paths are resolved relative to the current project. Absolute paths are left as they are.\n Note: All configuration will be kept as long as the editor is running even if you close the active project. Modifications you make in this document will be saved in application memory and are loaded first before the application starts. Besides the paths specified in files.projectConfig, other files are loaded in a project include:\n Loader files such as autocompletion.filesToLoad, autocompletion.tagsToLoad.\n Snippet files used by autocompletion.snippetsToLoad which use Textmate snippets syntax.\n Json theme files for application.theme.\n*/");
 
   function template(doc) {
     var head = wrap(doc.doc || "");
@@ -736,7 +515,7 @@ _Define(function(global) {
       console.error(e.message + "\n" + a.json.substring(Math.max(0, a.pos - 10), a.pos) + "<!here>" + a.json.substring(a.pos,
         a.pos + 10));
     }
-    return INFO_TEXT + walker.getState().json + ";";
+    return INFO_START_TEXT + walker.getState().json + ";" + INFO_END_TEXT;
   }
 
   function SettingsDoc() {
@@ -755,12 +534,12 @@ _Define(function(global) {
     app.on("fully-loaded", function() {
       var json;
       try {
-        json = JSON.parse(stripComments(this.getValue()), reviveUndefined);
+        json = JSONExt.parse(this.getValue(), reviveUndefined, false);
       } catch (e) {
         global.Notify.error("Syntax Error " + e.message);
         return;
       }
-      this.dirty = Config.apply(json, null, null, true);
+      this.dirty = !Config.apply(json, null, null, true);
       if (!this.dirty) {
         this.setClean();
       }
@@ -768,22 +547,25 @@ _Define(function(global) {
   };
   SettingsDoc.prototype.refresh = function(callback, force, ignoreDirty) {
     //ignore autorefresh
-    if (force !== false) {
-      var doc = this;
-      app.on("fully-loaded", function() {
-        var val = JSON.stringify(Config.getJson(), keepUndefined);
-        getBeautifier("json")(val, {
-          "end-expand": true,
-          wrap_line_length: 20,
-        }, function(val) {
-          val = insertComments(val);
-          Docs.setValue(doc, val, callback, force, ignoreDirty);
-        });
+    // this.setDirty(true);
+    // if (force !== false) {
+    var doc = this;
+    app.on("fully-loaded", function() {
+      var val = JSON.stringify(Config.getJson(), keepUndefined);
+      getBeautifier("json")(val, {
+        "end-expand": true,
+        wrap_line_length: 20,
+      }, function(val) {
+        val = insertComments(val);
+        if (val != doc.getValue() && force == false) {
+          doc.setDirty();
+        } else Docs.setValue(doc, val, callback, force, ignoreDirty !== false);
       });
-      //Notify caller that this is an async op
-      //and you will be calling callback if provided
-      return true;
-    }
+    });
+    //Notify caller that this is an async op
+    //and you will be calling callback if provided
+    return true;
+    // }
   };
   SettingsDoc.prototype.getSavePath = function() {
     return null;
@@ -796,9 +578,8 @@ _Define(function(global) {
       addDoc(null, new SettingsDoc());
     },
   }, true);
-  SettingsDoc.prototype.factory = "settings9";
-  Docs.registerFactory("settings9", SettingsDoc);
+  SettingsDoc.prototype.factory = "settings-doc";
+  Docs.registerFactory("settings-doc", SettingsDoc);
   global.SettingsDoc =
     SettingsDoc;
-  global.stripComments = stripComments;
 }); /*_EndDefine*/

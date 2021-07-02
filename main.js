@@ -1,8 +1,9 @@
 _Define(function(global) {
     "use strict";
     /*So this basically sets up the application,
-    Mainly is deals with tab navigation
+    Mainly deals with tab navigation
     */
+
     var Docs = global.Docs;
     var setBreakpoint = global.Recovery.setBreakpoint;
     var clearBreakpoint = global.Recovery.removeBreakpoint;
@@ -12,7 +13,6 @@ _Define(function(global) {
     var docs = global.docs;
     var Editors = global.Editors;
     var Utils = global.Utils;
-    var SettingsDoc = global.SettingsDoc;
     var FileUtils = global.FileUtils;
     var closeDoc = global.closeDoc;
     var getEditor = global.getEditor;
@@ -25,6 +25,7 @@ _Define(function(global) {
     var MainMenu = global.MainMenu;
     var CharBar = global.CharBar;
     var DocumentTab = global.DocumentTab;
+    var PagerTab = global.PagerTab;
     var appEvents = global.AppEvents;
     var Navigation = global.Navigation;
     var register = global.register;
@@ -35,63 +36,89 @@ _Define(function(global) {
         backButtonDelay: "700ms",
         enableFloatingRunButton: "auto",
         enableSplits: window.innerHeight > 700,
-        autoHideTabs: 500,
+        autoHideTabs: "landscape",
         enableKeyboardNavigation: Env.isDesktop,
         enableGit: true,
         inactiveFileDelay: "5min",
-        projectConfigFile: "grace.json"
+        projectConfigFile: "grace.json",
     });
     global.registerValues({
         currentTab: "no-user-config",
-        "autoHideTabs": "Automatically hide tabs when keyboard visible if window height is less than this value in pixels. Set to 0 to disable.",
-        // configFiles: "./.grace.json",
-        "projectConfigFile": " A file which contains configuration relative to project folder. Multiple comma separated files are allowed",
-        enableFloatingRunButton: {
-            "default": 'auto',
-            values: ["true", 'small', 'center', 'auto', false]
+        autoHideTabs: {
+            doc: "Automatically hide tabs when keyboard is visible. Set to false to disable.",
+            values: [
+                "always",
+                "viewport - hide if viewport is small",
+                "landscape - hide when in landscape",
+                "landscape_small",
+                "auto",
+                "never",
+            ],
         },
-        inactiveFileDelay: "How long after saving is necessary for a file to be considered inactive for 'Close inactive tabs' menu option"
+        // configFiles: "./.grace.json",
+        projectConfigFile: " A file which contains configuration relative to project folder. Multiple comma separated files are allowed",
+        enableFloatingRunButton: {
+            default: "auto",
+            values: ["true", "small", "center", "auto", false],
+        },
+        inactiveFileDelay: "How long after saving is necessary for a file to be considered inactive for 'Close inactive tabs' menu option",
     });
     var DocsTab;
     setBreakpoint("start-app", function(id, e) {
-        Notify.error("Error During Previous Load!!! If issue persists, contact developer");
-        eruda._entryBtn.show();
+        Notify.error(
+            "Error During Previous Load!!! If issue persists, contact developer"
+        );
+        if (window.eruda) window.eruda._entryBtn.show();
     });
     appEvents.once("app-loaded", function() {
         clearBreakpoint("start-app");
     });
     //stateManager
     if (!Env.isWebView) State.ensure("noexit", true);
-    State.addListener(function(doc, old, dir) {
-        if (DocsTab.getOwner(doc)) {
-            //can try to reopen previously closed docs
-            if (!appConfig.disableBackButtonTabSwitch && DocsTab.hasTab(doc)) {
-                if (doc != DocsTab.active) Docs.swapDoc(doc);
-                return true;
+    State.addListener(
+        function(doc, old, dir) {
+            if (DocsTab.getOwner(doc)) {
+                //can try to reopen previously closed docs
+                if (
+                    !appConfig.disableBackButtonTabSwitch &&
+                    DocsTab.hasTab(doc)
+                ) {
+                    if (doc != DocsTab.active) Docs.swapDoc(doc);
+                    return true;
+                }
+                return false;
+            } else {}
+            switch (doc) {
+                case "tabs":
+                    return true;
+                case "noexit":
+                    var delay = Utils.parseTime(appConfig.backButtonDelay);
+                    Notify.info(
+                        "<span>Press <b>BACK</b> again to exit.<span>",
+                        delay
+                    );
+                    appEvents.trigger("app-paused");
+                    var cancel = State.exit(false);
+                    setTimeout(function() {
+                        appEvents.trigger("app-resumed");
+                        cancel();
+                        State.ensure("noexit", true);
+                        State.ensure(
+                            appConfig.disableBackButtonTabSwitch ?
+                            "tabs" :
+                            DocsTab.active
+                        );
+                    }, delay * 0.7);
+                    return true;
             }
-            return false;
-        } else {}
-        switch (doc) {
-            case "tabs":
-                return true;
-            case "noexit":
-                var delay = Utils.parseTime(appConfig.backButtonDelay);
-                Notify.info("<span>Press <b>BACK</b> again to exit.<span>", delay);
-                appEvents.trigger("app-paused");
-                var cancel = State.exit(false);
-                setTimeout(function() {
-                    appEvents.trigger("app-resumed");
-                    cancel();
-                    State.ensure("noexit", true);
-                    State.ensure(appConfig.disableBackButtonTabSwitch ? "tabs" : DocsTab.active);
-                }, delay * 0.7);
-                return true;
+        },
+        function(state) {
+            return (
+                state == "tabs" || state == "noexit" || DocsTab.hasTab(state)
+            );
         }
-    }, function(state) {
-        return (state == "tabs" || state == "noexit" || DocsTab.hasTab(state));
-    });
+    );
     var lastTab;
-
 
     function swapTab() {
         if (lastTab < 0) return;
@@ -99,20 +126,22 @@ _Define(function(global) {
     }
     var viewRoot, SidenavLeft, Menu;
     global.LayoutCommands = [{
-        name: "toggleFullscreen",
-        bindKey: "F11",
-        exec: function(editor) {
-            Menu.toggle();
-            Menu.$forcedOpen = !Menu.hidden;
+            name: "toggleFullscreen",
+            bindKey: "F11",
+            exec: function() {
+                Menu.toggle();
+                Menu.$forcedOpen = !Menu.hidden;
+            },
         },
-    }, {
-        name: "swapTabs",
-        bindKey: {
-            win: "Alt-Tab",
-            mac: "Command-Alt-N",
+        {
+            name: "swapTabs",
+            bindKey: {
+                win: "Alt-Tab",
+                mac: "Command-Alt-N",
+            },
+            exec: swapTab,
         },
-        exec: swapTab,
-    }, ];
+    ];
     Editors.addCommands(global.LayoutCommands);
     MainMenu.addOption("close", {
         icon: "close",
@@ -157,21 +186,58 @@ _Define(function(global) {
                 caption: "Close inactive tabs",
                 close: true,
                 onclick: function() {
-                    var inactiveTime = new Date().getTime() - Utils.parseTime(appConfig.inactiveFileDelay);
-                    Utils.asyncForEach(global.DocsTab.tabs.slice(0), function(e, i, n) {
-                        n();
-                        if (e == global.DocsTab.active || !docs[e] || docs[e].dirty || docs[e].isTemp()) return;
-                        if (Utils.getCreationDate(docs[e].id) < inactiveTime)
-                            docs[e].getFileServer().stat(docs[e].getSavePath(), function(err, s) {
-                                if (s && s.mtimeMs < inactiveTime && s.size === docs[e].getSize()) {
-                                    closeTab(e);
-                                }
-                            });
-                    });
+                    var inactiveTime =
+                        new Date().getTime() -
+                        Utils.parseTime(appConfig.inactiveFileDelay);
+                    Utils.asyncForEach(
+                        global.DocsTab.tabs.slice(0),
+                        function(e, i, n) {
+                            n();
+                            if (
+                                e == global.DocsTab.active ||
+                                !docs[e] ||
+                                docs[e].dirty ||
+                                docs[e].isTemp()
+                            )
+                                return;
+                            if (
+                                Utils.getCreationDate(docs[e].id) < inactiveTime
+                            )
+                                docs[e]
+                                .getFileServer()
+                                .stat(
+                                    docs[e].getSavePath(),
+                                    function(err, s) {
+                                        if (
+                                            s &&
+                                            s.mtimeMs < inactiveTime &&
+                                            s.size === docs[e].getSize()
+                                        ) {
+                                            closeTab(e);
+                                        }
+                                    }
+                                );
+                        }
+                    );
                 },
             },
         },
     });
+    if (!Env.isWebView) {
+        var method = "requestFullscreen" in document.body ?
+            "requestFullscreen" :
+            "webkitRequestFullscreen" in window ?
+            "webkitRequestFullscreen" : "webkitRequestFullScreen" in window ?
+            "webkitRequestFullScreen" : null;
+        if (method)
+            MainMenu.addOption("fullscreen", {
+                icon: "fullscreen",
+                onclick: function() {
+                    document.body[method]();
+                },
+                caption: "Enable Immersive Mode"
+            }, true);
+    }
     //No one chnages tabs while we are triggering event return false instead
     var switchTab = Utils.guardEntry(function switchTab(id, previousTab) {
         lastTab = previousTab;
@@ -189,13 +255,16 @@ _Define(function(global) {
         return true;
     });
 
-    function closeTab(id, force) {
+    function closeTab(id) {
         var doc = docs[id];
-        if (appEvents.trigger("beforeCloseTab", {
+        if (
+            appEvents.trigger("beforeCloseTab", {
                 id: id,
                 doc: doc,
-            }).defaultPrevented) return false;
-        var e = appEvents.trigger("closeTab", {
+            }).defaultPrevented
+        )
+            return false;
+        appEvents.trigger("closeTab", {
             id: id,
             doc: doc,
         });
@@ -208,9 +277,13 @@ _Define(function(global) {
         }
         if (!doc) return false;
         if (doc.dirty) {
-            Notify.ask(Docs.getName(doc.id) + " has unsaved changes. Close without saving?", function() {
-                close();
-            });
+            Notify.ask(
+                Docs.getName(doc.id) +
+                " has unsaved changes. Close without saving?",
+                function() {
+                    close();
+                }
+            );
             return false;
         } else {
             close();
@@ -240,25 +313,34 @@ _Define(function(global) {
     function bootEditor() {
         //viewroot
         viewRoot = $("#viewroot")[0];
-        var Layout = new LinearLayout($(document.body), window.innerHeight, LinearLayout.VERTICAL);
+        var Layout = new LinearLayout(
+            $(document.body),
+            window.innerHeight,
+            LinearLayout.VERTICAL
+        );
         Menu = Layout.addChild($("#action_bar"), 56);
         Layout.addChild($("#viewroot"), 0, 1);
-        Layout.addChild($("#status-bar"));
+        Layout.addChild($("#status-bar"), 21);
         var margins = {
             marginTop: 0,
             marginBottom: 0,
         };
         ace.Editor.prototype.getPopupMargins = function(isDoc) {
             return isDoc ? {
-                marginTop: 0,
-                marginBottom: margins.marginBottom,
-            } : margins;
+                    marginTop: 0,
+                    marginBottom: margins.marginBottom,
+                } :
+                margins;
         };
         var emmetExt = ace.require("ace/ext/emmet");
-        emmetExt.load = global.Imports.define(["./libs/js/emmet.js"], null, function(cb) {
-            window.emmet = window.emmetCodeMirror.emmet;
-            cb && cb();
-        });
+        emmetExt.load = global.Imports.define(
+            ["./libs/js/emmet.js"],
+            null,
+            function(cb) {
+                window.emmet = window.emmetCodeMirror.emmet;
+                cb && cb();
+            }
+        );
         Layout.onRender = function() {
             appEvents.trigger("view-change");
             margins.marginTop = parseInt(viewRoot.style.top);
@@ -287,7 +369,8 @@ _Define(function(global) {
         var AutoComplete = global.Autocomplete;
         var doBlur = AutoComplete.prototype.blurListener;
         AutoComplete.prototype.blurListener = function() {
-            if (FocusManager.activeElement == editor.textInput.getElement()) return;
+            if (FocusManager.activeElement == editor.textInput.getElement())
+                return;
             doBlur.apply(this, arguments);
         };
         appEvents.on("keyboard-change", function(ev) {
@@ -297,45 +380,79 @@ _Define(function(global) {
                     if (a.activated) a.detach();
                 } else {
                     if (appConfig.autoHideTabs && !Menu.$forcedOpen) {
-                        if (window.innerHeight < parseInt(appConfig.autoHideTabs)) Menu.hide();
+                        var autoHide = appConfig.autoHideTabs;
+                        var isLandscape =
+                            window.innerWidth > window.innerHeight;
+                        var isSmall = window.innerHeight < 300;
+                        var hide = (function() {
+                            switch (autoHide) {
+                                case true:
+                                    return true;
+                                case false:
+                                case "never":
+                                    return false;
+                                case "auto":
+                                    return isLandscape && isSmall;
+                                case "viewport":
+                                    return isSmall;
+                                case "landscape":
+                                    return isLandscape;
+                                case "landscape_small":
+                                    return isLandscape || isSmall;
+                            }
+                        })();
+                        if (hide && !Menu.forcedOpen) Menu.hide();
+                        $(document.body).addClass("virtual-keyboard-visible");
                     }
-                    $(document.body).addClass("virtual-keyboard-visible");
                 }
             }
             if (!ev.visible) {
-                if (appConfig.autoHideTabs && !Menu.$forcedClose) Menu.show();
+                if (appConfig.autoHideTabs) Menu.show();
                 $(document.body).removeClass("virtual-keyboard-visible");
             }
         });
         global.styleClip($("#status-filename"));
-        DocsTab = new DocumentTab($("#menu"), $("#opendocs"), $("#status-filename").children());
+        DocsTab = new DocumentTab(
+            $("#menu"),
+            $("#opendocs"),
+            $("#status-filename").children()
+        );
         DocsTab.$hintActiveDoc = setDoc;
         FocusManager.trap($("#menu"), true);
-        FocusManager.trap($("#status-filename"), true);
+        FocusManager.trap($("#status-bar"), true);
         DocsTab.setSingleTabs(appConfig.singleTabLayout);
         DocsTab.afterClick = switchTab;
         DocsTab.onClose = closeTab;
         var SidenavLeftTab = new PagerTab($("#selector"), $("#side-menu"));
         var toggles = {};
-        $(".toggleBelow").click(function(e) {
-            e.stopPropagation();
-            if ($(this).next().css("display") == "none") {
-                configure(this.id + ":shown", true);
-                $(this).next().show();
-                $(this).children(".material-icons").text("keyboard_arrow_up");
-            } else {
-                configure(this.id + ":shown", false);
-                $(this).next().hide();
-                $(this).children(".material-icons").text("keyboard_arrow_down");
-            }
-        }).each(function(e, el) {
-            appConfig[el.id + ":shown"] = true;
-            register(el.id + ":shown");
-            toggles[el.id + ":shown"] = "no-user-config";
-            if (!appConfig[el.id + ":shown"]) {
-                el.click();
-            }
-        });
+        $(".toggleBelow")
+            .click(function(e) {
+                var target = $("#" + this.id.replace("-toggle", ""));
+                e.stopPropagation();
+                if (target.css("display") == "none") {
+                    configure(this.id + ":shown", true);
+                    target.show();
+                    $(this).children().removeClass('btn-toggle__activated');
+                    if (this.id == 'find_file-toggle') {
+                        $('#project_view').removeClass('find_file_hidden');
+                    }
+                } else {
+                    configure(this.id + ":shown", false);
+                    target.hide();
+                    $(this).children().addClass('btn-toggle__activated');
+                    if (this.id == 'find_file-toggle') {
+                        $('#project_view').addClass('find_file_hidden');
+                    }
+                }
+            })
+            .each(function(e, el) {
+                appConfig[el.id + ":shown"] = true;
+                register(el.id + ":shown");
+                toggles[el.id + ":shown"] = "no-user-config";
+                if (!appConfig[el.id + ":shown"]) {
+                    el.click();
+                }
+            });
         global.registerValues(toggles);
         toggles = null;
         //uodate currently push on openstart or dragstart
@@ -352,7 +469,8 @@ _Define(function(global) {
                 }*/
             },
             onOpenEnd: function() {
-                if (SidenavLeftTab.getActiveTab().attr("href") == "#settings") SidenavLeftTab.update("#settings");
+                if (SidenavLeftTab.getActiveTab().attr("href") == "#settings")
+                    SidenavLeftTab.update("#settings");
                 if (SidenavLeft.isOverlay) {
                     if (!Env.isDesktop) {
                         if (FocusManager.keyboardVisible) {
@@ -362,7 +480,10 @@ _Define(function(global) {
                             }
                         } else document.activeElement.blur();
                     }
-                    Navigation.addRoot(SidenavLeft.el, SidenavLeft.close.bind(SidenavLeft));
+                    Navigation.addRoot(
+                        SidenavLeft.el,
+                        SidenavLeft.close.bind(SidenavLeft)
+                    );
                     AutoCloseable.add(this.id, SidenavLeft);
                 }
                 FileUtils.trigger("sidenav-open");
@@ -403,9 +524,12 @@ _Define(function(global) {
         Docs.initialize(DocsTab, currentTab);
         var newDoc;
         if (Docs.numDocs() < 1) {
-            newDoc = Docs.createPlaceHolder("welcome", "Welcome To Grace Editor", {
-                select: false,
-            });
+            newDoc = Docs.createPlaceHolder(
+                "welcome",
+                "Welcome To Grace Editor", {
+                    select: false,
+                }
+            );
         }
         if (!docs[currentTab]) {
             oldCurrentTab = currentTab;
@@ -423,6 +547,10 @@ _Define(function(global) {
         appEvents.triggerForever("app-loaded");
         appEvents.on("documents-loaded", function() {
             FileUtils.loadServers();
+            /*
+            This is an async function but it might 
+            need extensions to complete so we don't waitr for it
+            */
             Docs.refreshDocs();
         });
     }
@@ -433,19 +561,56 @@ _Define(function(global) {
     "use strict";
     var configEvents = global.ConfigEvents;
     var appEvents = global.AppEvents;
+    var JSONExt = global.JSONExt;
     var appConfig = global.registerAll({
-        applicationTheme: "editor",
+        applicationTheme: "classic",
+        applicationDarkTheme: "auto",
         appFontSize: "medium",
-        singleTabLayout: false
+        singleTabLayout: false,
     });
+    var colors = {
+        "brown-mono": "#795548",
+        "yellow": {
+            primary: "#f9a825",
+            active: "#f9a825",
+            darker: "#f57f17",
+            text: "#361505",
+            bodytext: "#f5f3ef"
+        },
+        "blue": {
+            primary: "#0d47a1",
+            active: "#2196f3",
+            darker: "#2196f3",
+            text: "white",
+            bodytext: "white"
+        }
+    };
     global.registerValues({
-        applicationTheme: "editor , application",
-        appFontSize: "Font size for UI - small|medium|big"
+        applicationTheme: {
+            doc: "Choose light UI theme. This theme to will be applied when a light editor theme is chosen.",
+            values: ["classic"].concat(Object.keys(colors)),
+        },
+        applicationDarkTheme: {
+            doc: "Choose dark UI theme. This theme to will be applied when a dark editor theme is chosen. It can also be the filename, the output of the 'Generate theme' menu option.",
+            values: ["auto", "classic"].concat(Object.keys(colors)),
+        },
+        appFontSize: "Font size for UI - small|medium|big",
+    });
+    var FileUtils = global.FileUtils;
+    FileUtils.registerOption("project", ["project"], 'gen-theme', "Generate theme", function(ev) {
+        ev.preventDefault();
+        global.Imports.define([{
+            resource: "themes/template.json",
+            returns: "themes/template.json"
+        }])(function(res) {
+            FileUtils.saveConfig(global.Utils.genID("theme-template-") + ".json", res, ev.browser.reload.bind(ev.browser));
+        });
     });
 
     function onChange(ev) {
         switch (ev.config) {
             case "applicationTheme":
+            case "applicationDarkTheme":
                 updateTheme($(".editor-primary"), true);
                 break;
             case "appFontSize":
@@ -454,7 +619,8 @@ _Define(function(global) {
                     case "medium":
                     case "big":
                         clearClass($(document.body.parentElement), /font$/);
-                        document.body.parentElement.className += " " + ev.newValue + "font";
+                        document.body.parentElement.className +=
+                            " " + ev.newValue + "font";
                         break;
                     default:
                         ev.preventDefault();
@@ -467,14 +633,27 @@ _Define(function(global) {
     }
     configEvents.on("application", onChange);
     //App Theming
+
     appEvents.once("app-loaded", function() {
-        document.body.parentElement.className += " " + appConfig.appFontSize + "font";
+        document.body.parentElement.className +=
+            " " + appConfig.appFontSize + "font";
         $(".splash-screen").fadeOut();
         setTimeout(function() {
             $(".splash-screen").detach();
         }, 700);
     });
-    var themeBlack = ["ace-tomorrow-night-bright", "ace-terminal-theme", "ace-vibrant-ink","ace-clouds-midnight","ace-kr-theme","ace-merbivore-soft","ace-ambiance","ace-twilight","ace-merbivore"];
+    var themeBlack = [
+        "ace-chaos",
+        "ace-tomorrow-night-bright",
+        "ace-terminal-theme",
+        "ace-vibrant-ink",
+        "ace-clouds-midnight",
+        "ace-kr-theme",
+        "ace-merbivore-soft",
+        "ace-ambiance",
+        "ace-twilight",
+        "ace-merbivore",
+    ];
     var theme = {
         className: "ace-tm",
         background: "white",
@@ -494,8 +673,11 @@ _Define(function(global) {
         return f;
     }
     global.setTheme = function(ace_theme) {
-        var style = window.getComputedStyle ? getStyle(ace_theme.cssClass) : null;
+        var style = window.getComputedStyle ?
+            getStyle(ace_theme.cssClass) :
+            null;
         theme = {
+            aceTheme: ace_theme,
             className: ace_theme.cssClass,
             background: style && style.background,
             style: style,
@@ -503,46 +685,125 @@ _Define(function(global) {
             isDark: ace_theme.isDark,
             isBlack: themeBlack.indexOf(ace_theme.cssClass) > -1,
         };
+        appEvents.trigger("theme-change", {
+            theme: theme,
+        });
         var els = $(".editor-primary");
         updateTheme(els, true);
     };
 
     function clearClass(els, regex) {
         els.each(function() {
-            this.className = this.className.split(" ").filter(function(e) {
-                return !regex.test(e);
-            }).join(" ");
+            this.className = this.className
+                .split(" ")
+                .filter(function(e) {
+                    return !regex.test(e);
+                })
+                .join(" ");
         });
     }
 
+    var LoadThemeGen = global.Imports.define([{
+        resource: "themes/template_mono.css"
+    }, {
+        resource: "themes/template_highlight.css"
+    }, {
+        resource: "themes/template_vs.css"
+    }, {
+        script: "themes/theme.js",
+        returns: "ThemeGen"
+    }]);
+    var asyncLock = 0;
+    var lastVsTheme = null;
+
     function updateTheme(els, added) {
+        var lock = ++asyncLock;
         if (!added) els.addClass("editor-primary");
         var ev = theme;
-        clearClass(els, /theme|^ace/);
-        if (ev.isDark && appConfig.applicationTheme == "editor" && !ev.isBlack) {
-            els.addClass(ev.className);
-            els.addClass("theme-dark");
-        } else {
-            switch (appConfig.applicationTheme) {
-                case "blue-devel":
-                    if(ev.isDark){
+        var currentTheme = ev.isDark ? appConfig.applicationDarkTheme : appConfig.applicationTheme;
+        if (currentTheme && currentTheme.endsWith(".json")) {
+            return LoadThemeGen(function(ThemeGen) {
+                function applyTheme() {
+                    clearClass(els, /theme|^ace/);
+                    if (ev.isDark)
                         els.addClass("theme-dark");
-                        els.addClass("theme-blue-dark");
+                    els.addClass("theme-vs");
+                }
+                if (currentTheme == lastVsTheme) {
+                    applyTheme();
+                } else global.FileUtils.getConfig(currentTheme, function(err, val) {
+                    if (!val || err) {
+                        return global.Notify.error('Error loading ' + currentTheme);
                     }
-                    else els.addClass("theme-blue");
-                    /*fall through*/
+                    try {
+                        if (lock == asyncLock) {
+                            var theme = JSONExt.parse(val);
+                            lastVsTheme = currentTheme;
+                            ThemeGen.vs(theme);
+                            applyTheme();
+                        }
+                    } catch (e) {
+                        console.log(e);
+                        return global.Notify.error('Error parsing ' + currentTheme);
+                    }
+                });
+            });
+        }
+        switch (currentTheme) {
+            case "brown-mono":
+                LoadThemeGen(function(ThemeGen) {
+                    if (lock == asyncLock) {
+                        clearClass(els, /theme|^ace/);
+                        els.addClass("theme-dark");
+                        els.addClass("theme-accent");
+                        if (ev.isDark) {
+                            els.addClass("theme-accent-dark");
+                        }
+                        ThemeGen.mono(colors[currentTheme]);
+                    }
+                });
+                break;
+            case "yellow":
+            case "blue":
+                LoadThemeGen(function(ThemeGen) {
+                    if (lock == asyncLock) {
+                        clearClass(els, /theme|^ace/);
+                        if (ev.isDark) {
+                            els.addClass("theme-dark");
+                            els.addClass("theme-highlight-dark");
+                        }
+                        els.addClass("theme-highlight");
+                        ThemeGen.highlight(colors[currentTheme]);
+                    }
+                });
+                break;
+            case "auto":
+                clearClass(els, /theme|^ace/);
+                if (!ev.isBlack) {
+                    if (
+                        ev.isDark
+                    ) {
+                        els.addClass(ev.className);
+                        els.addClass("theme-dark");
+                        els.addClass("theme-" + ev.className);
+                        break;
+                    }
+                }
+                /*fall through*/
                 default:
-                    if (ev.isDark){
-                        els.addClass("app-theme-dark");
+                    clearClass(els, /theme|^ace/);
+                    /*classic*/
+                    if (ev.isDark) {
                         els.addClass("theme-dark");
-                    }
-                    else
-                        els.addClass("app-theme-light");
-            }
+                        els.addClass("app-theme-dark");
+                    } else els.addClass("app-theme-light");
         }
     }
     global.styleCheckbox = function(el) {
-        el = el.find("[type=checkbox]").addClass("checkbox").addClass("filled-in");
+        el = el
+            .find("[type=checkbox]")
+            .addClass("checkbox")
+            .addClass("filled-in");
         for (var i = 0; i < el.length; i++) {
             var a = el.eq(i);
             //The styling uses the before element of next span
@@ -554,23 +815,55 @@ _Define(function(global) {
             e.preventDefault();
         });
     };
+    var go = function(e) {
+        var ENTER = 13;
+        switch (e.keyCode) {
+            case ENTER:
+                $(this).trigger("go", e);
+                break;
+        }
+    };
+
+    global.createSearch = function(input, button, onsearch) {
+        //behaves like a form sort of
+        $(button).on('click', onsearch);
+        $(input).on('go', onsearch);
+        $(input).on('keypress', go);
+    };
+    global.tabulate = function table(data) {
+        var str = "<table>";
+        for (var i in data) {
+            str +=
+                "<tr><td>" +
+                i +
+                "</td><td>" +
+                (data[i] && typeof data[i] == "object" ?
+                    table(data[i]) :
+                    data[i]) +
+                "</td></tr>";
+        }
+        if (data && !i)
+            str += data.toString ? data.toString() : "Object";
+        return str + "</table>";
+    };
     global.styleClip = function(el) {
         el = $(el);
         var all = el.filter(".clipper");
         all.add(el.find(".clipper")).each(function(i, clipper) {
-            var text = clipper.innerText;
-            clipper.innerText = "";
+            var text = clipper.innerHTML;
+            clipper.innerHTML = "";
             var chunks = [text];
             var t = chunks.length - 1;
             chunks.reverse().forEach(function(e, i) {
-                var span = document.createElement('span');
-                span.className = 'clipper-text';
+                var span = document.createElement("span");
+                span.className = "clipper-text";
                 span.innerText = (i < t ? "/" : "") + e;
                 clipper.appendChild(span);
             });
         });
     };
     global.watchTheme = updateTheme;
+    global.setTheme(theme);
 }); /*_EndDefine*/
 _Define(function(global) {
     "use strict";
@@ -578,7 +871,6 @@ _Define(function(global) {
     var appConfig = global.appConfig;
     var Functions = global.Functions;
     var Utils = global.Utils;
-    var getEditor = global.getEditor;
     var Imports = new global.Imports(function() {
         global.BootList = Imports = null;
         appEvents.triggerForever("fully-loaded");
@@ -593,23 +885,35 @@ _Define(function(global) {
     Imports.add({
         name: "Inbuilt Fonts",
         func: function() {
-            var fonts = ["Anonymous Pro", "Courier Prime", {
-                name: "Fira Code",
-                types: ["Regular", "Bold"],
-                formats: ["woff", "woff2", "ttf"],
-            }, "Hack", {
-                name: "Inconsolata",
-                types: ["Regular", "Bold"],
-            }, "JetBrains Mono", {
-                name: "Roboto Mono",
-                types: ["Regular", "Bold"],
-            }, {
-                name: "PT Mono",
-                types: ["Regular"],
-            }, "Source Code Pro", "Ubuntu Mono", {
-                name: "Nova Mono",
-                types: ["Regular"],
-            }, ];
+            var fonts = [
+                "Anonymous Pro",
+                "Courier Prime",
+                {
+                    name: "Fira Code",
+                    types: ["Regular", "Bold"],
+                    formats: ["woff", "woff2", "ttf"],
+                },
+                "Hack",
+                {
+                    name: "Inconsolata",
+                    types: ["Regular", "Bold"],
+                },
+                "JetBrains Mono",
+                {
+                    name: "Roboto Mono",
+                    types: ["Regular", "Bold"],
+                },
+                {
+                    name: "PT Mono",
+                    types: ["Regular"],
+                },
+                "Source Code Pro",
+                "Ubuntu Mono",
+                {
+                    name: "Nova Mono",
+                    types: ["Regular"],
+                },
+            ];
             /*var Default = {
                 types: ['Regular', 'Bold', 'Italic', 'BoldItalic'],
                 formats: ['ttf']
@@ -654,14 +958,18 @@ font-style: $STYLE;\
             styleEl.innerHTML = cssText;
             document.head.appendChild(styleEl);*/
             global.registerValues({
-                fontFamily: "Font used by the editor and search results. Bundled fonts include " + fonts.map(function(e) {
-                    return e.name || e;
-                }).join(", ") + " as well as any System fonts.\n"
+                fontFamily: "Font used by the editor and search results. Bundled fonts include " +
+                    fonts
+                    .map(function(e) {
+                        return e.name || e;
+                    })
+                    .join(", ") +
+                    " as well as any System fonts.\n",
             });
         },
     });
     Imports.add("./prefs/linter_options.js", {
-        script: "./document/auto_settings.js"
+        script: "./document/auto_settings.js",
     });
     //runManager
     Imports.add({
@@ -694,11 +1002,11 @@ font-style: $STYLE;\
                         var update = function(ev) {
                             if (ev.visible) {
                                 if (visible && ev.isTrusted) {
-                                    button.addClass('slide-out');
+                                    button.addClass("slide-out");
                                     visible = false;
                                 }
-                            } else if (!visible) {
-                                button.removeClass('slide-out');
+                            } else if (!visible || !ev.isTrusted) {
+                                button.removeClass("slide-out");
                                 visible = true;
                             }
                         };
@@ -709,19 +1017,23 @@ font-style: $STYLE;\
             }
         },
     });
-    Imports.add("./libs/css/completion.css", {
-        script: "./ui/overlayMode.js", //dynamic
-    }, {
-        script: "./ui/rangeRenderer.js", //dynamuc
-    }, "./autocompletion/ui.js", "./autocompletion/base_server.js", {
-        name: "Tags",
-        script: "./autocompletion/tags/tags.js",
-    }, {
-        script: "./autocompletion/loader.js",
-    }, {
-        name: "AutoCompletion",
-        script: "./autocompletion/manager.js",
-    });
+    Imports.add(
+        "./libs/css/completion.css", {
+            script: "./ui/overlayMode.js", //dynamic
+        }, {
+            script: "./ui/rangeRenderer.js", //dynamuc
+        },
+        "./autocompletion/ui.js",
+        "./autocompletion/base_server.js", {
+            name: "Tags",
+            script: "./autocompletion/tags/tags.js",
+        }, {
+            script: "./autocompletion/loader.js",
+        }, {
+            name: "AutoCompletion",
+            script: "./autocompletion/manager.js",
+        }
+    );
     var Overflow = global.Overflow;
     //StatusBar SearchBox
     Imports.add({
@@ -733,124 +1045,144 @@ font-style: $STYLE;\
             var updateStatus = Utils.delay(function() {
                 var editor = getEditor();
                 if (editor && editor.commands.recording) {
-                    $("#togglerecording").addClass('blink');
-                } else $("#togglerecording").removeClass('blink');
+                    $("#togglerecording").addClass("blink");
+                } else $("#togglerecording").removeClass("blink");
             }, 100);
             var trackStatus = function(e) {
-                (e.editor || e).on('changeStatus', updateStatus);
+                (e.editor || e).on("changeStatus", updateStatus);
             };
-            appEvents.on('changeEditor', updateStatus);
-            appEvents.on('createEditor', trackStatus);
+            appEvents.on("changeEditor", updateStatus);
+            appEvents.on("createEditor", trackStatus);
             global.Editors.forEach(trackStatus);
             trackStatus = null;
             ace.config.loadModule("ace/ext/searchbox", function(e) {
                 var Searchbox = e.SearchBox;
-                var SearchBox = getEditor().searchBox || new Searchbox(getEditor());
-                var lastPosition = 0,
-                    inContent;
+                var SearchBox =
+                    getEditor().searchBox || new Searchbox(getEditor());
+                var lastPosition = 0;
+                var SB_HEIGHT = 100;
+                var SB_WIDTH = 300;
+                var lastAlign = null;
 
-                function position(ev) {
-                    var refocus = global.FocusManager.visit(global.FocusManager.activeElement);
-                    if (!ev) {
-                        inContent = false;
-                    }
+                function position() {
+                    var refocus = global.FocusManager.visit(
+                        global.FocusManager.activeElement
+                    );
                     var el = SearchBox.element;
-                    var y = SearchBox.editor.container;
-                    var t = y.getBoundingClientRect();
-                    // var offset = 0;
-                    if (t.height < 300) {
+                    var editDiv = SearchBox.editor.container;
+                    var editRect = editDiv.getBoundingClientRect();
+                    var inContent = el.parentElement != editDiv;
+                    if (editRect.height > SB_HEIGHT * 3) {
+                        //portrait editor
+                        var W = $(".content").width();
+                        var l = 0,
+                            r = 0;
+                        if (lastAlign != SearchBox.ALIGN_ABOVE) {
+                            SearchBox.alignContainer(SearchBox.ALIGN_ABOVE);
+                            lastAlign = SearchBox.ALIGN_ABOVE;
+                        }
+                        if (lastPosition < 5) {
+                            el.style.top = 0;
+                            el.style.bottom = "auto";
+                            lastPosition = 5;
+                        }
+                        if (
+                            editRect.width < SB_WIDTH ||
+                            //avoid jolting changes due to keyboard focus
+                            (inContent && SearchBox.active)
+                        ) {
+                            if (!inContent) {
+                                $(".content")[0].appendChild(SearchBox.element);
+                                inContent = true;
+                            }
+                            //in content overlapping and overflowing
+                            el.style.top = editRect.top + "px";
+                        } else {
+                            //in editDiv, overlapping no overflow
+                            if (inContent) {
+                                editDiv.appendChild(el);
+                                inContent = false;
+                            }
+                            l = editRect.left;
+                            r = W - editRect.right;
+                            el.style.top = 0;
+                        }
+                        var p = Overflow.clipWindow(
+                            editRect,
+                            SB_WIDTH,
+                            W,
+                            false
+                        );
+                        if (p[0] === undefined) {
+                            el.style.right = p[1] - r + "px";
+                            el.style.left = "auto";
+                        } else {
+                            el.style.right = "auto";
+                            el.style.left = p[0] - l + "px";
+                        }
+                        refocus();
+                    } else {
+                        //small editor height
                         if (!inContent) {
                             $(".content")[0].appendChild(SearchBox.element);
                             inContent = true;
                         }
                         var u = $("#viewroot")[0].getBoundingClientRect();
-                        if (t.top - u.top > 100) {
-                            if (lastPosition == 1) return refocus();
-                            lastPosition = 1;
+                        var cleared = true;
+                        if (editRect.left - u.left > SB_WIDTH) {
+                            el.style.right = "auto";
+                            el.style.left = 0;
+                        } else {
+                            if (u.right - editRect.right < SB_WIDTH)
+                                cleared = false;
+                            el.style.right = 0;
+                            el.style.left = "auto";
+                        }
+                        if (cleared || u.bottom - editRect.bottom < SB_HEIGHT) {
+                            if (editRect.top - u.top < SB_HEIGHT) {
+                                //not cleared
+                            }
+                            //outside editor above
                             el.style.top = u.top + "px";
                             el.style.bottom = "auto";
-                            SearchBox.alignContainer(SearchBox.ALIGN_NONE);
                         } else {
-
-                            if (t.bottom < u.bottom - 100) {
-                                if (lastPosition == 4) return refocus();
-                                lastPosition = 4;
-                                SearchBox.alignContainer(SearchBox.ALIGN_NONE);
-                            } else {
-                                if (lastPosition == 3) return refocus();
-                                lastPosition = 3;
-
-                                SearchBox.alignContainer(SearchBox.ALIGN_BELOW);
-                            }
-                            el.style.bottom = window.innerHeight - u.bottom + "px";
+                            //outside editor below
                             el.style.top = "auto";
+                            el.style.bottom =
+                                window.innerHeight - u.bottom + "px";
                         }
-                        el.style.right = "auto";
-                        el.style.left = 0;
-                        return refocus();
-                    }
-                    var W = $(".content").width();
-                    var l = 0,
-                        r = 0;
-
-                    if (lastPosition < 5) {
-                        el.style.top = 0;
-                        el.style.bottom = "auto";
-                        lastPosition = 5;
-                    }
-                    if (t.width < 300 ||
-                        (inContent && SearchBox.active)
-                    ) {
-                        if (!inContent) {
-                            $(".content")[0].appendChild(SearchBox.element);
-                            inContent = true;
+                        lastPosition = 1;
+                        if (lastAlign != SearchBox.ALIGN_NONE) {
+                            SearchBox.alignContainer(SearchBox.ALIGN_NONE);
+                            lastAlign = SearchBox.ALIGN_NONE;
                         }
-                        el.style.top = t.top + "px";
-                        lastPosition = 7;
-                    } else {
-                        //avoid jolting changes due to keyboard focus
-                        if (inContent) {
-                            y.appendChild(el);
-                            inContent = false;
-                            el.style.top = 0;
-                        }
-                        l = t.left;
-                        r = W - t.right;
-                        if (l == 0) {
-                            if (lastPosition !== 6)
-                                lastPosition = 6;
-                            else return refocus();
-                        }
+                        refocus();
                     }
-                    SearchBox.alignContainer(SearchBox.ALIGN_ABOVE);
-                    var p = Overflow.clipWindow(t, 300, W, false);
-                    if (t[0] == 0 && !inContent) {
-
-                    }
-                    if (p[0] == undefined) {
-                        el.style.right = p[1] - r + "px";
-                        el.style.left = "auto";
-                    } else {
-                        el.style.right = "auto";
-                        el.style.left = p[0] - l + "px";
-                    }
-                    refocus();
                 }
                 ace.config.loadModule("ace/ext/statusbar", function(module) {
                     var Statusbar = module.StatusBar;
-                    var StatusBar = StatusBar || new Statusbar(getEditor(), $("#status-bar")[0]);
+                    var StatusBar =
+                        StatusBar ||
+                        new Statusbar(getEditor(), $("#status-bar")[0]);
                     if (SearchBox.editor != getEditor()) {
-                        SearchBox.setEditor(e);
+                        SearchBox.setEditor(getEditor());
                     }
                     position();
-                    appEvents.on("changeEditor",
+                    getEditor().renderer.on("resize", position);
+                    appEvents.on(
+                        "changeEditor",
                         (function(SearchBox, StatusBar, position) {
                             return function(ev) {
                                 var e = ev.editor;
                                 $(e.container).addClass("active_editor");
                                 if (ev.oldEditor) {
-                                    $(ev.oldEditor.container).removeClass("active_editor");
-                                    ev.oldEditor.renderer.off("resize", position);
+                                    $(ev.oldEditor.container).removeClass(
+                                        "active_editor"
+                                    );
+                                    ev.oldEditor.renderer.off(
+                                        "resize",
+                                        position
+                                    );
                                 }
                                 StatusBar.setEditor(e);
                                 StatusBar.updateStatus(e);
@@ -858,7 +1190,8 @@ font-style: $STYLE;\
                                 e.renderer.on("resize", position);
                                 position();
                             };
-                        })(SearchBox, StatusBar, position));
+                        })(SearchBox, StatusBar, position)
+                    );
                 });
             });
         },
@@ -879,9 +1212,9 @@ font-style: $STYLE;\
         name: "Creating File Browsers",
         func: function() {
             var FileUtils = global.FileUtils;
+            var EventsEmitter = global.EventsEmitter;
             //FileBrowsers
             appEvents.triggerForever("filebrowsers");
-            var FileBrowser = global.FileBrowser;
             if (!appConfig.disableOptimizedFileBrowser) {
                 global.FileBrowser = global.RFileBrowser;
             }
@@ -889,7 +1222,8 @@ font-style: $STYLE;\
             var Hierarchy = global.RHierarchy || global.Hierarchy;
             var _hierarchy = new Hierarchy($("#hierarchy"), "");
             _hierarchy.id = "projectView";
-            FileUtils.ownChannel("project", _hierarchy, "files");
+            _hierarchy.emitter = new EventsEmitter(_hierarchy.emitter);
+            FileUtils.ownChannel("project", _hierarchy.onNewOption.bind(_hierarchy));
             FileUtils.addBrowser(_hierarchy);
 
             function update(e) {
@@ -903,9 +1237,15 @@ font-style: $STYLE;\
                 }
             }
             update({
-                project: FileUtils.getProject()
+                project: FileUtils.getProject(),
             });
             FileUtils.on("change-project", update);
+            FileUtils.on("change-project-name", function() {
+                _hierarchy.rename(
+                    _hierarchy.hier[0],
+                    FileUtils.getProject().name
+                );
+            });
             //FileUtils.on("close-project", update);
             //move this to header?
             //File finding TODO
@@ -919,13 +1259,18 @@ font-style: $STYLE;\
             }
 
             function doFind() {
-                $("#search_text").val() && _hierarchy.findFile($("#search_text").val(), null, function() {
-                    $("#find_file_cancel_btn").text("refresh");
-                });
-                $("#find_file_cancel_btn").text("stop");
+                if ($("#search_text").val()) {
+                    _hierarchy.findFile(
+                        $("#search_text").val(),
+                        null,
+                        function() {
+                            $("#find_file_cancel_btn").text("refresh");
+                        }
+                    );
+                    $("#find_file_cancel_btn").text("stop");
+                }
             }
-            $("#find_file_btn").click(doFind);
-            $("#search_text").change(doFind);
+            global.createSearch('#search_text', "#find_file_btn", doFind);
             $("#find_file_cancel_btn").click(stopFind);
         },
     });
@@ -948,56 +1293,64 @@ font-style: $STYLE;\
                 inputClass: Hammer.TouchMouseInput,
                 recognizers: [
                     [
-                        Hammer.Swipe, {
+                        Hammer.Swipe,
+                        {
                             threshold: 3.0,
                             direction: Hammer.DIRECTION_HORIZONTAL,
                         },
                     ],
                 ],
             });
-            var unChecked = false;
+            var canScrollLeft = true,
+                canScrollRight = true;
             swipeDetector.on("hammer.input", function(ev) {
                 if (ev.isFirst) {
-                    unChecked = true;
+                    canScrollLeft = false,
+                        canScrollRight = false;
                     var elt = ev.target;
                     if (elt.tagName == "INPUT") return swipeDetector.stop();
                     elt = elt.parentElement;
-                    if (elt && (elt.parentElement && elt.parentElement.id == "selector") || elt.id == 'selector') {
+                    if (
+                        (elt &&
+                            elt.parentElement &&
+                            elt.parentElement.id == "selector") ||
+                        elt.id == "selector"
+                    ) {
                         return swipeDetector.stop();
                     }
-                }
-                if (unChecked) {
                     var el = ev.target;
-                    var style;
-                    if (ev.velocityX < -0.5) {
-                        do {
-                            style = window.getComputedStyle(el);
-                            if (
-                                (style.overflow == "scroll" || style.overflow == "auto" || style.overflowX == "scroll" || style
-                                    .overflowX == "auto") && el.scrollWidth - el.scrollLeft > el.offsetWidth) {
+                    do {
+                        var style;
+                        style = window.getComputedStyle(el);
+                        var isScrollable = el.scrollWidth > el.clientWidth && (style.overflow == "scroll" ||
+                            style.overflow == "auto" ||
+                            style.overflowX == "scroll" ||
+                            style.overflowX == "auto");
+                        if (isScrollable) {
+                            //Really small views should never be the objects of a swipe
+                            if (el.clientHeight < 150) {
                                 return swipeDetector.stop();
+                            } else {
+                                if (
+                                    el.scrollWidth - el.scrollLeft >
+                                    el.offsetWidth) canScrollRight = true;
+                                if (el.scrollLeft > 0) canScrollLeft = true;
                             }
-                            el = el.parentElement;
-                        } while (el);
-                        unChecked = false;
-                    } else if (ev.velocityX > 0.5) {
-                        do {
-                            style = window.getComputedStyle(el);
-                            if (
-                                (style.overflow == "scroll" || style.overflow == "auto" || style.overflowX == "scroll" || style
-                                    .overflowX == "auto") && el.scrollLeft > 0) {
-                                return swipeDetector.stop();
-                            }
-                            el = el.parentElement;
-                        } while (el);
-                        unChecked = false;
+                        }
+                        el = el.parentElement;
                     }
+                    while (el);
+                }
+                if (canScrollLeft && ev.velocityX > 0) {
+                    return swipeDetector.stop();
+                } else if (canScrollRight && ev.velocityX < 0) {
+                    return swipeDetector.stop();
                 }
             });
-            swipeDetector.on("swipeleft", function(ev) {
+            swipeDetector.on("swipeleft", function() {
                 SidenavTabs.goleft();
             });
-            swipeDetector.on("swiperight", function(ev) {
+            swipeDetector.on("swiperight", function() {
                 SidenavTabs.goright();
             });
             window.MobileDragDrop.polyfill({
@@ -1006,7 +1359,10 @@ font-style: $STYLE;\
                 tryFindDraggableTarget: function(event) {
                     var el = event.target;
                     do {
-                        if (el.getAttribute && el.getAttribute("draggable") === "true") {
+                        if (
+                            el.getAttribute &&
+                            el.getAttribute("draggable") === "true"
+                        ) {
                             return el;
                         }
                     } while ((el = el.parentNode) && el !== document.body);
@@ -1020,12 +1376,15 @@ font-style: $STYLE;\
             });
             dragger.on("end", function(e) {
                 if (e.newIndex !== undefined) {
-                    DocsTab.moveTab(e.newIndex, e.dragTab.getAttribute("data-file"));
+                    DocsTab.moveTab(
+                        e.newIndex,
+                        e.dragTab.getAttribute("data-tab")
+                    );
                 }
             });
             /*dragger.on('drag', function(e) {
-                      //show drag intent
-                  });*/
+                  //show drag intent
+              });*/
             var listDragger = new global.DragList($("#opendocs")[0], {
                 selectors: {
                     tab: ".file-item",
@@ -1033,7 +1392,10 @@ font-style: $STYLE;\
             });
             listDragger.on("drag", function(e) {
                 if (e.newIndex !== undefined) {
-                    DocsTab.moveTab(e.newIndex, e.dragTab.getAttribute("data-file"));
+                    DocsTab.moveTab(
+                        e.newIndex,
+                        e.dragTab.getAttribute("data-file")
+                    );
                 }
             });
         },
@@ -1062,7 +1424,13 @@ font-style: $STYLE;\
             function updateSettings() {
                 SettingsPanel.render();
                 //settingsMenu.find('select').formSelect({ dropdownOptions: { height: 300, autoFocus: false } });
-                settingsMenu.find("button").addClass("btn btn-group").parent().addClass("btn-group-container");
+                settingsMenu
+                    .find("button")
+                    .addClass("btn btn-group")
+                    .parent()
+                    .addClass("btn-group-container");
+                settingsMenu.find(".header").attr('class', 'material-icons-b4 sub-header option_header');
+                settingsMenu.find('tr').addClass('border-inactive');
                 global.styleCheckbox(settingsMenu);
             }
             global.SideViewTabs["owner-#settings"] = {
@@ -1100,12 +1468,15 @@ font-style: $STYLE;\
         },
     });
     var searchConfig = global.registerAll({
-        useRecyclerViewForSearchResults: true,
-    }, "search");
+            useRecyclerViewForSearchResults: true,
+        },
+        "search"
+    );
     //SearchPanel
     Imports.add({
         script: "./ui/recycler.js",
-        ignoreIf: searchConfig.useRecyclerViewForSearchResults && !global.RecyclerRenderer,
+        ignoreIf: searchConfig.useRecyclerViewForSearchResults &&
+            !global.RecyclerRenderer,
     }, {
         script: "./libs/js/brace-expansion.js", //core
     }, {
@@ -1119,8 +1490,14 @@ font-style: $STYLE;\
     }, {
         name: "Creating Search Panel",
         func: function() {
-            var SearchPanel = new global.SearchTab($("#search_container"), $("#searchModal"));
+            var SearchPanel = new global.SearchTab(
+                $("#search_container"),
+                $("#searchModal")
+            );
             SearchPanel.init(global.SideView);
         },
+    }, {
+        name: "Preview",
+        script: "./tools/preview.js",
     });
 }); /*_EndDefine*/

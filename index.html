@@ -9,32 +9,21 @@
     <link rel="stylesheet" href="./libs/css/materialize-grace.css">
     <link rel="stylesheet" href="./main.css">
     <link rel='stylesheet' href="./libs/css/coding-fonts.css">
-    <!--<oscript type="text/javascript" charset="utf-8">-->
-    <!--    var start = new Date().getTime();-->
-    <!--    function timeline(tag){-->
-    <!--        var now = new Date().getTime();-->
-    <!--        if(tag){-->
-    <!--            console.log(tag,now-start+"ms");-->
-    <!--        }-->
 </head>
 
-<body class="editor-primary">
+<body class="app-theme-light editor-primary">
     <div class='splash-screen'>
         <span>grace</span>
     </div>
-    <!--        start = now;-->
-    <!--    }-->
-    <!--</script>-->
     <script type="text/javascript" src="./libs/js/eruda.min.js"></script>
-    <!--<oscript src="./tests/snippets.js" type="text/javascript" charset="utf-8"></script>-->
+    <!-- <oscript src="./tests/snippets.js" type="text/javascript" charset="utf-8"></oscript> -->
     <script>
-        //Snippets.detectGlobals.exec(window);
+        // Snippets.detectGlobals.exec(window);
         if (window.eruda) {
             eruda.init(["console"]);
-            if(window.Application)
+            if (window.Application)
                 eruda._entryBtn.hide();
         }
-        //timeline('Load Eruda');
     </script>
 
     <aside id="side-menu" class="clipboard-empty container sidenav">
@@ -59,54 +48,63 @@
         </ul>
 
         <div id="hierarchy_tab">
-            <span id="opendocs-toggle" class="header toggleBelow" tabIndex=0>Open Documents<button class="material-icons">keyboard_arrow_up</button></span>
-            <ul id="opendocs" class="fileview">
+            <h6 id="opendocs-toggle" class="toggleBelow sub-header">Open Documents
+                <button class="btn-toggle" tabIndex=0><i class="material-icons">keyboard_arrow_up</i></button>
+            </h6>
+            <ul id="opendocs" class="fileview border-inactive">
 
             </ul>
-            <span id="find_file-toggle" class="header toggleBelow" tabIndex=0>Find file<button class="material-icons">keyboard_arrow_up</button></span>
-            <div class="find_file edge_box-2 h-50">
-                <div class="fill_box p-5"><input type="text" name="search_text" id="search_text" value="" /></div>
-                <button id="find_file_btn" class="side-1 material-icons">search</button>
-                <button id="find_file_cancel_btn" class="side-2 material-icons">refresh</button>
+            <div id="project_view">
+                <div class="project_view_panel border-inactive">
+                    <h6 id="find_file-toggle" class="sub-header toggleBelow">Current Project<button class="btn-toggle" tabIndex=0><i class="material-icons">keyboard_arrow_up</i></button></h6>
+                    <div id='find_file' class='pt-10'>
+                        <label for="#search_text" class="pl-15">Find file</label>
+                        <div class="mt-5 find_file edge_box-2 h-30">
+                            <div class="fill_box pl-15"><input type="search" name="search_text" id="search_text" value="" /></div>
+                            <button id="find_file_btn" class="side-1 material-icons">search</button>
+                            <button id="find_file_cancel_btn" class="side-2 material-icons">refresh</button>
+                        </div>
+                    </div>
+                </div>
+                <ul id="hierarchy" class="fileview">
+                </ul>
             </div>
-
-            <ul id="hierarchy" class="fileview">
-            </ul>
+            <h6 class="hide no-project center color-inactive">No project folder</h6>
         </div>
         <div id="search_container" class="" style="padding:15px">
-
-            <span>Search</span>
-            <div class="edge_box-2 h-50">
-
-                <div class="fill_box input-field pb-10 inline">
-                    <input id="searchInput" placeholder="Search for" type="text" class="">
+            <label>Search in workspace</label>
+            <div class="mt-5 edge_box-2 h-30">
+                <div class="fill_box input-field inline">
+                    <input id="searchInput" placeholder="Search for" type="search" class="">
                 </div>
 
                 <button id="searchBtn" class="side-1 material-icons">search</button>
-                <button id='searchConfig' class="side-2 material-icons">view_headline</button>
+                <button id='searchConfig' class="side-2 material-icons">filter_list</button>
             </div>
-            <div class='replaceBox'>
-                <span>Replace</span>
-                <div class="edge_box-2 h-50">
-                    <div class="input-field inline pb-10 fill_box">
+            <div class='replaceBox' style='margin-top:15px'>
+                <label>Replace all instances with</label>
+                <div class="edge_box-2 h-30 mt-5">
+                    <div class="input-field inline fill_box">
                         <input id="replaceInput" placeholder="Replace with" type="text" class="">
                     </div>
                     <button id="undoReplaceBtn" class="side-1"><i class="material-icons">autorenew</i></button>
                     <button id="replaceBtn" class="side-2"><i class="material-icons">swap_horiz</i></button>
                 </div>
             </div>
-            <div class="ace_search_options">
-                <button id='toggleReplace' class="left material-icons">keyboard_arrow_down</button>
+            <div class="ace_search_options mt-5">
+                <button id='toggleReplace' class="btn-toggle big left material-icons">keyboard_arrow_down</button>
                 <button id="toggleRegex" class="right ace_button">.*</button>
                 <button id="caseSensitive" class="right ace_button">Aa</button>
                 <button id="toggleWholeWord" class="right ace_button">[ab]</button>
             </div>
             <h6 id="searchInfo"></h6>
-            <div id="loading"><span>Searching...</span><span>Searching...</span><br /><button id="searchStop" class='btn red center'>Stop</button></div>
-            <div id="searchResults">
-
+            <div id="loading"><span>Searching...</span><span>Searching...</span><br />
+                <div class="align-right"><button id="searchStop" class='btn-flat '>Stop</button></div>
             </div>
-            <button id="showMoreResults" class="btn blue center">More..</button>
+            <div id="searchResults">
+                <div class='no-results color-inactive'>No results</div>
+            </div>
+            <div class="align-right"><button id="showMoreResults" class="btn btn-flat">More results</button></div>
         </div>
 
         <div id="settings" style="">
@@ -144,7 +142,7 @@
     <script type="text/javascript" src="./libs/js/base64.js"></script>
 
     <script type="text/javascript" src="./src-min-noconflict/ace.js"></script>
-    
+
 
     <!--TODO Dynamic-->
     <script type="text/javascript" src="./libs/js/diff_match_patch.js"></script>
@@ -180,6 +178,7 @@
     <!--todo load this views asynchronously since they are not immediately used!-->
     <script type="text/javascript" src="./ui/sidenav.js"></script>
 
+    <script type="text/javascript" src="./core/json_ext.js" charset="utf-8"></script>
     <script type="text/javascript" src="./core/bootlist.js"></script>
     <script type="text/javascript" src="./tools/format/format.js"></script>
     <!--todo load documents after characterbar is set up?? Nah, it'an editor after all-->
@@ -192,7 +191,7 @@
     <script type="text/javascript" src="./prefs/load_settings.js" charset="utf-8"></script>
 
     <script type="text/javascript" src="./document/activeDoc.js" charset="utf-8"></script>
-
+    <!--TODO Dynamic-->
     <script type="text/javascript" src="./views/charbar.js" charset="utf-8"></script>
     <script type="text/javascript" src="main.js" charset="utf-8"></script>
 

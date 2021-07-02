@@ -1,10 +1,8 @@
 _Define(function(global) {
   "use strict";
   var Functions = global.Functions;
-  var Docs = global.Docs;
   var docs = global.docs;
   var Utils = global.Utils;
-  var Editors = global.Editors;
   var FileUtils = global.FileUtils;
   var configEvents = global.ConfigEvents;
   var loadFiles = Functions.loadAutocompleteFiles;
@@ -15,7 +13,7 @@ _Define(function(global) {
     "ternDefFiles": "",
     "ternDefsInbuilt": "browser, ecmascript",
     "ternPlugins": "doc_comment",
-    "useWebWorkerForTern": false
+    "useWebWorkerForTern": true
   }, "autocompletion.tern");
   global.registerValues({
     'ternDefFiles': "List of absolute paths or paths relative to to <project folder> containing tern json definition files",

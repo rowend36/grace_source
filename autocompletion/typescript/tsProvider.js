@@ -1,9 +1,4 @@
 _Define(function(global) {
-  var FileUtils = global.FileUtils;
-  var Notify = global.Notify;
-  var app = global.AppEvents;
-  var getEditor = global.getEditor;
-  var docs = global.docs;
   var Functions = global.Functions;
   var Utils = global.Utils;
   var Imports = global.Imports;
@@ -19,7 +14,7 @@ _Define(function(global) {
     "tsModuleResolution": "classic",
     "tsLibs": "default,dom,es5",
     "noImplicitAny": false,
-    "useWorkerForTs": false,
+    "useWorkerForTs": true,
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,
     "alwaysStrict": true,
@@ -91,6 +86,7 @@ _Define(function(global) {
       waiting = {};
     };
   };
+  var loadFiles = global.Functions.loadAutocompleteFiles;
   global.tsCompletionProvider = {
     init: Imports.define(["./autocompletion/typescript/tsClient.js"], null, function(editor, cb) {
       var initOptions = this.options;
@@ -112,6 +108,9 @@ _Define(function(global) {
           this.instance = instance;
         }
         cb(instance);
+        loadFiles(function(){
+          editor.$onSessionChange && editor.$onSessionChange();
+        },instance);
       }
     }),
     triggerRegex: /[^\.]\.$/,

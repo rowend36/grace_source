@@ -1,4 +1,4 @@
-_Define(function (global) {
+_Define(function(global) {
     var OverlayTokenizer = global.OverlayTokenizer;
 
     function RangeRenderer(session) {
@@ -12,17 +12,17 @@ _Define(function (global) {
             width: /*align-left with 0*/ 0,
             themeClass: "",
         };
-        
+
     }
-    (function () {
-        
+    (function() {
+
         var Text = ace.require("ace/layer/text").Text;
         var renderer = new Text({
-            appendChild: function () {},
+            appendChild: function() {},
         });
         this.Text = renderer;
         this.clipText = "...";
-        this.Clip = function (start, tokens, clipText, end, nomodify) {
+        this.Clip = function(start, tokens, clipText, end, nomodify) {
             if (nomodify) tokens = [].concat(tokens);
             var i = 0;
             var char = 0;
@@ -32,8 +32,7 @@ _Define(function (global) {
                     if (char > start) {
                         tokens[i] = {
                             type: tokens[i].type,
-                            value:
-                                clipText +
+                            value: clipText +
                                 tokens[i].value.substring(
                                     -char + start + tokens[i].value.length
                                 ),
@@ -59,23 +58,20 @@ _Define(function (global) {
                 return tokens.slice(a, i);
             } else return i ? tokens.slice(i) : tokens;
         };
-        this.Marker = new OverlayTokenizer(
-            {
-                marker: [
-                    {
-                        type: "selection search-selection",
-                        value: {
-                            length: 100000,
-                        },
+        this.Marker = new OverlayTokenizer({
+                marker: [{
+                    type: "selection search-selection",
+                    value: {
+                        length: 100000,
                     },
-                ],
-                getTokens: function (row) {
+                }, ],
+                getTokens: function(row) {
                     return this.marker;
                 },
             },
             null
         );
-        this.render = function (ranges, session, config, parent, maxLine) {
+        this.render = function(ranges, session, config, parent, maxLine) {
             config = config || this.config;
             session = session || this.session;
             if (!parent) {
@@ -89,7 +85,7 @@ _Define(function (global) {
             var multi = this.Marker.multiplex.bind(this.Marker);
             var clipper = this.Clip;
             var clipText = this.clipText;
-            var clip = function (row, tokens) {
+            var clip = function(row, tokens) {
                 tokens = multi(row, tokens, range);
                 return clipper(start, tokens, clipText, cw * 1.5, true);
             };
@@ -158,7 +154,7 @@ _Define(function (global) {
             }
             return parent;
         };
-        this.renderPlain = function (ranges, session, config, parent, maxLine) {
+        this.renderPlain = function(ranges, session, config, parent, maxLine) {
             config = config || this.config;
             session = session || this.session;
             if (!parent) {
@@ -168,7 +164,7 @@ _Define(function (global) {
                 parent.style.fontSize = config.fontSize + "px";
             }
             parent.className += " range_renderer";
-            var safe = function (text) {
+            var safe = function(text) {
                 return text.replace(/[^\u0020-\u00ff]/g, "?");
             };
             var cw = parent.clientWidth;
@@ -188,8 +184,9 @@ _Define(function (global) {
                     .text("" + (range.start.row + 1));
                 var rw;
                 var elRes = element.children("#result")[0];
+                var result;
                 if (lines.length == 1) {
-                    var result = lines[0].substring(
+                    result = lines[0].substring(
                         range.start.column,
                         range.end.column
                     );
@@ -198,7 +195,7 @@ _Define(function (global) {
                         elRes.getBoundingClientRect().right -
                         elRes.getBoundingClientRect().left;
                 } else {
-                    var result = lines[0].substring(range.start.column);
+                    result = lines[0].substring(range.start.column);
                     elRes.appendChild(document.createTextNode(safe(result)));
                     elRes.innerHTML += "&nbsp;";
                     rw =
@@ -220,12 +217,10 @@ _Define(function (global) {
                         )
                     );
                 }
-                var startEl = element.children("#start");
 
                 var start = lines[0].substring(0, range.start.column);
                 var free_space = Math.floor((cw - rw) / (rw / result.length));
                 var s = 0,
-                    e = 0,
                     m = free_space / 2;
                 var end = lines[lines.length - 1].substring(range.end.column);
                 s = Math.min(
@@ -242,7 +237,7 @@ _Define(function (global) {
             }
         };
 
-        renderer.$renderLine = function (parent, row, foldLine, multiplexer) {
+        renderer.$renderLine = function(parent, row, foldLine, multiplexer) {
             if (!foldLine && foldLine != false)
                 foldLine = this.session.getFoldLine(row);
 
@@ -274,9 +269,9 @@ _Define(function (global) {
                 var invisibleEl = this.dom.createElement("span");
                 invisibleEl.className = "ace_invisible ace_invisible_eol";
                 invisibleEl.textContent =
-                    row == this.session.getLength() - 1
-                        ? this.EOF_CHAR
-                        : this.EOL_CHAR;
+                    row == this.session.getLength() - 1 ?
+                    this.EOF_CHAR :
+                    this.EOL_CHAR;
 
                 lastLineEl.appendChild(invisibleEl);
             }

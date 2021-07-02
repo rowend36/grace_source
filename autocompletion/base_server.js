@@ -30,11 +30,11 @@ _Define(function(global) {
         if (global.validateKey(key)) {
             rebind();
         } else {
-            Notify.info('Bad Key string for ' + e.config);
+            global.Notify.info('Bad Key string for ' + ev.config);
             ev.preventDefault();
         }
     });
-
+    /**@constructor*/
     function BaseServer(options, iconClass) {
         this.docs = Object.create(null);
         this.options = options || {};
@@ -47,17 +47,17 @@ _Define(function(global) {
         this.jumpStack = [];
         this.trackChange = this.trackChange.bind(this);
     }
-    /*
-    sendDoc: null,
-    requestDefinition: null,
-    findRefs: null,
-    normalizeName: null,
-    removeDoc: null,
-    requestType: null
-    */
+
     BaseServer.prototype = {
         aceCommands: null,
         maxSize: 1000000,
+        sendDoc: null,
+        requestDefinition: null,
+        findRefs: null,
+        normalizeName: null,
+        removeDoc: null,
+        requestType: null,
+        cachedArgHints:null,
         bindAceKeys: function(editor) {
             var aceCommands = this.aceCommands;
             for (var p in aceCommands) {
@@ -122,7 +122,7 @@ _Define(function(global) {
                 data.changes = [change];
             }
             var argHints = this.cachedArgHints;
-            if (argHints && argHints.doc == doc && cmpPos(argHints.start, change.to) <= 0) {
+            if (argHints && argHints.doc == session && cmpPos(argHints.start, change.end) <= 0) {
                 this.cachedArgHints = null;
             }
         },
@@ -198,7 +198,6 @@ _Define(function(global) {
             return findDoc(this, session);
         },
         docChanged: function(editor) {
-            var sf = this;
             var session = editor.session;
             var oldDoc = findDoc(this, session);
             for (var p in this.docs) {
@@ -210,7 +209,7 @@ _Define(function(global) {
             updateArgHints(this, editor);
         },
         requestRename: function(editor, newName, cb, refs) {
-            /*Load All Referenced Documents Into The Editor*/
+            //load all referenced documents into the editor
             var i = 0,
                 doc;
             var ts = this;
@@ -255,7 +254,7 @@ _Define(function(global) {
             try {
                 this.requestType(editor, pos, cb, calledFromCursorActivity);
             } catch (e) {
-                console.log(e);
+                console.error(e);
             }
         },
         executeRename: function(editor, newName, r) {
@@ -288,7 +287,7 @@ _Define(function(global) {
                 html.push(createToken(doc.displayParts[i]));
             }
             for (var j in doc.documentation) {
-                html.push("<div>" + doc.documentation[j].text + "</div>")
+                html.push("<div>" + doc.documentation[j].text + "</div>");
             }
             return html.join("");
         },
@@ -311,20 +310,22 @@ _Define(function(global) {
             for (var l in doc.suffixDisplayParts) {
                 html.push(createToken(doc.suffixDisplayParts[l]));
             }
-            /*html.push(doc.documentation.map(function(e) {
+            /*
+            Show in infotooltip instead
+            html.push(doc.documentation.map(function(e) {
                 return e[e.kind]
             }).join("</br>"));*/
             if (doc.tags[argpos]) {
                 html.push("<div>");
-                var e = doc.tags[argpos]
+                var e = doc.tags[argpos];
                 html.push("</br>" + createToken({
                     kind: "paramName",
                     text: e.name
                 }) + ":" + createToken({
                     kind: "paramDoc",
                     text: e.text
-                }))
-                html.push("</div>")
+                }));
+                html.push("</div>");
             }
             return html.join("");
         }
@@ -339,13 +340,18 @@ _Define(function(global) {
         if (ts.functionHintTrigger) {
             var trigger = ts.functionHintTrigger;
             var cursor = editor.getSelectionRange().start;
-            var token = editor.session.getTextRange({
+            var token = editor.session.getTokenAt(cursor);
+            if (token && /string|comment/.test(token.type)) {
+                return ts.ui.closeArgHints(ts);
+            }
+            token = editor.session.getTextRange({
                 start: cursor,
                 end: {
                     row: cursor.row + 1,
                     column: cursor.column
                 }
             });
+            //get character next to cursor ignore space
             var b = token.replace(/^\s+/, "")[0];
             if (!b || trigger.indexOf(b) < 0) {
                 token = editor.session.getTextRange({
@@ -355,8 +361,9 @@ _Define(function(global) {
                         column: cursor.column
                     }
                 });
-                var b = token.replace(/\s+$/, "");
-                if (!b || trigger.indexOf(b.substring(b.length - 1)) < 0) return ts.ui.closeArgHints(ts);
+                b = token.replace(/\s+$/, "");
+                if (!b || trigger.indexOf(b.substring(b.length - 1)) < 0)
+                    return ts.ui.closeArgHints(ts);
             }
         }
         var callPos = ts.getCallPos(editor);
@@ -549,7 +556,8 @@ _Define(function(global) {
         var timeOut = new Date().getTime() + 1000;
         var token = iterator.getCurrentToken();
         if (!token) return;
-        var maxLine = pos.row - 15;
+        //todo detect boundaries from syntax
+        var maxLine = pos.row - 20;
         var start, numCommas = 0,
             depth = 0;
         var end = iterator.getCurrentTokenPosition();
@@ -557,19 +565,19 @@ _Define(function(global) {
             token = {
                 type: token.type,
                 value: token.value.substring(0, pos.column - end.column)
-            }
+            };
         }
         var type;
 
         function is(o) {
-            return type.indexOf("." + o + ".") > -1
+            return type.indexOf("." + o + ".") > -1;
         }
         var a = 0;
 
         function time() {
             if (++a % 10) {
                 var t = new Date().getTime();
-                if (t > timeOut) throw "Timed Out"
+                if (t > timeOut) throw "Timed Out";
             }
             return true;
         }
@@ -587,15 +595,15 @@ _Define(function(global) {
                             var name;
                             do {
                                 name = iterator.stepBackward();
-                            } while (name && /^\s+$/.test(name.value))
+                            } while (name && /^\s+$/.test(name.value));
                             type = name && "." + name.type + ".";
                             if (type && !(is('entity') || is('storage') || is('type'))) {
-                                start = iterator.getCurrentTokenPosition()
+                                start = iterator.getCurrentTokenPosition();
                                 if (start) return {
                                     name: name.value,
                                     start: start,
                                     argpos: numCommas
-                                }
+                                };
                             }
                             return;
                         } else {
@@ -624,15 +632,6 @@ _Define(function(global) {
         return editor.getSession().getTextRange(editor.getSelectionRange()) !== '';
     }
 
-    function toAceLoc(pos) {
-        if (pos.line > -1) {
-            return {
-                row: Number(pos.line),
-                column: Number(pos.ch)
-            };
-        }
-        return pos;
-    }
     //does the same thing with switchToDoc, to do merge
     function moveTo(ts, editor, curDoc, doc, start, end /*or span*/ , doNotCloseTips) {
         var span;
@@ -717,13 +716,15 @@ _Define(function(global) {
             status: "",
             errors: ""
         };
+
+        function compareRange(a, b) {
+            return cmpPos(b.start, a.start);
+        }
         for (var file in perFile) {
             var known = ts.docs[file],
                 chs = perFile[file];
             if (!known) continue;
-            chs.sort(function(a, b) {
-                return cmpPos(b.start, a.start);
-            });
+            chs.sort(compareRange);
             for (var i = 0; i < chs.length; ++i) {
                 try {
                     var ch = chs[i];
@@ -753,7 +754,7 @@ _Define(function(global) {
                 editor[name].markPos(editor);
             },
             bindKey: config.markPosition
-        }
+        };
         commands.jumpBack = {
             name: prefix + "JumpBack",
             exec: function(editor) {
@@ -802,7 +803,7 @@ _Define(function(global) {
                 editor[name].refreshDoc(editor, full);
             },
             bindKey: config.refresh
-        }
+        };
         var noConf = {};
         for (var i in commands) {
             noConf[commands[i].name] = "no-user-config";
@@ -818,12 +819,11 @@ _Define(function(global) {
         getCallPos: getCallPos,
         docValue: docValue,
         somethingIsSelected: somethingIsSelected,
-        toAceLoc: toAceLoc,
         moveTo: moveTo,
         getFile: getFile,
         getCurrentToken: getCurrentToken,
         createCommands: createCommands
-    }
+    };
     global.BaseServer = BaseServer;
     global.ServerUtils = ServerUtils;
 }); /*_EndDefine*/

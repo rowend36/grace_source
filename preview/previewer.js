@@ -32,23 +32,22 @@ _Define(function(global) {
     }
 
     function createNavBar(navBar, icons, prefix) {
-        navBar.className = "editor-primary";
+        navBar.className = "editor-primary preview-navbar";
         navBar.style.position = "absolute";
         navBar.style.top = '0px';
-        navBar.style.width = '100%';
-        var iconLeft = Math.min(4, icons.length) * 35 + 5;
         var addressBar = document.createElement("div");
+        // addressBar.className ="addressBar";
         addressBar.setAttribute("readOnly", true);
         addressBar.style.position = "absolute";
         addressBar.style.left = "5px";
         addressBar.style.top = "5px";
-        addressBar.style.width = "";
+        addressBar.style.width = "300px";
         addressBar.style.minWidth = '150px';
+        addressBar.style.maxWidth = '50%';
         addressBar.style.height = "30px";
         addressBar.style.background = "rgba(180,180,180,128)";
         addressBar.style.border = "2px solid #2196F3";
         addressBar.style.borderRadius = "15px";
-        addressBar.style.right = iconLeft + "px";
         addressBar.style.overflow = "hidden";
         addressBar.style.overflowX = 'auto';
         addressBar.style.lineHeight = "30px";
@@ -57,18 +56,10 @@ _Define(function(global) {
 
         navBar.appendChild(addressBar);
         var iconContainer = document.createElement('div');
-        iconContainer.style.background = 'inherit';
-        iconContainer.style.zIndex = '1';
-        iconContainer.style.position = 'relative';
-        iconContainer.style.float = 'right';
-        iconContainer.style.height = '100%';
-        iconContainer.style.width = iconLeft + "px";
-        iconContainer.style.overflow = 'auto';
-        iconContainer.style.whiteSpace = 'nowrap';
-        iconContainer.style.maxWidth = "100%";
+        iconContainer.className = "iconContainer";
         for (var i in icons) {
             $(iconContainer).append(createIcon((prefix || "") + icons[i].id, icons[i]
-            .icon));
+                .icon));
         }
         navBar.appendChild(iconContainer);
         return {
@@ -105,9 +96,9 @@ _Define(function(global) {
         if (editor.session.getTokenAt(pos.row, pos.column).type == "string") {
             if (editor.session.getLength() > (pos.row + 5) && editor.session.getLine(pos
                     .row).length > pos.column + 1)
-                return true
+                return true;
         }
-        return false
+        return false;
     }
 
     function checkInCssHtmlOrString(editor) {
@@ -123,7 +114,7 @@ _Define(function(global) {
         previewContainer.style.paddingTop = '35px';
 
         var navBar = createNavBar(
-            $(previewContainer).append("<div style='width:100%;height:35px'></div>")
+            $(previewContainer).append("<div style='height:35px'></div>")
             .children().last()[0], [{
                 id: "backward",
                 icon: "keyboard_arrow_left"
@@ -151,8 +142,11 @@ _Define(function(global) {
             }], "preview-"
         );
         previewContainer.className = "preview";
+        var previewWrapper = document.createElement('div');
+        previewWrapper.className = "iframe-wrapper";
         var preview = document.createElement('iframe');
-        previewContainer.appendChild(preview);
+        previewContainer.appendChild(previewWrapper);
+        previewWrapper.appendChild(preview);
         navBar.iconContainer.onclick = function(e) {
             var win = preview.contentWindow;
             switch (e.target.getAttribute("id").substring(8)) {
@@ -178,14 +172,14 @@ _Define(function(global) {
                     if (!$(previewContainer).toggleClass('preview-desktop')
                         .hasClass('preview-container')) {
                         $(previewContainer).removeClass('preview-zoom');
-                    }
+                    } else $(previewer.addClass('preview-zoom'));
                     break;
                 case "full":
                     if (isFull) {
                         show(false);
-                        e.target.innerHTML = "fullscreen"
+                        e.target.innerHTML = "fullscreen";
                     } else {
-                        e.target.innerHTML = "fullscreen_exit"
+                        e.target.innerHTML = "fullscreen_exit";
                         show(true);
                     }
                     break;
@@ -217,6 +211,8 @@ _Define(function(global) {
             if (reloader) {
                 reloader.reload(preview, path, live);
             } else {
+                if (preview.src == path && preview.contentWindow)
+                    preview.contentWindow.reload(true);
                 preview.src = path;
             }
 
@@ -330,5 +326,5 @@ _Define(function(global) {
             }
         };
         return API;
-    }
+    };
 }); /*_EndDefine*/

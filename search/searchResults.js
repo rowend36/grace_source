@@ -3,7 +3,6 @@ _Define(function(global) {
     var RangeRenderer = global.RangeRenderer;
     var RecyclerRenderer = global.RecyclerRenderer;
     var switchToDoc = global.Functions.switchToDoc;
-    var Utils = global.Utils;
     var RecyclerViewHolder = global.RecyclerViewHolder;
     var MAX_KEEP_LINES_RANGE_LENGTH = 300;
     var ScrollSaver = global.ScrollSaver;
@@ -14,7 +13,7 @@ _Define(function(global) {
         div.className = "searchResultTitle";
         div.innerHTML = "<h6 class='clipper searchResultFile'></h6>" + "<div class='edge_box-1 h-30'>" +
             "<i class='fill_box center numRanges'></i>" +
-            "<i class='material-icons side-1 foldResult'>keyboard_arrow_up</i></div>";
+            "<button class='material-icons side-1 hoverable btn-toggle foldResult'>keyboard_arrow_up</button></div>";
         div.style.width = '100%';
         if (!noRecycle) div.style.position = 'absolute';
         return $(div);
@@ -27,7 +26,6 @@ _Define(function(global) {
         lineCache = new RecyclerViewCache(function() {
             var div = document.createElement("div");
             div.style.width = '100%';
-            div.className = renderer.config.themeClass;
             div.style.position = 'absolute';
             return $(div);
         }, el[0]);
@@ -99,25 +97,25 @@ _Define(function(global) {
                 //ranges are split into line chunks of maxHeight for renderering
                 maxHeight: 5,
                 start: 0,
-                hidden: ranges.length>100,
+                hidden: ranges.length > 100,
                 views: []
             }, holder_props);
             holder.session.setUseWorker(false);
             return holder;
         };
         recycler = new RecyclerRenderer();
-        //var visualizer = ViewportVisualizer.create(el[0], recycler);
+        // var visualizer = ViewportVisualizer.create(el[0], recycler);
         var scrollers = ScrollSaver.getScrollingElements(el);
         recycler.beforeRender = function() {
-            el.css('height', recycler.height);
-            if (el.css('height') != recycler.height + "px") {
-                var store = ScrollSaver.saveScroll(scrollers);
-                el.css('height', recycler.height + 'px');
-                if (store._5sum != ScrollSaver.getScroll(scrollers)) {
-                    ScrollSaver.restoreScroll(scrollers, els);
-                }
-            }
-            //visualizer.update();
+            el.css('height', recycler.height+'px');
+            //if (el.css('height') != recycler.height + "px") {
+                // var store = ScrollSaver.saveScroll(scrollers);
+                // el.css('height', recycler.height + 'px');
+                // if (store._5sum != ScrollSaver.getScroll(scrollers)) {
+                //     ScrollSaver.restoreScroll(scrollers, store);
+                // }
+            //}
+            // visualizer.update();
         };
         //recycler.viewport = recycler.INFINITE_VIEWPORT;
         //load everything at once?
@@ -135,8 +133,8 @@ _Define(function(global) {
                 e.searchData = null;
             });
             renderer.config.width = el.width() - 20;
-            var edit = getEditor();
-            renderer.config.themeClass = 'ace_editor '+edit.renderer.$theme;
+            var editor = getEditor();
+            renderer.config.themeClass = "ace_editor " + (editor.renderer.theme.isDark ? "ace_dark " : "") + editor.renderer.$theme;
         };
         ctx.render = function(doc, ranges) {
             var holder = getHolder(doc, ranges);
@@ -154,16 +152,22 @@ _Define(function(global) {
                 e.searchData = null;
             });
             //clear searchline data??
-            el.html("");
+            el.children().not('.no-results').remove();
             renderer.config.width = el.width() - 20;
-            renderer.config.themeClass = $('.editor')[0].className;
+            var editor = getEditor();
+            renderer.config.themeClass = "ace_editor " + (editor.renderer.theme.isDark ? "ace_dark " : "") + editor.renderer.$theme;
         };
         ctx.render = function(doc, ranges) {
             var header = createHeader(true);
             setTitle(header[0], doc.getPath(), ranges.length);
             var body = renderer.render(ranges, doc.session);
             bindClickListeners(body.children, ranges, doc.getPath());
-            header.searchData = $(body);
+            header[0].searchData = $(body);
+            if (ranges.length > 100) {
+                body.style.display = 'none';
+                header.find('.foldResult').addClass('btn-toggle__activated');
+            }
+            el[0].appendChild(header[0]);
             el[0].appendChild(body);
         };
     }
@@ -177,13 +181,10 @@ _Define(function(global) {
         }
         el.on("click.resultview", ".foldResult", function() {
             var a = $(this).closest(".searchResultTitle")[0].searchData;
-            if (a.css("display") == "none") {
-                a.show();
-                $(this).html("keyboard_arrow_up");
-            } else {
-                a.hide();
-                $(this).html("keyboard_arrow_down");
-            }
+            var visible = a.css("display") != "none";
+            if (visible) a.hide();
+            else a.show();
+            $(this).toggleClass('btn-toggle__activated', visible);
         });
         var self = this;
         el.on('click.resultview', '.search_line', function(e) {
@@ -196,7 +197,7 @@ _Define(function(global) {
         switchToDoc(el.searchData.path, el.searchData.range.start, el.searchData.range.end, true, this
             .afterLineClicked, this.server);
     };
-    ResultsView.prototype.renderRanges = function(doc,ranges) {
+    ResultsView.prototype.renderRanges = function(doc, ranges) {
         this.clear();
         this.render(doc, ranges);
     };
@@ -250,11 +251,7 @@ _Define(function(global) {
         HeaderViewHolder.prototype.bindView = function() {
             setTitle(this.view, this.path, this.numResults);
             this.view[0].searchData = this.holder;
-            if (this.holder.hidden) {
-                this.view.find('.foldResult').html("keyboard_arrow_down");
-            } else {
-                this.view.find('.foldResult').html("keyboard_arrow_up");
-            }
+            this.view.find('.foldResult').toggleClass('btn-toggle__activated', this.holder.hidden);
         };
         HeaderViewHolder.prototype.detach = function() {
             if (this.view) this.view[0].searchData = null;
@@ -264,20 +261,24 @@ _Define(function(global) {
             RecyclerViewHolder.apply(this, [holder.lineCache, renderer, 0]);
             var start = holder.start || 0;
             this.holder = holder;
-            this.hidden  = holder.hidden;
+            this.hidden = holder.hidden;
             this.renderer = renderer;
             this.height = 0;
             this.range = holder.ranges;
             if (holder.maxHeight <= 0) {
                 throw 'Error Invalid maxHeight';
             }
+            this.isFirst = (start == 0);
             for (var i = start; this.height < holder.maxHeight && i < holder.ranges.length; i++) {
                 this.height += this.range[i].end.row - this.range[i].start.row + 1;
             }
+            this.isLast = (i == this.holder.ranges.length);
             var end = i;
             this.range = holder.ranges.slice(start, end);
             holder.start = i;
-            this.height *= (holder.config.lineHeight+holder.config.padding*2);
+            this.height *= (holder.config.lineHeight + holder.config.padding * 2);
+            if (this.isFirst) this.height += 3;
+            if (this.isLast) this.height += 3;
             renderer.register(Infinity, this);
         };
         ResultViewHolder.prototype = Object.create(RecyclerViewHolder.prototype);
@@ -287,10 +288,13 @@ _Define(function(global) {
         ResultViewHolder.prototype.bindView = function() {
             //quite unfortunate,
             this.view[0].innerHTML = "";
+            this.view[0].className = this.holder.config.themeClass + " border-secondary";
             //maybe later we can reuse
             //the lineelements
             var ranges = this.range;
             this.view.css('height', this.height + 'px');
+            this.view.toggleClass('range_renderer__first', this.isFirst);
+            this.view.toggleClass('range_renderer__last', this.isLast);
             this.holder.renderer.render(ranges, this.holder.session, null, this.view[0], this.holder.lastLine);
             bindClickListeners(this.view[0].children, ranges, this.holder.path);
         };

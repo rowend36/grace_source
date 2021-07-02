@@ -52,11 +52,11 @@ _Define(function(global) {
                         dragT > swipeConfig.dragThreshold
                     ) {
                         swipeDetected = true;
-                        if (dy < 0 && !bottomBar.hasClass("closed")) {
-                            bottomBar.addClass("closed");
+                        if (dy < 0 && !bottomBar.hasClass("toolbar-unfold")) {
+                            bottomBar.addClass("toolbar-unfold");
                             updateBar(true);
-                        } else if (dy > 0 && bottomBar.hasClass("closed")) {
-                            bottomBar.removeClass("closed");
+                        } else if (dy > 0 && bottomBar.hasClass("toolbar-unfold")) {
+                            bottomBar.removeClass("toolbar-unfold");
                             updateBar(false);
                         }
                     }
@@ -222,12 +222,11 @@ _Define(function(global) {
             var elements = scrollData.detected.getElementsByClassName(
                 "scroll-point"
             );
-
             var scrollLeft = scrollData.detected.scrollLeft;
             var width = scrollData.detected.clientWidth;
-            var right = scrollLeft + width;
-            var scrollPointToLeft = scrollData.dir * 2,
-                scrollPointToRight = scrollLeft + scrollPointToLeft;
+            // var right = scrollLeft + width;
+            var scrollPointToLeft = 0,
+                scrollPointToRight = scrollData.detected.scrollWidth - width;
             for (var i = 0; i < elements.length; i++) {
                 var x = elements[i].offsetLeft;
                 if (x < scrollLeft) {
@@ -238,38 +237,76 @@ _Define(function(global) {
                 }
             }
             var finalScrollPoint;
-            if (scrollData.dir > 0 && scrollPointToLeft < scrollData.orig) {
+            if (scrollData.dir > 0 && scrollPointToLeft <= scrollData.orig) {
+                //scrolled left, lock to next
                 finalScrollPoint = scrollPointToRight;
             } else if (
                 scrollData.dir < 0 &&
-                scrollPointToRight > scrollData.orig
+                scrollPointToRight >= scrollData.orig
             ) {
+                //scrolled right, lock to previous
                 finalScrollPoint = scrollPointToLeft;
             } else {
+                //lock to closest since scrollPointToLeft hasn't changed
                 if (
-                    scrollLeft - scrollPointToLeft <
+                    scrollLeft + scrollData.dir * 2 - scrollPointToLeft <
                     scrollPointToRight - scrollLeft
                 ) {
                     finalScrollPoint = scrollPointToLeft;
                 } else {
                     finalScrollPoint = scrollPointToRight;
                 }
+                if (Math.abs(
+                        finalScrollPoint - scrollLeft
+                    ) > width / 2) return (scrollData.cancelled = true);
             }
-            if (
-                Math.abs(
-                    finalScrollPoint - scrollLeft - scrollData.dir * 2 - 20
-                ) < 150
-            )
-                scrollData.detected.scrollLeft =
-                finalScrollPoint - scrollData.dir * 2 - 20;
+            animate(scrollLeft,
+                finalScrollPoint - 20);
+
             scrollData.cancelled = true;
+        }
+        var animTimeout;
+
+        var ramp = [0, 0.008, 0.032, 0.072, 0.128, 0.2, 0.3, 0.4, 0.5];
+        var steps = [];
+        for (var j = 0; j < ramp.length - 1; j++) {
+            steps.push(ramp[j]);
+            steps.push(0.25 * ramp[j + 1] + 0.75 * ramp[j]);
+            steps.push(0.5 * (ramp[j] + ramp[j + 1]));
+            steps.push(0.25 * ramp[j] + 0.75 * ramp[j + 1]);
+        }
+        for (var i = steps.length - 2; i >= 0; i--) {
+            steps.push(1 - steps[i]);
+        }
+
+        var STEPS = steps.length;
+
+        function animate(startX, targetX) {
+            var x = 0;
+            var delta = targetX - startX;
+            var speed = Math.abs(delta) < 100 ? 3 : 1;
+            animTimeout = setInterval(function() {
+                scrollData.detected.scrollLeft = startX + delta * (STEPS[x += speed] | 1);
+                if (x >= STEPS) {
+                    clearInterval(animTimeout);
+                    animTimeout = null;
+                }
+            }, 13);
+
         }
         return {
             onScroll: scrollLock,
+            onRelease: function() {
+
+            },
             cancel: function() {
                 if (lockTimeout) {
                     clearTimeout(lockTimeout);
                     lockTimeout = null;
+                }
+                if (animTimeout) {
+                    clearInterval(animTimeout);
+                    animTimeout = null;
                 }
                 scrollData = null;
             },
@@ -362,7 +399,7 @@ _Define(function(global) {
             modKeyInput.style.height = "50px";
             modKeyInput.style.top = "0px";
             modKeyInput.style.right = "0px";
-            modKeyInput.setAttribute("name","mod-key-input");
+            modKeyInput.setAttribute("name", "mod-key-input");
             modKeyInput.style.position = "absolute";
             event.addListener(modKeyInput, "input", function(e) {
                 var char = modKeyInput.value;
@@ -411,7 +448,6 @@ _Define(function(global) {
                 lastBlurTime = time;
             }
         }
-        var regex = /mod\-key\-(?:held|active|inactive)/;
 
         //Don't laugh stupid previous regex code cost me hours of debugging, tip: if you put enough spaces spaces (like 10000) in a className, it chamges something 
         function setCls(name, cls, yes) {
@@ -428,7 +464,7 @@ _Define(function(global) {
                 var name = target.className.split(" ");
                 setCls(name, "mod-key-held", held[key]);
                 setCls(name, "mod-key-active", (pressed[key] || key == 'esc') && !held[key]);
-                setCls(name, "mod-key-inactive", !(held[key] || pressed[key] || key == 'esc'));
+                setCls(name, "color-inactive", !(held[key] || pressed[key] || key == 'esc'));
                 target.className = name.join(" ").replace("  ", " "); //:)
                 return;
 
@@ -517,7 +553,7 @@ _Define(function(global) {
         };
 
         function doHandle(keyCode, hashId, keyString) {
-            hashId |= getHash(keyCode>-1);
+            hashId |= getHash(keyCode > -1);
 
             if (!getHash()) {
                 if (/A-Za-z/.test(keyString)) closeModKey();
@@ -664,6 +700,9 @@ _Define(function(global) {
             setClipboard: function(e) {
                 clipboard = e;
             },
+            setToolbar: function(e) {
+                toolbar = e;
+            },
             remove: function(j) {
                 if (j) {
                     for (var i in held) {
@@ -736,7 +775,6 @@ _Define(function(global) {
         "toolbars"
     );
     global.registerValues({
-            toolbars: "All the positioning options need restart",
             characterBarChars: "characters to show on character bar\n\
 It's a bit similar to snippets. But with a different syntax\n\
 --S-- represents selected text,\n\
@@ -754,23 +792,29 @@ It's a bit similar to snippets. But with a different syntax\n\
     );
 
     var configEvents = global.ConfigEvents;
+    var Utils = global.Utils;
+    var postRebuild;
     configEvents.on("toolbars", function(e) {
         switch (e.config) {
             case "characterBarChars":
-                createCharBar(e.newValue);
+                setChars(e.newValue);
                 break;
             default:
-                ///needs reload
+                postRebuild = postRebuild || Utils.delay(rebuild);
+                postRebuild();
         }
     });
     var clipboard;
+    //
     var topEl, topBar, bottomEls, bottomBar, viewToggle;
     var addElement = function(el, above) {
         if (above) {
             if (topEl) throw "Error: multiple top bars";
             topEl = el;
-            topBar = $(createBar("top"));
-            topBar.addClass("top-bar");
+            if (!topBar) {
+                topBar = $(createBar("top"));
+                topBar.addClass("top-bar");
+            }
             topBar[0].appendChild(topEl[0]);
         } else {
             if (!bottomBar) {
@@ -796,8 +840,8 @@ It's a bit similar to snippets. But with a different syntax\n\
         toggle.innerHTML = '<i class="material-icons">swap_horiz</i>';
         bar.insertBefore(toggle, bar.firstChild);
         var index = 0;
-        var element = bottomEls[0];
         toggle.onclick = function(e) {
+            var element = bottomEls[index];
             element.hide();
             index = (index + 1) % bottomEls.length;
             element = bottomEls[index];
@@ -815,6 +859,7 @@ It's a bit similar to snippets. But with a different syntax\n\
         FocusManager.trap($(bar), true);
         return bar;
     };
+    //views used by linearlayout
     var bottomView, topView;
     var createBottomToggle = function() {
         $("#toolbar-toggle").click(function(e) {
@@ -833,6 +878,9 @@ It's a bit similar to snippets. But with a different syntax\n\
             e.stopPropagation();
         });
         FocusManager.trap($("#toolbar-toggle"), true);
+        createBottomToggle = function() {
+            $("#toolbar-toggle").show();
+        };
     };
 
     function createToolBar(tools) {
@@ -875,8 +923,8 @@ It's a bit similar to snippets. But with a different syntax\n\
         var target = $(e.target).closest("button")[0];
         if (!target) return;
         var id = target.getAttribute("id");
-        if (tools[id] && tools[id].onhold) {
-            editor.execCommand(tools[id].onhold);
+        if (allTools[id] && allTools[id].onhold) {
+            editor.execCommand(allTools[id].onhold);
         }
         e.preventDefault();
     }
@@ -934,10 +982,7 @@ It's a bit similar to snippets. But with a different syntax\n\
     function createCharBar(chars) {
         var bar = document.createElement("div");
         for (var o in chars) {
-            var i = chars[o]
-                .replace(/&/g, "&amp;")
-                .replace(/</g, "&lt;")
-                .replace(/>/g, "&gt;")
+            var i = global.Utils.htmlEncode(chars[o])
                 .replace(/'/g, "\\'");
 
             var caption = "";
@@ -1025,7 +1070,7 @@ It's a bit similar to snippets. But with a different syntax\n\
         e.stopPropagation();
     }
 
-    var tools = {
+    var allTools = {
         save: {
             icon: "save",
             onhold: "saveAs",
@@ -1075,19 +1120,42 @@ It's a bit similar to snippets. But with a different syntax\n\
         },
         copy: "content_copy",
         cut: "content_cut",
+        findprevious: "chevron_left",
+        findnext: "chevron_right",
+        goToNextError: "warning",
         blockindent: "format_indent_increase",
         blockoutdent: "format_indent_decrease",
         togglerecording: "fiber_manual_record",
         replaymacro: "replay",
         toggleFullscreen: "fullscreen",
     };
-    var modtools;
-    if (appConfig.enableArrowKeys || appConfig.enableModKeys) {
+
+    function destroy() {
+        toolbar = metabar = charbar = null;
+        if (topEl) {
+            topEl.remove();
+            topEl = null;
+        }
+        if (bottomEls) {
+            bottomEls.forEach(function(e) {
+                e.remove();
+            });
+            bottomEls.length = 0;
+        }
+    }
+    var toolbar, metabar, charbar, swipe, mods, mainLayout;
+
+    function rebuild() {
+        destroy();
+        var modtools;
+        var tools = Object.assign({}, allTools);
+        var hasMods = 2;
         if (!appConfig.enableModKeys) {
             delete tools.shift;
             delete tools.ctrl;
             delete tools.alt;
             delete tools.esc;
+            hasMods--;
         } else if (
             appConfig.enableModKeys !== true &&
             appConfig.enableModKeys !== "toggle"
@@ -1105,139 +1173,174 @@ It's a bit similar to snippets. But with a different syntax\n\
             delete tools["a-right"];
             delete tools["a-down"];
             delete tools["a-up"];
+            hasMods--;
         }
-        if (appConfig.toolbarPosition == "above") {
-            modtools = {};
-            var metaKeys = [
-                "startAutocomplete",
-                "esc",
-                "shift",
-                "ctrl",
-                "a-left",
-                "a-down",
-                "a-up",
-                "a-right",
-                "alt",
-            ];
-            for (var i in metaKeys) {
-                if (tools[metaKeys[i]]) {
-                    modtools[metaKeys[i]] = tools[metaKeys[i]];
-                    delete tools[metaKeys[i]];
+        if (hasMods) {
+            if (appConfig.toolbarPosition == "above") {
+                modtools = {};
+                var metaKeys = [
+                    "startAutocomplete",
+                    "esc",
+                    "shift",
+                    "ctrl",
+                    "a-left",
+                    "a-down",
+                    "a-up",
+                    "a-right",
+                    "alt",
+                ];
+                for (var i in metaKeys) {
+                    if (tools[metaKeys[i]]) {
+                        modtools[metaKeys[i]] = tools[metaKeys[i]];
+                        delete tools[metaKeys[i]];
+                    }
+                }
+                metaKeys = null;
+            } else if (tools.esc) {
+                tools.esc.className += " scroll-point";
+            } else if (tools.shift) {
+                tools.shift.className += " scroll-point";
+            } else if (tools.ctrl) {
+                tools.ctrl.className += " scroll-point";
+            } else if (tools["a-left"]) {
+                tools["a-left"].className += " scroll-point";
+            }
+        }
+        /*region clickhandlers*/
+        var shortcut_click = function(id) {
+            editor.execCommand(id);
+        };
+
+        /*endregion*/
+        var lock;
+        if (appConfig.enableLockScrolling) {
+            lock = ScrollLock();
+        }
+        var event_mousedown = "ontouchstart" in window ? "touchstart" : "mousedown";
+        var event_mouseup = "ontouchend" in window ? "touchend" : "mouseup";
+        var event_mousemove = "ontouchmove" in window ? "touchmove" : "mousemove";
+
+        var repeat;
+        if (appConfig.toolbarPosition) toolbar = $(createToolBar(tools));
+        if (modtools) {
+            metabar = $(createToolBar(modtools));
+        }
+        if (mods) mods.setToolbar(metabar || toolbar);
+        else mods = ModKeyInput(
+            metabar || toolbar, {
+                "Ctrl-V": doPaste,
+                "Ctrl-C": doCopy,
+                "Ctrl-X": doCut,
+            },
+            parseInt(appConfig.characterBarDoubleClickIntervalMs),
+            global
+        );
+        mods.setClipboard(clipboard);
+
+        if (toolbar || metabar) {
+            repeat = RepeatDetector(
+                mods,
+                appConfig,
+                shortcut_click,
+                tools,
+                handleToolClick
+            );
+        }
+        //not mousedown because of focus
+        if (toolbar) {
+            toolbar.on("click", handleToolClick);
+            toolbar.on(event_mousedown, repeat.start);
+            lock && toolbar.on(event_mousedown, lock.cancel);
+            lock && toolbar.on(event_mouseup, lock.onRelease);
+            toolbar.on(event_mouseup, repeat.end);
+            toolbar.on("scroll", repeat.cancel);
+            toolbar.on("contextmenu", handleContextMenu);
+            lock && toolbar.on("scroll", lock.onScroll);
+            addElement(toolbar, appConfig.toolbarPosition == "above");
+        }
+        if (metabar) {
+            metabar.on("click", handleToolClick);
+            metabar.on(event_mousedown, repeat.start);
+            metabar.on(event_mouseup, repeat.end);
+            metabar.on("scroll", repeat.cancel);
+            addElement(metabar);
+        }
+
+        if (appConfig.showCharacterBar) {
+            charbar = $(createCharBar(appConfig.characterBarChars));
+            charbar.on("mousedown", "button", handleCharClick);
+            lock && charbar.on("scroll", lock.onScroll);
+            lock && charbar.on(event_mousedown, lock.cancel);
+            lock && charbar.on(event_mouseup, lock.onRelease);
+            addElement(charbar);
+        }
+        if (
+            appConfig.showCharacterBar == "toggle" ||
+            appConfig.toolbarPosition == "toggle" ||
+            appConfig.enableModKeys == true ||
+            (appConfig.enableModKeys &&
+                appConfig.enableModKeys.indexOf("toggle") > -1) ||
+            appConfig.enableArrowKeys == "toggle"
+        ) {
+            createBottomToggle();
+            $("#status-filename").css("left", "60px");
+        } else {
+            $("#toolbar-toggle").hide();
+            $("#status-filename").css("left", "10px");
+        }
+        if (bottomBar && bottomEls.length < 1) {
+            bottomView.hide();
+        } else if (bottomEls.length > 0) {
+            if (!swipe) {
+                swipe = SwipeDetector(bottomBar, function(closed) {
+                    bottomBar.css("height", "auto");
+                    bottomView.computeSize("height");
+                    bottomView.parent.render();
+                    $("#toolbar-toggle").css("bottom", bottomBar.css("height"));
+                });
+                bottomBar.on(event_mousedown, swipe.start);
+                bottomBar.on(event_mousemove, swipe.move);
+                bottomBar.click(function(e) {
+                    e.stopPropagation();
+                });
+                $('.content')[0].appendChild(bottomBar[0]);
+                bottomView = mainLayout.addChild(bottomBar, 40, 0);
+                if (!viewToggle) bottomEls[0].css("padding-left", "20px");
+            } else {
+                bottomView.show();
+                if (bottomEls.length > 1) {
+                    $(viewToggle).show();
+                    bottomBar.addClass('edge_box-1-0');
+                } else {
+                    if (viewToggle) {
+                        $(viewToggle).hide();
+                        bottomBar.removeClass('edge_box-1-0');
+                    }
+                    bottomEls[0].css("padding-left", "20px");
                 }
             }
-            metaKeys = null;
-        } else if (tools.esc) {
-            tools.esc.className += " scroll-point";
-        } else if (tools.shift) {
-            tools.shift.className += " scroll-point";
-        } else if (tools.ctrl) {
-            tools.ctrl.className += " scroll-point";
-        } else if (tools["a-left"]) {
-            tools["a-left"].className += " scroll-point";
         }
-    }
 
-    /*region clickhandlers*/
-    var shortcut_click = function(id) {
-        editor.execCommand(id);
-    };
 
-    /*endregion*/
-    var lock;
-    if (appConfig.enableLockScrolling) {
-        lock = ScrollLock();
-    }
-    var event_mousedown = "ontouchstart" in window ? "touchstart" : "mousedown";
-    var event_mouseup = "ontouchend" in window ? "touchend" : "mouseup";
-    var event_mousemove = "ontouchmove" in window ? "touchmove" : "mousemove";
-
-    var toolbar, mods, repeat;
-    if (appConfig.toolbarPosition) toolbar = $(createToolBar(tools));
-    var metabar;
-    if (modtools) {
-        metabar = $(createToolBar(modtools));
-    }
-    mods = ModKeyInput(
-        metabar || toolbar, {
-            "Ctrl-V": doPaste,
-            "Ctrl-C": doCopy,
-            "Ctrl-X": doCut,
-        },
-        parseInt(appConfig.characterBarDoubleClickIntervalMs),
-        global
-    );
-    mods.setClipboard(clipboard);
-
-    if (toolbar || metabar) {
-        repeat = RepeatDetector(
-            mods,
-            appConfig,
-            shortcut_click,
-            tools,
-            handleToolClick
-        );
-    }
-    //not mousedown because of focus
-    if (toolbar) {
-        toolbar.on("click", handleToolClick);
-        toolbar.on(event_mousedown, repeat.start);
-        lock && toolbar.on(event_mousedown, lock.cancel);
-        toolbar.on(event_mouseup, repeat.end);
-        toolbar.on("scroll", repeat.cancel);
-        toolbar.on("contextmenu", handleContextMenu);
-        lock && toolbar.on("scroll", lock.onScroll);
-        addElement(toolbar, appConfig.toolbarPosition == "above");
-    }
-    if (metabar) {
-        metabar.on("click", handleToolClick);
-        metabar.on(event_mousedown, repeat.start);
-        metabar.on(event_mouseup, repeat.end);
-        metabar.on("scroll", repeat.cancel);
-        addElement(metabar);
-    }
-
-    var charbar;
-    if (appConfig.showCharacterBar) {
-        charbar = $(createCharBar(appConfig.characterBarChars));
-        charbar.on("mousedown", "button", handleCharClick);
-        lock && charbar.on("scroll", lock.onScroll);
-        lock && charbar.on(event_mousedown, lock.cancel);
-        addElement(charbar);
-    }
-    if (
-        appConfig.showCharacterBar == "toggle" ||
-        appConfig.toolbarPosition == "toggle" ||
-        appConfig.enableModKeys == true ||
-        (appConfig.enableModKeys &&
-            appConfig.enableModKeys.indexOf("toggle") > -1) ||
-        appConfig.enableArrowKeys == "toggle"
-    ) {
-        createBottomToggle();
-    } else {
-        $("#toolbar-toggle").detach();
-        $("#status-filename").css("left", "10px");
-    }
-    if (bottomBar) {
-        var swipe = SwipeDetector(bottomBar, function(closed) {
-            bottomBar.css("height", "auto");
-            bottomView.computeSize("height");
-            bottomView.parent.render();
-            $("#toolbar-toggle").css("bottom", bottomBar.css("height"));
-        });
-        if (!viewToggle) {
-            bottomEls[0][0].style.paddingLeft = "30px";
+        //todo remove topBar if unneeded
+        if (topBar && !topEl) {
+            topView.hide();
+        } else if (topEl) {
+            if (!topView) {
+                $('.content')[0].insertBefore(topBar[0], mainLayout.views[1].$el[0]);
+                topView = mainLayout.addChild(topBar, 40, 0, 1);
+            } else topView.show();
         }
-        bottomBar.on(event_mousedown, swipe.start);
-        bottomBar.on(event_mousemove, swipe.move);
-        bottomBar.click(function(e) {
-            e.stopPropagation();
-        });
-    }
-    global.FileUtils.on("clear-temp", function(e) {
-        mods.close(true);
-    });
 
-    addElement = createToggle = createBar = createBottomToggle = topEl = null;
+        mainLayout.render();
+    }
+
+    function setChars(char) {
+        var bar = createCharBar(char);
+        if (charbar) charbar.html(bar.innerHTML);
+    }
+
+
     global.CharBar = {
         setEditor: function(e) {
             editor = e;
@@ -1252,19 +1355,12 @@ It's a bit similar to snippets. But with a different syntax\n\
             toolbar && toolbar.html(bar.innerHTML);
         },
         init: function(layout) {
-            if (topBar) {
-                document.body.insertBefore(topBar[0], layout.views[1].$el[0]);
-                topView = layout.addChild(topBar, 40, 0, 1);
-            }
-            if (bottomBar) {
-                document.body.appendChild(bottomBar[0]);
-                bottomView = layout.addChild(bottomBar, 40, 0);
-            }
-            layout.render();
+            mainLayout = layout;
+            rebuild();
+            global.FileUtils.on("clear-temp", function(e) {
+                mods.close(true);
+            });
         },
-        setChars: function(char) {
-            var bar = createCharBar(char);
-            if (charbar) charbar.html(bar.innerHTML);
-        },
+        setChars: setChars,
     };
 }); /*_EndDefine*/

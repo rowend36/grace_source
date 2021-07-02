@@ -5,7 +5,7 @@ _Define(function(global) {
     var Docs = global.Docs;
     var Doc = global.Doc;
     var closeDoc = global.closeDoc;
-
+    /**@constructor*/
     function SearchReplace(opts, _server) {
         var undoDeltas = [];
         opts = Object.assign({}, SearchReplace.$defaultOpts, opts);
@@ -155,7 +155,7 @@ _Define(function(global) {
             _server = s;
         };
     }
-
+    SearchReplace.SERVER_DELETED = 'Read failed from server';
     SearchReplace.$defaultOpts = {
         onChecksumFail: function(info, doc) {
             Notify.error("Document " + info.path + " has changed, cannot undo");

@@ -87,7 +87,7 @@
     color: #c98100;
 }
 
-.acediff-gutter-removed {
+.ace_editor .acediff-gutter-removed {
     text-align: left;
     color: red;
 }
@@ -129,16 +129,19 @@
 }
 
 .acediff-swapped .acediff-gutter-removed {
-    border-right: 1px solid red;
+    border-right: 1px solid green;
+}
+.acediff-swapped .acediff-gutter-added {
+    border-left: 1px solid red;
 }
 
 .acediff-content-added .acediff-inline {
     background: rgb(0, 255, 0);
-    opacity: 0.5;
+    opacity: 0.3;
 }
 
 .acediff-added {
-    opacity: 0.4;
+    opacity: 0.2;
     position: absolute;
     background: rgb(0, 255, 0);
 }

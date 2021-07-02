@@ -15,21 +15,23 @@ _Define(function(global) {
     /**
      *  The Virtual Keyboard Detector
      */
-     //The amount of time after a focus during which we can assume any
-     //resize is caused by soft keboard visibility
+    //The amount of time after a focus during which we can assume any
+    //resize is caused by soft keboard visibility
     var FOCUS_RESIZE_WINDOW = global.FOCUS_RESIZE_WINDOW = 800;
     var events = global.AppEvents;
     var setImmediate = global.Utils.setImmediate;
     var noop = global.Utils.noop;
     var virtualKeyboardVisible = false;
     var KeyboardDetector;
+    var debugKey = false;
     if (!Env.isDesktop) {
+        //250 lines just so you can work on the web
         KeyboardDetector = (function(window, undefined) {
             //if you want something done well do it yourself
             var focusListener = (function() {
                 var recentlyFocused = false;
                 var recentlyFocusedTimeout = null;
-                var recentlyFocusedTimeoutDuration = FOCUS_RESIZE_WINDOW*2;
+                var recentlyFocusedTimeoutDuration = FOCUS_RESIZE_WINDOW * 2;
                 var resized = false;
 
                 function handler(e) {
@@ -104,6 +106,7 @@ _Define(function(global) {
                         var margin = keyboardHeight / 4;
                         if (currentWidth != previousWidth) {
                             previousWidth = currentWidth;
+                            keyboardHeight = 0;
                             return 0;
                         }
                         if (
@@ -142,7 +145,7 @@ _Define(function(global) {
                             // This is the only time to assume keyboard is hidden
                             //But it will bring wrong values
                             //on hardware keyboard
-                            if (-heightDiff >= keyboardHeight) {
+                            if (-heightDiff >= keyboardHeight-20) {
                                 keyboardHeight = -heightDiff;
                                 return -2;
                             } else {
@@ -181,16 +184,18 @@ _Define(function(global) {
 
             var waitCount = 0,
                 waitTimeout;
-
-            var wait = window.innerHeight < 1700 ? function() {
+            var focusFail = null;
+            var wait = window.innerHeight < 1000 ? function() {
                 waitCount++;
-                if (!isFocusable(document.activeElement) && virtualKeyboardVisible) {
+                if (virtualKeyboardVisible && !isFocusable(document.activeElement)) {
                     if (trust * la > 0) {
+                        focusFail = "Bad position";
                         last = la;
                         updateScore(true);
                     }
                 } else {
                     if (!waitTimeout) {
+                        focusFail = new Error();
                         waitTimeout = setTimeout(updateScore, FOCUS_RESIZE_WINDOW);
                         last = la;
                     }
@@ -200,8 +205,7 @@ _Define(function(global) {
             //trust keyboard resizeHandler
             var trust = 0.6;
             var la = 0,
-                last = 0,
-                lr = 0;
+                last = 0;
             var lastFail = new Date().getTime() + 10000;
             //Mistake Learning when everything fails
             //>0 keyboard visible <0 keyboard hidden
@@ -256,7 +260,9 @@ _Define(function(global) {
             function resizeHandler() {
                 var score = getScore(sizeListener.activated(virtualKeyboardVisible),
                     focusListener.activated(virtualKeyboardVisible));
-                
+                if(debugKey){
+                    console.log({trust,heightDiff,score});
+                }
                 if (score > 0 && !virtualKeyboardVisible) {
                     virtualKeyboardVisible = true;
                     events.trigger("keyboard-change", {
@@ -269,12 +275,25 @@ _Define(function(global) {
                         visible: false,
                         isTrusted: score < -1,
                     });
+                } else if (score <= 1 && score >= -1) {
+                    //keep on firing events until we are sure of what we are sure of virtualKeyboard value
+                    events.trigger("keyboard-change", {
+                        visible: virtualKeyboardVisible,
+                        isTrusted: false,
+                    });
                 }
             }
             // Make public functions available
             return {
                 init: init,
                 wait: wait,
+                cancelWait: function() {
+                    //indicate that autorefocus has been cancelled
+                    if (waitTimeout) {
+                        clearTimeout(waitTimeout);
+                        waitTimeout = null;
+                    }
+                }
             };
         })(window);
         KeyboardDetector.init();
@@ -312,12 +331,12 @@ _Define(function(global) {
 
     function autoRefocus(e) {
         if (e && KeyboardDetector) KeyboardDetector.wait();
-        if (!virtualKeyboardVisible) return ;
+        if (!virtualKeyboardVisible) return;
         var currentElement = document.activeElement;
         if (!isFocusable(currentElement)) return;
         if (activeElement) {
             if (activeElement == currentElement) {
-                if (clearRefocusTimer){
+                if (clearRefocusTimer) {
                     clearTimeout(clearRefocusTimer);
                     clearRefocusTimer = null;
                 }
@@ -330,7 +349,6 @@ _Define(function(global) {
         activeElement.addEventListener("blur", on_blur);
         document.addEventListener("focusin", on_blur);
         focus(activeElement);
-        return;
     }
 
     function autoRefocusEagerly(e) {
@@ -374,8 +392,10 @@ _Define(function(global) {
         if (clearRefocusTimer) {
             clearTimeout(clearRefocusTimer);
         }
-        if (immediate === true) stopAutoRefocus();
-        else clearRefocusTimer = setTimeout(stopAutoRefocus, 600);
+        if (immediate === true) {
+            stopAutoRefocus();
+            KeyboardDetector && KeyboardDetector.cancelWait();
+        } else clearRefocusTimer = setTimeout(stopAutoRefocus, FOCUS_RESIZE_WINDOW);
     }
     var event_mousedown = "ontouchstart" in window ? "touchstart" : "mousedown";
     var event_mouseup = "ontouchend" in window ? "touchend" : "mouseup";
@@ -464,6 +484,9 @@ _Define(function(global) {
         },
         hintNoChangeFocus: function() {
             hook = true;
+        },
+        debug: function(){
+            debugKey = true;
         },
         get keyboardVisible() {
             return virtualKeyboardVisible;

@@ -5,48 +5,49 @@ _Define(function(global) {
     var supportedModes = ["java", "python", "javascript", "c_cpp",
         "jsx"
     ];
-    var RE =
-        /[a-zA-Z\$\-\u00C0-\u1FFF\u2C00-\uD7FF][a-zA-Z_0-9\$\-\u00C0-\u1FFF\u2C00-\uD7FF\w]*/g;
     var Docs = global.Docs;
     var getProject = global.FileUtils.getProject;
     var Utils = global.Utils;
     var relative = global.FileUtils.relative;
     var BaseServer = global.BaseServer;
+    var appConfig = global.registerAll({
+        "enableTagGathering": "false,text,css," + supportedModes.join(","),
+        "enableTagsCompletion": "false,css," + supportedModes.join(","),
+        "showTagsInAllFileTypes": "false,css,json",
+        "showTagsFromAllFileTypes": "true," + supportedModes.join(","),
+        "enableWordsGathering": "false,python",
+        'gatherTagsOnRequest': "true"
+    }, "autocompletion.tags");
+    global.registerValues({
+        '!root': 'Ctags like implementation for language support. All the options can be specified in the format of true|false followed by an optional list of exceptions as modes. Example "true,javascript,css" means enable except in javascript and css modes',
+        'enableTagsCompletion': 'Allow tokens such as functions,properties,etc to show up in comppetions.',
+        'showTagsInAllFileTypes': 'Allow tokens from files of this mode to show up in other modes',
+        'enableTagGathering': 'Gtags can find contextual information rather than just plain text for any of the ' +
+            supportedModes.join(", "),
+        'enableWordsGathering': 'Useful if tag support is not good enough and only works if "enableTagGathering" is enabled for that mode',
+        "gatherTagsOnRequest": "Allow the system to gather tags from the current file whenever a request is made even if not explicitly loaded"
+    }, "autocompletion.tags");
+    global.ConfigEvents.on("autocompletion.tags", function(e) {
+        if (e.newValue && !(/^(?:true|false)[$,]/)) {
+            global.Notify.info("Invalid value for " + e.config);
+            return e.preventDefault();
+        }
+        cache = {};
+        if (e.config.indexOf('Gathering') > -1) {
+            global.TagCompleter.clear();
+        }
+    });
+    var WORD_RE =
+        /[a-zA-Z\$\-\u00C0-\u1FFF\u2C00-\uD7FF][a-zA-Z_0-9\$\-\u00C0-\u1FFF\u2C00-\uD7FF\w]*/g;
     var tagFinders = global.TagFinders = {
         "text": function(res) {
-            var matches = res.match(RE);
+            var matches = res.match(WORD_RE);
             return matches && matches.map(function(e) {
                 return (" " + e).substring(1);
             });
         }
     };
-    var ServerUtils = global.ServerUtils;
-    var appConfig = global.registerAll({
-        "enableTagGathering": "false,javascript,python,c_cpp,java,text,php,css",
-        "enableTagsCompletion": "false,javascript,python,c_cpp,java,text,php,css",
-        "enableCompletionAcrossModes": "false,css",
-        "enableWordsGathering": "false,python",
-        'allowTagsOnRequest': "true"
-    }, "autocompletion.tags");
-    global.registerValues({
-        '!root': 'Ctags like implementation for language support. All the options can be specified in the format of true|false followed by an optional list of exceptions as modes. Example "true,javascript,css" means enable except in javascript and css modes',
-        'enableTagsCompletion': 'Allow tokens such as functions,properties,etc to show up in comppetions.',
-        'enableCompletionAcrossModes': 'Allow tokens from files of this mode to show up in other modes',
-        'enableTagGathering': 'Gtags can find contextual information rather than just plain text for any of the ' +
-            supportedModes.join(", "),
-        'enableWordsGathering': 'Useful if tag support is not good enough and only works if "enableTagGathering" is enabled for that mode',
-        "allowTagsOnRequest": "Allow the system to gather tags from the current file whenever a request is made even if not explicitly loaded"
-    }, "autocompletion.tags");
-    global.ConfigEvents.on("autocompletion.tags", function(e) {
-        if (e.newValue && !(/^(?:true|false)[$,]/)){
-            global.Notify.info("Invalid value for "+e.config);
-            return e.preventDefault();
-        }
-        cache = {};
-        if (e.config.indexOf('Gathering')>-1) {
-            global.TagCompleter.clear();
-        }
-    });
+
     var cache = {};
 
     function isEnabled(option, mode, filepath) {
@@ -97,10 +98,6 @@ _Define(function(global) {
     var TAGS = 'tags';
     var resolvers = global.ImportResolvers = {};
     var scopeSolvers = global.ScopeSolvers = {};
-    var defaultScope = [{
-        start: 0,
-        end: Infinity
-    }];
 
     function scopeIterator(scopes) {
         var rootScopes = [];
@@ -243,7 +240,6 @@ _Define(function(global) {
                     if (a.signature) {
                         a.scope = findScope(a.loc);
                         if (a.scope && a.signature == 'parameter') {
-                            var i = 0;
                             for (var i in a.scope.children) {
                                 if (a.scope.children[i].start > a.loc) {
                                     a.scope = a.scope.children[i];
@@ -255,7 +251,7 @@ _Define(function(global) {
                 }
                 if (!caption) return;
                 var left = a && (a.scope || a.signature);
-                var i = 1,
+                var j = 1,
                     key = caption;
                 do {
                     var dup = completions[key];
@@ -278,8 +274,8 @@ _Define(function(global) {
                         a = dup;
                     }
                     a.score--;
-                    key = i++ + ")" + caption;
-                } while (i < 9);
+                    key = j++ + ")" + caption;
+                } while (j < 9);
             });
             words[filename] = completions;
         },
@@ -306,17 +302,24 @@ _Define(function(global) {
             cursor = cursor || editor.getSelection().cursor;
             var pos = editor.session.getDocument().positionToIndex(cursor);
             if (!name) {
-                var name = editor.session.getTokenAt(cursor.row, cursor
+                name = editor.session.getTokenAt(cursor.row, cursor
                     .column);
                 if (!name || !/\w/.test(name.value)) name = editor.session.getTokenAt(
                     cursor.row, cursor.column + 1);
                 if (!name || !/\w/.test(name.value)) return null;
                 name = name.value;
             }
+            var file = this.options.getFileName(editor.session);
+            var now = new Date().getTime();
+            if (now - lastUpdate > 5000) {
+                for (var filename in words) {
+                    this.updateDoc(filename);
+                }
+                lastUpdate = now;
+            }
             if (!words[file]) {
-                var file = this.options.getFileName(editor.session);
                 var mode = editor.session.getMode().$id.split("/").pop();
-                if (isEnabled(appConfig.allowTagsOnRequest, mode, file)) {
+                if (isEnabled(appConfig.gatherTagsOnRequest, mode, file)) {
                     this.loadTags(file, editor.session.getValue(), true);
                 }
             }
@@ -497,7 +500,7 @@ _Define(function(global) {
                 } else {
                     //just use all of them
                 }
-                if (isEnabled(appConfig.allowTagsOnRequest, mode, path))
+                if (isEnabled(appConfig.gatherTagsOnRequest, mode, path))
                     this.updateDoc(path);
             }
             if (!prefix) {
@@ -524,9 +527,11 @@ _Define(function(global) {
                 var current = (filename == path);
                 var rel = relative(projectRoot, filename) || filename;
                 var tagsForFile = words[filename];
-                if (tagsForFile["!mode"] != mode) {
-                    if (!isEnabled(appConfig.enableCompletionAcrossModes, tagsForFile["!mode"], filename)) return;
+                var tagMode = tagsForFile["!mode"];
+                if (tagMode != mode) {
+                    if (!(isEnabled(appConfig.showTagsFromAllFileTypes, mode, filename) || isEnabled(appConfig.showTagsInAllFileTypes, tagMode, filename))) return;
                 }
+                var allowsText = isEnabled(appConfig.enableWordsGathering, tagMode, filename);
                 for (var tag in tagsForFile) {
                     var data = tagsForFile[tag];
                     if (tag[0] == "!") continue;
@@ -539,51 +544,53 @@ _Define(function(global) {
                         uniq[tag] = true;
                     }
                     //prefilter
-                    if (tag.indexOf(prefix) > -1) {
-                        var score = 0;
-                        //based on scope 100 # -400
-                        var scope = data && data.scope;
-                        if (current) {
-                            score += 50;
-                            if (scope) {
-                                if (scope.start <= index && scope.end >= index) {
-                                    score += 100;
-                                }
-                            }
-                        } else if (scope) {
-                            if (scope.start != 0) {
-                                score -= 400;
-                            }
-                        } else score -= 300;
-                        
-                        //props ~ -200
-                        if (props) {
-                            if (props[tag]) {
-                                uniq[tag] = true;
-                                score += props[tag] * 5;
-                            } else score -= 200;
+                    if (tag.indexOf(prefix) < 0) continue;
+                    var score = 0;
+                    //based on scope 100 # -400
+                    var scope = data && data.scope;
+                    if (current)
+                        score += 50;
+                    if (!data) {
+                        //words from other files
+                        score -= 300;
+                    } else if (!scope) {
+                        //global scope
+                    } else if (current) {
+                        if (scope.start <= index && scope.end >= index) {
+                            score += 100;
                         }
-                        
-                        if (data) {
-                            if (data.getScore) {
-                                score += data.getScore(prefix);
-                            } else score += (data.score || 1);
-                            if (props && data.isProperty)
-                                score += 100;
-                            if (score < 0) score = tag[1] == ")" ? 0 : 1;
-
+                    } else {
+                        if (scope.start != 0) {
+                            score -= 400;
                         }
-                        completions.push({
-                            type: TAGS,
-                            caption: tag,
-                            meta: rel,
-                            value: (data && data.caption) ||
-                                tag,
-                            message: (data && data.signature) || (props && props[tag] && "property"),
-                            doc: data && data.doc,
-                            score: score
-                        });
                     }
+                    //props ~ -200
+                    if (props) {
+                        if (props[tag]) {
+                            uniq[tag] = true;
+                            score += props[tag] * 5;
+                        } else score -= 200;
+                    }
+
+                    if (data) {
+                        if (data.getScore) {
+                            score += data.getScore(prefix);
+                        } else score += (data.score || 1);
+                        if (props && data.isProperty)
+                            score += 100;
+                    } else if (allowsText) {
+                        score = tag[1] == ")" ? 199 : 200;
+                    }
+                    completions.push({
+                        type: TAGS,
+                        caption: tag,
+                        meta: rel,
+                        value: (data && data.caption) ||
+                            tag,
+                        message: (data && data.signature) || (props && props[tag] && "property"),
+                        doc: data && data.doc,
+                        score: score
+                    });
                 }
             });
             for (var prop in props) {
@@ -593,7 +600,6 @@ _Define(function(global) {
                         type: TAGS,
                         message: "property",
                         score: 300 + Math.min(props[prop] * 5, 200)
-
                     });
                 }
             }
@@ -630,15 +636,15 @@ _Define(function(global) {
         }
 
     };
-    var word = /^[\$_\w]+/;
+    var wordAfterRe = /^[\$_\w]+/;
 
     function nextIdent(text, a) {
-        return word.exec(text.substring(a, a + 50));
+        return wordAfterRe.exec(text.substring(a, a + 50));
     }
-    var word2 = /[\$_\w]+$/;
+    var wordBeforeRe = /[\$_\w]+$/;
 
     function prevIdent(text, a) {
-        return word2.exec(text.substring(Math.max(0, a - 50), a));
+        return wordBeforeRe.exec(text.substring(Math.max(0, a - 50), a));
     }
     //further work, use type and shit, but that's for another person
     function createProps(name, doc, timeout) {
@@ -684,12 +690,12 @@ _Define(function(global) {
         while ((delta = (timeout - new Date().getTime())) > 0) {
             file = toCheck.pop();
             if (!file) return res;
-            var doc = tags.docs[file];
-            if (!doc) continue;
-            if (!doc.doc.getValue && typeof doc.doc != 'string') {
-                console.error(doc.doc);
+            var data = tags.docs[file];
+            if (!data) continue;
+            if (!data.doc.getValue && typeof data.doc != 'string') {
+                console.error(data.doc);
             } else {
-                var props = createProps(name, doc.doc.getValue ? doc.doc.getValue() : doc.doc, timeout);
+                var props = createProps(name, data.doc.getValue ? data.doc.getValue() : data.doc, timeout);
                 tags.propCache[file][name] = props;
                 add(props);
             }
@@ -704,7 +710,7 @@ _Define(function(global) {
         var i = 0;
 
         var start = 0;
-        var score = 5;
+        score = isNaN(score) ? 5 : score;
         while (i < parents.length) {
             var val = score * score;
             name = parents[i];
@@ -717,10 +723,9 @@ _Define(function(global) {
 
                     child = child[0];
                     if (props[child]) {
-                        if(i==0)props[child]+=25;
-                        else props[child] ++;
-                    }
-                    else {
+                        if (i == 0) props[child] += 25;
+                        else props[child]++;
+                    } else {
 
                         props[child] = val;
                         var b = text.indexOf(dot + child);
@@ -756,6 +761,7 @@ _Define(function(global) {
     updateSupportedModes(appConfig.enableTagsCompletion);
 }); /*_EndDefine*/
 _Define(function(global) {
+    //returns output line by line
     var LineStream = function(stream, regex) {
         this.stream = stream;
         this.buf = "";
@@ -783,6 +789,7 @@ _Define(function(global) {
     LineStream.prototype.getCurrentIndex = function() {
         return this.index + this.stream.getCurrentIndex();
     };
+    //base class for streams that filter out blocks of text
     var BlockFilter = function(start, stream) {
         this.start = new RegExp(start, 'g');
         this.stream = stream;
@@ -833,6 +840,7 @@ _Define(function(global) {
     BlockFilter.prototype.getCurrentIndex = function() {
         return this.stream.getCurrentIndex() + this.index;
     };
+    //special block filter for when blocks end at newline
     var LineFilter = function(start, stream) {
         LineFilter.super(this, [start, stream]);
         this.end = new RegExp("\\r\\n|\\r|\\n", 'g');
@@ -856,7 +864,6 @@ _Define(function(global) {
                 var end = this.starts[k];
                 var close = end.close || start[0];
                 var escaped = false;
-                var brkNewLine = end.breaksOnNewLine;
                 var hasEscape = end.hasEscapes;
                 for (var i = from; i < this.buf.length; i++) {
                     var char = this.buf[i];
@@ -876,9 +883,9 @@ _Define(function(global) {
     };
     global.Utils.inherits(LineFilter, BlockFilter);
     global.Utils.inherits(RegionFilter, BlockFilter);
-    var pyScopeFinder = function(stream) {
+    var pyScopeFinder = function(rawStream) {
         var multiLine;
-        stream =
+        var stream =
             new LineFilter("\\#",
                 (multiLine = new RegionFilter([{
                     open: "\\\"",
@@ -898,10 +905,10 @@ _Define(function(global) {
                 }, {
                     open: "'''",
                     hasEscapes: true,
-                }], new LineStream(stream))));
+                }], new LineStream(rawStream))));
         var scopes = [],
             scope;
-        var colon = ":";
+        // var colon = ":";
         var indent = /^[ \t]+\S/g;
         var rootIndent = 0;
         var lastIndent = rootIndent;
@@ -914,7 +921,6 @@ _Define(function(global) {
             indent.lastIndex = 0;
             var found = indent.exec(current),
                 newIndent;
-            var newIndent;
             if (found) {
                 newIndent = found[0].length - 1;
             } else continue;
@@ -922,7 +928,7 @@ _Define(function(global) {
                 var newscope = {
                     indent: newIndent,
                     start: index,
-                    pos: s.indexToPosition(index),
+                    pos: rawStream.indexToPosition(index),
                     parent: scope
                 };
                 if (scope) {
@@ -1006,9 +1012,10 @@ _Define(function(global) {
         return scopes;
     };
     Object.assign(global.ScopeSolvers, {
-        'jsx': cScopeFinder,
         'javascript': cScopeFinder,
+        'jsx': cScopeFinder,
         'typescript': cScopeFinder,
+        'php': cScopeFinder,
         'java': cScopeFinder,
         'python': pyScopeFinder,
         'c_cpp': cScopeFinder
@@ -1024,10 +1031,10 @@ _Define(function(global) {
         return a ? (b ? (a + sep + b) : a) : (b || "");
     }
 
-    var gTags = function(tokens, addText) {
+    var gTags = function(tokens) {
         return function(stream, filename, allowText) {
             var completions = [];
-            var guard = 1000;
+            var guard = 5000;
             for (var i in tokens) {
                 var token = tokens[i];
                 token.re.lastIndex = 0;
@@ -1045,7 +1052,7 @@ _Define(function(global) {
                 if (guard == 0) break;
             }
             guard -= 500;
-            if (--guard > 0 && (addText || allowText != false)) {
+            if (--guard > 0 && (allowText != false)) {
                 completions.push.apply(completions, global.TagFinders.text(stream)
                     .slice(0, guard));
             }
@@ -1076,7 +1083,7 @@ _Define(function(global) {
 
     function func(loc, name, argument, doc, returnType, type) {
         var ret = trim(returnType);
-        var caption = trim(name);;
+        var caption = trim(name);
         var signature = join(argument, ":", ret);
         type = type || "";
         var fullname = join(type, type.endsWith(".") ? "" : " ", caption) + " " + signature;
@@ -1181,92 +1188,91 @@ _Define(function(global) {
     var jsClass = S.comments( /*group 1*/ ).maybe().add(S.indent().group(2), S.s("class|interface")
             .group(3), /[ \t]+/, S.ident().group(4), S.s(/[^\{]*/).group(5), S.s("\\{"))
         .create();
-
     var JS_TAGS =
-        gTags([{ //function/method declaration
-                    re: S.comments( /*1*/ ).maybe().add(S.indent().group(2).maybe()).add(/((?:async\b\s*)?function)?\s*(\w+)/).sp2().add(S.jsArguments().group(3)).sp2().add(/\{?/).create(),
-                    handle: function(index, text, comments, indent, fnKeyword, name, args) {
-                        if (!fnKeyword && (/^if|while|for|switch|with$/).test(name))
-                            return null;
-                        if (!fnKeyword && text[text.length - 1] != "{") {
-                            return name;
-                        }
-                        if (name == "function" || name == "catch") {
-                            fnKeyword = join(fnKeyword, "", name);
-                            name = null;
-                        }
-                        return argument(args || "", index, text).concat(name ? [func(index + text.indexOf(name), name, args, comments, "", fnKeyword || "method")] : []);
+        gTags([{
+                //function/method declaration
+                re: S.comments( /*1*/ ).maybe().add(S.indent().group(2).maybe()).add(/((?:async\b\s*)?function)?\s*(\w+)/).sp2().add(S.jsArguments().group(3)).sp2().add(/\{?/).create(),
+                handle: function(index, text, comments, indent, fnKeyword, name, args) {
+                    if (!fnKeyword && (/^if|while|for|switch|with$/).test(name))
+                        return null;
+                    if (!fnKeyword && text[text.length - 1] != "{") {
+                        return name;
                     }
-                },
-                { //variable function
-                    re: S.comments( /*1*/ ).maybe().add(S.indent().group(2)).add(S.jsVar().sp2().maybe().add(/((?:async\b\s*)?function)?\s*(\w+)?/).add(S.jsArguments().group()).sp2().add(S.s(/=\s*>/).maybe())).create(),
-                    handle: function(index, text, comments, indent, propChain, isQuoted, key, fnKeyword, name2, args) {
-                        var anon = text[text.length - 1] == ">";
-                        if (!fnKeyword && !anon) return null;
-                        var ret = argument(args || "", index, text);
-                        if (key)
-                            ret.push(func(index + text.indexOf(key), key, args, comments, "", join(anon && "anonymous", " ", "function")));
-                        if (name2)
-                            ret.push(func(index + text.indexOf(name2), name2, args, comments, "", join(anon && "anonymous", " ", "function")));
-                        return ret;
+                    if (name == "function" || name == "catch") {
+                        fnKeyword = join(fnKeyword, "", name);
+                        name = null;
                     }
-                },
-                {
-                    re: S.comments( /*group 1*/ ).maybe()
-                        .add(S.indent().group(2)) ///all this add could be a parser
-                        .add(S.s(".*[;,]").sp().maybe())
-                        .add(S.s(/var\b|const\b|let\b|readOnly\b/).wrap().group(3)).sp().add(S.ident().sp().add(S.s(/=\s*[^;,]{0,40}\s*/).maybe()).t(",").sp().wrap().t("*").sp2().add(S.ident(/[$;]/)).group(4)).create(),
-                    handle: function(pos, text, comments, indent, type, list) {
-                        var names = list.split(",");
-                        return declList(names, pos + text.indexOf(list), type);
-                    }
-                },
-                { //variables
-                    re: S.comments( /*group 1*/ ).maybe()
-                        .add(S.indent().group(2)) ///all this add could be a parser
-                        .add(S.s(".*[;,]").sp().maybe())
-                        .add(S.jsVar( /*adds groups 3-5*/ ))
-                        .add(
-                            S.s(/(new *\w+ *)?/) /*7*/ .add(
-                                S.s(/.{0,50}/).group(8),
-                                S.s(/\,\{|\;|$/).wrap()).group(6)
-                        ).create(),
-                    handle: function(index, text, comments, indent, propChain, isQuoted, name, whole, type, value) {
-                        type = type || (whole[0] == "'" || whole[0] == '"' ? "string" : "");
-                        var res = [];
-                        var isProperty = propChain && propChain[propChain.length - 1] == ".";
-                        if ((type || !(value.indexOf("function") > -1 || /=?s*>/.test(value)))) {
-                            if (!(propChain || isQuoted || (text.indexOf(":") > text.indexOf("whole")))) {
-                                //just an assignment
-                                res = [name];
-                            } else {
-                                res = [
-                                    variable(index + text.indexOf(name), name, join(type, " ", propChain), isProperty?"property":"local", comments)
-                                ];
-                            }
-                            if (isProperty) {
-                                var names = propChain.slice(0, -1).split(".");
-                                res.push.apply(res, names);
-                            }
-                        }
-                        return res;
-                    }
-                },
-                {
-                    re: jsClass,
-                    handle: function(index, text, comments, indent, type, name, everyOtherThing) {
-                        return variable(index, name, type, type, join(everyOtherThing, "\n", comments));
-                    }
+                    return argument(args || "", index, text).concat(name ? [func(index + text.indexOf(name), name, args, comments, "", fnKeyword || "method")] : []);
                 }
-            ],
-            false);
+            },
+            { //variable function
+                re: S.comments( /*1*/ ).maybe().add(S.indent().group(2)).add(S.jsVar().sp2().maybe().add(/((?:async\b\s*)?function)?\s*(\w+)?/).add(S.jsArguments().group()).sp2().add(S.s(/=\s*>/).maybe())).create(),
+                handle: function(index, text, comments, indent, propChain, isQuoted, key, fnKeyword, name2, args) {
+                    var anon = text[text.length - 1] == ">";
+                    if (!fnKeyword && !anon) return null;
+                    var ret = argument(args || "", index, text);
+                    if (key)
+                        ret.push(func(index + text.indexOf(key), key, args, comments, "", join(anon && "anonymous", " ", "function")));
+                    if (name2)
+                        ret.push(func(index + text.indexOf(name2), name2, args, comments, "", join(anon && "anonymous", " ", "function")));
+                    return ret;
+                }
+            },
+            {
+                re: S.comments( /*group 1*/ ).maybe()
+                    .add(S.indent().group(2)) ///all this add could be a parser
+                    .add(S.s(".*[;,]").sp().maybe())
+                    .add(S.s(/var\b|const\b|let\b|readOnly\b/).wrap().group(3)).sp().add(S.ident().sp().add(S.s(/=\s*[^;,]{0,40}\s*/).maybe()).t(",").sp().wrap().t("*").sp2().add(S.ident(/[$;]/)).group(4)).create(),
+                handle: function(pos, text, comments, indent, type, list) {
+                    var names = list.split(",");
+                    return declList(names, pos + text.indexOf(list), type);
+                }
+            },
+            { //variables
+                re: S.comments( /*group 1*/ ).maybe()
+                    .add(S.indent().group(2)) ///all this add could be a parser
+                    .add(S.s(".*[;,]").sp().maybe())
+                    .add(S.jsVar( /*adds groups 3-5*/ ))
+                    .add(
+                        S.s(/(new *\w+ *)?/) /*7*/ .add(
+                            S.s(/.{0,50}/).group(8),
+                            S.s(/\,\{|\;|$/).wrap()).group(6)
+                    ).create(),
+                handle: function(index, text, comments, indent, propChain, isQuoted, name, whole, type, value) {
+                    type = type || (whole[0] == "'" || whole[0] == '"' ? "string" : "");
+                    var res = [];
+                    var isProperty = propChain && propChain[propChain.length - 1] == ".";
+                    if ((type || !(value.indexOf("function") > -1 || /=?s*>/.test(value)))) {
+                        if (!(propChain || isQuoted || (text.indexOf(":") > text.indexOf("whole")))) {
+                            //just an assignment
+                            res = [name];
+                        } else {
+                            res = [
+                                variable(index + text.indexOf(name), name, join(type, " ", propChain), isProperty ? "property" : "local", comments)
+                            ];
+                        }
+                        if (isProperty) {
+                            var names = propChain.slice(0, -1).split(".");
+                            res.push.apply(res, names);
+                        }
+                    }
+                    return res;
+                }
+            },
+            {
+                re: jsClass,
+                handle: function(index, text, comments, indent, type, name, everyOtherThing) {
+                    return variable(index, name, type, type, join(everyOtherThing, "\n", comments));
+                }
+            }
+        ]);
 
     var CPP_TAGS =
         gTags([{
                 /*indent(scope)ret name(args?){*/
                 re: /^([ \t]*)(?:.*; *)?((?:public|protected|private|abstract|final|static|virtual|default)\s+)*(?!(?:if|while|for|switch|catch|public|private|abstract|final|static|virtual|struct|union|default|[Cc]lass|[Ee]num|[Ii]nterface|new|return|throw)\b)((?=[A-Z])|[\*a-zA-Z\_\$][a-zA-Z0-9\]\[\_\$\>\> ]*\s+)([\*a-zA-Z_][_a-zA-Z0-9]*)\s*(\([^\)\n\(]*(?:\n[^\)\(\n]*){0,3}\))\s*(\{)?/gm,
                 handle: function(pos, all, indent, scope, ret, name, args) {
-                    return argument(args || "", pos, all).concat[func(pos + all.indexOf(name), name, args, scope, ret)];
+                    return argument(args || "", pos, all).concat([func(pos + all.indexOf(name), name, args, scope, ret)]);
                 }
             },
             {
@@ -1278,14 +1284,15 @@ _Define(function(global) {
                 re: /^([ \t]*)((?:(?:public|private|abstract|final|static|struct|union|virtual|default|protected)\s*)*[Cc]lass|[Ee]num|[Ii]nterface|struct|union)[ \t]+([a-zA-Z][a-zA-Z0-9]*)([^\{]*)\{/gm,
 
                 handle: function(pos, all, indent, scope, name, olothers) {
-                    return variable(pos + all.indexOf(name), name, scope, "", olothers);                }
+                    return variable(pos + all.indexOf(name), name, scope, "", olothers);
+                }
             }
         ]);
     var PYTHON_TAGS =
         gTags([{
                 re: /^((?:\@.*\n)*)([ \t]*)(?:async\s*)?def[ \t]+([_a-z\$A-Z][_\$a-zA-Z0-9]*)?[ \t]*(\([^\)\n\(]*(?:\n[^\)\(\n]*){0,3}\))(?:\s*\- ?\>[ \t]*(\S+))?[ \t]*\:/gm,
                 handle: function(index, text, doc, indent, name, args, ret) {
-                    return argument(args || "", index, text).concat[func(index + text.indexOf(name), name, args, doc, ret)];
+                    return argument(args || "", index, text).concat([func(index + text.indexOf(name), name, args, doc, ret)]);
                 }
             }, {
                 re: /^([ \t]*)(?:.*; *)?(?:(?:^|[a-z_A-Z0-9_$]+)\.(?=\w+ *\=))?([a-zA-Z_][a-zA-Z0-9_$]*)(?: *\= *([^\n\;]{0,50}))/gm,
@@ -1296,17 +1303,49 @@ _Define(function(global) {
             {
                 re: /^([ \t]*)(class)[ \t]+([a-zA-Z][a-z_$A-Z0-9]*)([^\:]*)\:/gm,
                 handle: function(pos, res, indent, cls, name) {
-                    return variable(pos + 6, name, "", cls, res);
+                    return variable(pos + indent.length + 6, name, "", cls, res);
                 }
             }
         ]);
+    var PHP_TAGS = gTags([{
+        //javascript function/method declaration
+        re: S.comments( /*1*/ ).maybe().add(S.indent().group(2).maybe()).add(/((?:async\b\s*)?function)?\s*(\w+)/).sp2().add(S.jsArguments().group(3)).sp2().add(/\{?/).create(),
+        handle: function(index, text, comments, indent, fnKeyword, name, args) {
+            if (!fnKeyword && (/^if|while|for|switch|with$/).test(name))
+                return null;
+            if (!fnKeyword && text[text.length - 1] != "{") {
+                return name;
+            }
+            if (name == "function" || name == "catch") {
+                fnKeyword = join(fnKeyword, "", name);
+                name = null;
+            }
+            return argument(args || "", index, text).concat(name ? [func(index + text.indexOf(name), name, args, comments, "", fnKeyword || "method")] : []);
+        }
+    }, {
+        //python style assignments
+        re: /^([ \t]*)(?:.*; *)?(?:(?:^|[a-z_A-Z0-9_$]+)\.(?=\w+ *\=))?([a-zA-Z_][a-zA-Z0-9_$]*)(?: *\= *([^\n\;]{0,50}))/gm,
+        handle: function(index, text, indent, name) {
+            return variable(index, name, "variable", "", text);
+        }
+    }, {
+        //c style declarations
+        re: /^([ \t]*)((?:(?:public|private|abstract|final|static|struct|union|virtual|default|protected)\s*)*[Cc]lass|[Ee]num|[Ii]nterface|struct|union)[ \t]+([a-zA-Z][a-zA-Z0-9]*)([^\{]*)\{/gm,
+
+        handle: function(pos, all, indent, scope, name, olothers) {
+            return variable(pos + all.indexOf(name), name, scope, "", olothers);
+        }
+    }]);
+
     S.jsVar = S.jsFuncStart = S.jsFuncDeclStart = S.jsFuncBase = S = null;
     Object.assign(global.TagFinders, {
-        'jsx': JS_TAGS,
         'javascript': JS_TAGS,
+        'jsx': JS_TAGS,
+        'json': JS_TAGS,
         'java': CPP_TAGS,
-        'python': PYTHON_TAGS,
-        'c_cpp': CPP_TAGS
+        'c_cpp': CPP_TAGS,
+        'php': PHP_TAGS,
+        'python': PYTHON_TAGS
     });
 
     // global.TagFinders.tsStyle = JS_TAGS;

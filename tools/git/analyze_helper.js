@@ -1,6 +1,8 @@
 /*jshint esversion: 8,esnext:false*/
+/*global git*/
+//Unnecessary now that we are using an inhouse version of isomorphic git
 _Define(function(global){
-    var TREE=git.TREE, WORKDIR=git.WORKDIR, STAGE=git.STAGE;
+    var TREE=git.TREE, WORKDIR=git.WORKDIR;
     const flat =
         typeof Array.prototype.flat === 'undefined' ?
         entries => entries.reduce((acc, x) => acc.concat(x), []) :
@@ -303,5 +305,5 @@ _Define(function(global){
             },
         })
     }
-    global.analyze = analyze;
+    global.gitAnalyze = analyze;
 })/*_EndDefine*/

@@ -29,6 +29,10 @@ _Define(function(global) {
     handler._onNewIntent = function(inte) {
         var intent = JSON.parse(inte);
         app._intent = intent;
+        if(intent.path){
+            var dir = FileUtils.dirname(intent.path);
+            if(dir)FileUtils.addToRecents(dir);
+        }
         global.addDoc(intent.name || "", intent.value || "", intent.path || "");
     };
     handler._pause = function() {
@@ -294,17 +298,17 @@ _Define(function(global) {
             try {
                 return app.copyFile(path, dest, overwrite, accessKey);
             } catch (err) {
-                throwError(error);
+                throwError(err);
             }
         };
         this.moveFileSync = function(path, dest, overwrite) {
             try {
                 return app.moveFile(path, dest, overwrite, accessKey);
             } catch (err) {
-                throwError(error);
+                throwError(err);
             }
         };
-        this.mkdirSync = function(path, opts) {
+        this.mkdirSync = function(path) {
             try {
                 return app.newFolder(path, accessKey);
             } catch (err) {
@@ -398,7 +402,7 @@ _Define(function(global) {
                         callback = opts;
                     }
                 }
-                var res = app.getFilesAsync(path, createCallback(callback ? jsonCallback(callback) : null),
+                app.getFilesAsync(path, createCallback(callback ? jsonCallback(callback) : null),
                     accessKey);
             } catch (err) {
                 clearLastCallback(err);
@@ -413,7 +417,7 @@ _Define(function(global) {
             this.getFiles(path, callback && function(e, r) {
                 callback && callback(e, r && r.map(FileUtils.removeTrailingSlash));
             });
-        }
+        };
         this.stat = asyncify(this, this.statSync, 1);
         this.lstat = asyncify(this, this.lstatSync, 1);
         this.copyFile = function(path, dest, callback, overwrite) {
@@ -444,7 +448,8 @@ _Define(function(global) {
             }
         };
         this.href = "file://";
-        this.isEncoding = function(encoding) {
+        this.isEncoding = function(e) {
+            var encodings = this.getEncodings();
             if (encodings.indexOf(e) > -1) return e;
             //inefficient op
             var i = encodings.map(normalizeEncoding).indexOf(normalizeEncoding(e));

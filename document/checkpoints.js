@@ -42,14 +42,12 @@ _Define(function(global) {
     Doc.prototype.gotoCheckpoint = function(name) {
         this.$loadCheckpoints();
         if (!this.checkpoints.length){
-            console.log('mdksksks');
             return false;
         }
         var checkpoint;
 
         if (name) {
             name = name.toLowerCase();
-            console.log(name,this.checkpoints);
             checkpoint = this.checkpoints.find(function(e) {
                 return e.name == name;
             });
@@ -62,7 +60,7 @@ _Define(function(global) {
         if (checkpoint.name == this.stateID) {
             //ignore if current
             this.revertPoints.push(this.checkpoints.pop());
-            if (name) return console.log('alredy ther');
+            if (name) return console.log('already there');
             else return this.gotoCheckpoint();
         }
 

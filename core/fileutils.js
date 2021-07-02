@@ -7,10 +7,10 @@ _Define(function(global) {
     var putObj = global.putObj;
     var EventsEmitter = global.EventsEmitter;
     var Utils = global.Utils;
-    var AutoCloseable = global.AutoCloseable;
     var Notify = global.Notify;
     var register = global.register;
     var configure = global.configure;
+    var configureArr = global.configureArr;
     /*Dynamic dependencies Form,Docs,Doc,docs,FileBrowser*/
     /*This class starts of as a nodejs path module then
     becomes some kind of filebrowser manager then a doc
@@ -22,22 +22,33 @@ _Define(function(global) {
         defaultEncoding: "utf8",
         projectName: NO_PROJECT,
         projectRoot: NO_PROJECT,
-        bookmarks: "/sdcard/, /data/data/io.tempage.dorynode/",
-        code_files: [".js", ".css", ".html", ".sass", ".less", ".json", ".py", ".ts", ".tsx", ".jsx", ].join(
-            ", "),
+        maxRecentFolders: 7,
+        recentFolders: [],
+        bookmarks: ["/sdcard/", "/data/data/io.tempage.dorynode/"],
+        codeFileExts: [".js", ".css", ".html", ".sass", ".less", ".json", ".py", ".ts", ".tsx", ".jsx", ],
         dotStar: false,
-        binaryFiles: ["zip", "mp4", "mp3", "rar", "tar.gz", "tgz", "iso", "bz2", "3gp", "avi", "mkv", "exe",
-            "apk",
-        ].join(" ,"),
+        binaryFileExts: [".zip", ".mp4", ".mp3", ".rar", ".tar.gz", ".tgz", ".iso", ".bz2", ".3gp", ".avi", ".mkv", ".exe",
+            ".apk", ".tar", ".jar", ".png", ".jpg", ".jpeg", ".ttf", ".otf", ".woff", ".woff2"
+        ],
     }, "files");
+    global.ConfigEvents.on("files", function(e) {
+        switch (e.config) {
+            case "projectName":
+                project.name = e.newValue;
+                FileUtils.trigger("change-project-name");
+                break;
+            case "projectRoot":
+                //do nothing - prevents infinite looping
+        }
+    });
     global.registerValues({
         dotStar: "Enable dotStar matching for globs.eg main/* matches main/.tmp",
         binaryFiles: "A list of file extensions\n that should never be opened for editing",
         projectRoot: "This directory serves as the current directory for all file operations"
     }, "files");
-    var code_files = Utils.parseList(appConfig.code_files);
-    var bookmarks = Utils.parseList(appConfig.bookmarks);
-    var binaryFiles = Utils.parseList(appConfig.binaryFiles);
+    var codeFileExts = appConfig.codeFileExts;
+    var bookmarks = appConfig.bookmarks;
+    var binaryFileExts = appConfig.binaryFileExts;
     var viewToServer = getObj("viewToServer");
     var serverCreationParams = getObj("serverCreationParams");
     //requires Docs,docs;
@@ -48,41 +59,7 @@ _Define(function(global) {
         if (next[i + 1] === undefined) return 0;
         else return test(a, b, next, i + 1, custom);
     }
-    var toggle = function(self) {
-        var filename = FileUtils.activeFileBrowser.selected || "";
-        var extension = FileUtils.extname(filename);
-        var changed = false;
-        for (var i in self.toggleProps) {
-            var x = self.toggleProps[i];
-            var enabled = (filename && x.filename == filename) || (extension && x.extension == extension);
-            if (enabled && !self[x.id]) self[x.id] = x;
-            else if (!enabled && self[x.id]) self[x.id] = null;
-            else continue;
-            changed = true;
-        }
-        return changed;
-    };
 
-    function createToggle(prop, value) {
-        var update = prop["!update"];
-        if (!prop.toggleProps) {
-            if (update)
-                update.push(toggle);
-            Object.defineProperties(prop, {
-                "!update": {
-                    'value': update || [].concat(toggle),
-                    writable: true,
-                    "enumerable": false
-                },
-                "toggleProps": {
-                    writable: true,
-                    'value': {},
-                    enumerable: false
-                }
-            });
-        }
-        prop.toggleProps[value.id] = value;
-    }
     var sort_funcs = {
         folder: function(a, b) {
             var x = a.endsWith(SEP);
@@ -107,8 +84,8 @@ _Define(function(global) {
         },
     };
     var isCode = function(a) {
-        for (var i in code_files) {
-            if (a.endsWith(code_files[i])) return true;
+        for (var i in codeFileExts) {
+            if (a.endsWith(codeFileExts[i])) return true;
         }
         return false;
     };
@@ -160,6 +137,7 @@ _Define(function(global) {
             "delete-file": null,
             "found-file": null,
             "change-project": null,
+            "change-project-name": null
         },
         //path manipulation
         normalize: function(path) {
@@ -216,10 +194,21 @@ _Define(function(global) {
         isBinaryFile: function(name) {
             var match = 0;
             while ((match = name.indexOf(".", match) + 1) > 0) {
-                if (match > 1 && binaryFiles.indexOf(name.substring(match)) > -1) {
+                if (match > 1 && binaryFileExts.indexOf(name.substring(match - 1)) > -1) {
                     return true;
                 }
             }
+        },
+        addToRecents: function(folder) {
+            var recentFolders = appConfig.recentFolders;
+            var index = recentFolders.indexOf(folder);
+            if (index > -1) {
+                recentFolders = recentFolders.slice(0, index).concat(recentFolders.slice(index + 1));
+            }
+            recentFolders.unshift(folder);
+            if (recentFolders.length > appConfig.maxRecentFolders) recentFolders.pop();
+            configureArr("recentFolders", recentFolders, "files");
+
         },
         //does nothing to '/'
         removeTrailingSlash: function(e) {
@@ -310,8 +299,8 @@ _Define(function(global) {
                 browserModal.find(".config").hide();
                 browserModal.find(".config-" + browserModal.find("select").val()).show();
             });
-            browserModal.find(".modal-cancel").click(function(){
-               browserModal.modal('close'); 
+            browserModal.find(".modal-cancel").click(function() {
+                browserModal.modal('close');
             });
             browserModal.find(".modal-create").click(function() {
                 browserModal.modal('close');
@@ -328,8 +317,8 @@ _Define(function(global) {
             });
             FileUtils.loadBrowsers();
         },
-        registerFileServer: function(name, caption, factory, config, isDefault) {
-            serverFactories[name] = {
+        registerFileServer: function(type, caption, factory, config, isDefault) {
+            serverFactories[type] = {
                 create: factory,
                 caption: caption,
                 config: config,
@@ -346,6 +335,7 @@ _Define(function(global) {
                 var select = browserModal.find("select")[0];
                 select.innerHTML = "";
                 for (var id in serverFactories) {
+                    if (id == "!extensions") continue;
                     var factory = serverFactories[id];
                     var option = document.createElement("option");
                     option.setAttribute("name", id);
@@ -408,6 +398,7 @@ _Define(function(global) {
             var server = null;
             var factory = serverFactories[type];
             if (factory) {
+                //The factory can modify the type
                 server = factory.create(params, id);
             } else {
                 throw new Error("Unknown server type " + type);
@@ -438,7 +429,7 @@ _Define(function(global) {
             project.fileServer = loadedServers[appConfig.projectFileServer] || FileUtils.defaultServer;
             project.rootDir = appConfig.projectRoot;
             FileUtils.trigger("change-project", {
-                project: project,
+                project: project
             }, true);
         },
         loadBrowsers: function() {
@@ -446,6 +437,8 @@ _Define(function(global) {
             for (var i in viewToServer) {
                 register("root:" + i, "files");
                 register("tree:" + i, "files");
+                register("info:" + i, "files");
+                // register("hidden:" + i, "files");
                 var servrId = viewToServer[i];
                 if (servrId === "undefined") viewToServer[i] = undefined;
                 var server = servrId ? loadedServers[servrId] : FileUtils.defaultServer;
@@ -480,7 +473,13 @@ _Define(function(global) {
                 delete viewToServer[browserID];
                 _fileBrowsers[browserID].destroy();
                 delete _fileBrowsers[browserID];
-                appStorage.removeItem("root:" + browserID);
+                appStorage.removeItem("files.root:" + this.id);
+                appStorage.removeItem("files.tree:" + this.id);
+                appStorage.removeItem("files.info:" + this.id);
+
+                appConfig["root:" + browserID] = undefined;
+                appConfig["tree:" + browserID] = undefined;
+                appConfig["info:" + browserID] = undefined;
                 putObj("viewToServer", viewToServer);
                 putObj("serverCreationParams", serverCreationParams);
                 Tabs.goleft();
@@ -588,6 +587,7 @@ _Define(function(global) {
             path = FileUtils.normalize(path);
             configure("projectFileServer", fileServer.id, "files");
             configure("projectRoot", path, "files");
+            configure("projectName", name || path, "files");
             project.fileServer = fileServer;
             project.rootDir = path;
             project.name = name || (path.length > 50 ? "..." + path.substring(-45) : path);
@@ -602,87 +602,56 @@ _Define(function(global) {
         },
         getConfig: function(name, cb, project) {
             project = project || FileUtils.getProject();
-            project.fileServer.readFile(FileUtils.resolve(project.rootDir, name), "utf8", function(e, res) {
+            if (!project.fileServer && !arguments[2]) {
+                //app not yet loaded
+                return FileUtils.once('change-project', function() {
+                    FileUtils.getConfig(name, cb);
+                });
+            }
+            if (name[0] !== FileUtils.sep) {
+                if (project.rootDir == FileUtils.NO_PROJECT) {
+                    return cb(null, "");
+                } else name = FileUtils.resolve(project.rootDir, name);
+            }
+            project.fileServer.readFile(name, "utf8", function(e, res) {
                 if (e && e.code == "ENOENT") {
-                    cb("");
-                } else if (res) cb(res);
-                else cb(null, e);
+                    cb(null, "");
+                } else if (res) cb(null, res);
+                else cb(e, null);
             });
         },
         saveConfig: function(name, content, cb, project) {
             project = project || FileUtils.getProject();
-            project.fileServer.writeFile(FileUtils.join(project.rootDir, name), content, "utf8", cb);
+            project.fileServer.writeFile(FileUtils.resolve(project.rootDir, name), content, "utf8", cb);
         },
-        getChannel: function(channel, parent) {
-            if (!channels[channel]) {
-                channels[channel] = new EventsEmitter(parent);
-            }
-            return channels[channel];
-        },
-        ownChannel: function(channel, owner, parent) {
-            if (typeof channel == "string") {
-                channel = FileUtils.getChannel(channel);
-            }
-            if (channel._owner) {
+        ownChannel: function(channel, owner) {
+            if (channels.handlers[channel]) {
                 throw "Error: Channel already has owner";
-            } else if (parent) {
-                channel.setParentEmitter(FileUtils.getChannel(parent));
             }
-            owner.handler = channel;
-            channel._owner = owner;
-            if (channel.pending) {
-                var pending = channel.pending;
-                delete channel.pending;
-                for (var i in pending) {
-                    FileUtils.registerOption.apply(null, pending[i]);
-                }
-            }
+            channels.handlers[channel] = owner;
+            channels.triggerForever(channel + "-loaded");
         },
-        /*caption : string || {
-          extension,
-          filename,
-          onclick
-        }*/
-        registerOption: function(channel_or_owner, types /*[create,file,folder]*/ , id, caption, func) {
-            if (FileUtils.activeFileBrowser) {
-                FileUtils.activeFileBrowser.menu.hide();
-            }
-            var emitter;
-            var prop;
-            if (typeof channel_or_owner == "string") {
-                emitter = FileUtils.getChannel(channel_or_owner);
-                prop = emitter._owner;
-            } else {
-                prop = channel_or_owner;
-                emitter = prop.handler;
-                if (!emitter) throw "Error: channel owners must have handler property";
-            }
-
-
-            if (prop) {
-                for (var i in types) {
-                    var menuId = prop[types[i] + "Dropdown"];
-                    var menu = prop.menuItems[menuId];
-                    var condition = caption;
-                    if (caption.extension || caption.filename) {
-                        caption.id = id;
-                        createToggle(menu, caption);
-                    } else menu[id] = caption;
-                    if (prop["!update"]) {
-                        if (menu["!update"]) menu["!update"].push(prop["!update"]);
-                        else menu["!update"] = [].concat(prop["!update"]);
-                    }
-                }
-                func = caption.onclick || func;
-                emitter.on(id, func);
-            } else {
-                if (!channels.hasOwnProperty(channel_or_owner)) console.warn("channel " + channel_or_owner +
-                    " has no owners yet");
-                if (!emitter.pending) {
-                    emitter.pending = [];
-                }
-                emitter.pending.push(Array.prototype.slice.apply(arguments, [0]));
-            }
+        postChannel: function(channel,arg1,arg2,arg3,arg4) {
+            channels.once(channel + "-loaded", function() {
+                var handler = channels.handlers[channel];
+                handler.call(null, arg1,arg2,arg3,arg4);
+            });
+        },
+        /*
+        Accepts up to four arguments that will be passed to
+        channel owner
+        For filebrowsers,these are
+        @param types - [create,file,folder,project]
+        @param id - the id of the option
+        @param data {(string | {
+          extension?:string,
+          filename?:string,
+          onclick?:function
+        })}
+        @param func?: callback to be called when clicked
+        */
+        registerOption: function(channel, types, id, data, func) {
+            FileUtils.postChannel(channel,types,id,data,func);
         },
         freezeEvent: function(event) {
             var stub = event.browser;
@@ -879,7 +848,7 @@ _Define(function(global) {
                 });
                 return SideNav.open();
             }
-            Notify.info(info);
+            if (info) Notify.info(info);
             FileUtils.beforeClose("open-file", end);
             var tab = Tabs.getActiveTab().attr("href").substring(1);
             var browser = _fileBrowsers[tab];
@@ -1151,12 +1120,10 @@ _Define(function(global) {
             };
         },
     };
-    var channels = {
-        default: FileUtils,
-        childStubs: null,
-        all: null,
-        project: null,
-    };
+    var channels = new EventsEmitter();
+    //Don't warn for unknown channels
+    channels.frozenEvents = false;
+    channels.handlers = {};
     Object.assign(FileUtils, EventsEmitter.prototype);
     window.braceExpand = window.braceExpand || function() {
         console.warn("regex needs Brace Expand but not found");
@@ -1243,7 +1210,6 @@ _Define(function(global) {
         }
         var globs = g.split(",").filter(isNotSpace);
         if (!globs.length) return null;
-        var regexStr = "";
         var singleLetter = "[^/]";
         var star = singleLetter + "*";
         var dotstar = appConfig.dotStar ? star : "(?:[^/\\.][^/]*)?";
@@ -1255,12 +1221,21 @@ _Define(function(global) {
         DOUBLE_STAR = DOUBLE_STAR + "$1";
         DOT_STAR = "$1" + DOT_STAR;
         for (var i in globs) {
-            globs[i] = Utils.regEscape(FileUtils.normalize(globs[i])).replace(/\\\?/g, singleLetter + "?").replace(
-                    /\\\[!/g, "[^").replace(/\\\[/g, "[").replace(/\\\]/g, "]")
-                //globstar should stay in its own path segment
-                //but we allow ma**/*.js as a bug
-                .replace(/\\\*\\\*(?:(\/)$|\/|$)/g, DOUBLE_STAR).replace(/(^|\/)\\\*/g, DOT_STAR).replace(/\\\*/g, star)
-                .replace(DEDOUBLE_STAR, doublestar).replace(DEDOT_STAR, dotstar);
+            globs[i] = Utils.regEscape(
+                FileUtils.normalize(globs[i])).
+            //sinle letter
+            replace(/\\\?/g, singleLetter + "?").
+            //group letter
+            replace(
+                /\\\[!/g, "[^").replace(/\\\[/g, "[").
+            replace(/\\\]/g, "]").
+            //globstar should stay in its own path segment
+            //but we allow ma**/*.js as a bug
+            replace(/\\\*\\\*(?:(\/)|$)/g, DOUBLE_STAR).
+            replace(/(^|\/)\\\*/g, DOT_STAR).
+            replace(/\\\*/g, star).
+            replace(DEDOUBLE_STAR, doublestar).
+            replace(DEDOT_STAR, dotstar);
         }
         if (segment == SEGMENT_MODE) {
             return new RegExp(globs.join("|"));
@@ -1279,7 +1254,6 @@ _Define(function(global) {
     //Allows us to extract common directory roots from a set of globs, for now however it returns just 1
     //Exactly how much speed this gives us is uncertain
     function commonHead(path1, path2) {
-        var head = [];
         for (var i = 0, n = Math.min(path1.length, path2.length); i < n;) {
             if (path1[i] === path2[i]) i++;
             else break;

@@ -12,7 +12,7 @@ _Define(function(global) {
         else if(fs.isCached)return fs;
         var cached = {};
         var enoents = {};
-        var max_size = cacheSize || 1000000;
+        var max_size = cacheSize || Utils.parseSize("1mb");
         var size = 0;
         var slimCache = function() {
             var a = Object.keys(cached);
@@ -34,7 +34,7 @@ _Define(function(global) {
                 size -= item.size;
                 delete cached[path];
             }
-        }
+        };
         var push = function(path, res, save) {
             if (enoents[path]) delete enoents[path];
             if (size > max_size) {
@@ -108,7 +108,7 @@ _Define(function(global) {
                     doSave(cached[i], i, token);
                 }
             }
-        }
+        };
         var save = Utils.debounce(saveAll, 1000);
         var toBuffer = function(res) {
             return new TextEncoder().encode(res);

@@ -1,13 +1,189 @@
 _Define(function(global) {
-    var appEvents = global.AppEvents;
-    var editorConfig = {};
+    var Editor = global.Editor;
     var config = global.libConfig;
-    var Functions = global.Functions;
-    var docs = global.docs;
+    var Marker = ace.require("ace/layer/marker").Marker;
+    var VSCROLL_WIDTH = 25;
+    var Utils = global.Utils;
+
+    function ScrollbarMarker(editor) {
+        Marker.call(this, editor.container);
+        this.element.className += " ace_scrollbar ace_scrollbar-v ace_scrollbar_marker";
+        this.$render = this.render.bind(this);
+        this.viewport = {
+            clazz: "marker_square",
+            type: "fullLine",
+            update: function(html, self, session, config) {
+                self.elt(
+                    this.clazz,
+                    "height:" + (self.editor.renderer.$size.scrollerHeight * config.scaleY) + "px;" +
+                    "width:" + config.width + "px;" +
+                    "top:" + (self.editor.renderer.scrollMargin.top + session.getScrollTop()) * config.scaleY + "px;" +
+                    "left:" + 0 + "px;"
+                );
+            }
+        };
+        this.cursors = [];
+        editor.renderer.on('afterRender', this.$render);
+        this.editor = editor;
+        this.delayedUpdate = Utils.throttle((function(config) {
+            this.update(config);
+            this.cursors.length = 0;
+            this.updateCursors();
+        }).bind(this), 1000);
+    }
+
+    ScrollbarMarker.prototype.scroll = function() {
+        var viewport = this.element.getElementsByClassName("marker_square")[0];
+        if (viewport) {
+            viewport.style.top = (this.editor.renderer.scrollMargin.top + this.session.getScrollTop()) * this.config.scaleY + "px";
+        }
+    };
+    ScrollbarMarker.prototype.destroy = function() {
+        this.editor.renderer.off('afterRender', this.$render);
+        this.element.remove();
+    };
+    ScrollbarMarker.prototype.$padding = 0;
+    ScrollbarMarker.prototype.gatherMarkers = function() {
+        var markers = Object.assign({}, this.session.getMarkers(), this.session.getMarkers(true));
+        markers.viewport = this.viewport;
+        this.setMarkers(markers);
+    };
+    ScrollbarMarker.prototype.updateCursors = function() {
+        var all = this.editor.selection.getAllRanges();
+        if (all.length == 1) all = [];
+        all = all.filter(function(e) {
+            return e.isEmpty();
+        });
+        while (all.length < this.cursors.length) {
+            this.cursors.pop().remove();
+        }
+        while (all.length > this.cursors.length) {
+            var el = document.createElement("div");
+            this.element.appendChild(el);
+            this.cursors.push(el);
+        }
+        var height = Math.max(10, this.config.lineHeight);
+        all.forEach(function(e, i) {
+            var f = this.session.documentToScreenPosition(e.start);
+            var left = Math.min(f.column * this.config.characterWidth, VSCROLL_WIDTH - 3);
+            this.cursors[i].style.cssText = "top:" + (this.$getTop(f.row, this.config) - height / 2) + "px;left:" + left + "px;" + "height: " + height + "px;";
+            this.cursors[i].className = "marker_cursor";
+        }, this);
+    };
+    ScrollbarMarker.prototype.MAX_MARKERS = 150;
+    Marker.prototype.MAX_MARKERS = 500;
+    ScrollbarMarker.prototype.render = function(changes) {
+        var r = this.editor.renderer;
+        this.setSession(this.editor.session);
+
+        this.element.style.bottom = r.scrollBarH.getHeight() + "px";
+        var isScroll = false;
+        if (changes & (r.CHANGE_MARKER | r.CHANGE_MARKER_BACK | r.CHANGE_MARKER_FRONT)) {
+            this.gatherMarkers();
+        } else if (!(changes & (r.CHANGE_SIZE | r.CHANGE_FULL))) {
+            if (changes & (r.CHANGE_SCROLL | r.CHANGE_H_SCROLL)) {
+                isScroll = true;
+            } else if (changes & r.CHANGE_CURSOR) {
+                return this.updateCursors();
+            } else return;
+        }
+        var configOld = r.layerConfig;
+        var totalHeight = r.scrollMargin.v + configOld.maxHeight;
+        var scrollerHeight = r.$size.scrollerHeight - r.lineHeight;
+        if (!r.$maxLines && r.$scrollPastEnd) {
+            totalHeight -= scrollerHeight * r.$scrollPastEnd;
+            if (r.scrollTop > totalHeight - scrollerHeight) {
+                totalHeight = r.scrollTop + scrollerHeight;
+            }
+        }
+        var scaleY = Math.min(1, this.element.clientHeight / totalHeight);
+        var scaleX = (VSCROLL_WIDTH - 5) / Math.min(configOld.width, (r.$size.scrollerWidth * 2 + r.scrollLeft));
+        var config = {
+            scaleY: scaleY,
+            lineHeight: configOld.lineHeight * scaleY,
+            firstRow: 0,
+            width: VSCROLL_WIDTH,
+            scaleX: scaleX,
+            characterWidth: configOld.characterWidth * scaleX,
+            lastRow: this.session.getLength(),
+            firstRowScreen: (-r.scrollMargin.top / configOld.lineHeight),
+            offset: 0
+        };
+        if (isScroll) {
+            if (scaleX == this.config.scaleX &&
+                scaleY == this.config.scaleY) {
+                this.config = config;
+                return this.scroll();
+            } else {
+                return this.delayedUpdate(config);
+            }
+        }
+        this.delayedUpdate.now(config);
+    };
+    global.Utils.inherits(ScrollbarMarker, Marker);
+    config.defineOptions(Editor.prototype, "editor", {
+        annotateScrollbar: {
+            set: function(val) {
+                if (val) {
+                    if (!this.$scrollbarMarker) {
+                        this.$scrollbarMarker = new ScrollbarMarker(this);
+                        this.renderer.updateBackMarkers();
+                    }
+                } else if (this.$scrollbarMarker) {
+                    this.$scrollbarMarker.destroy();
+                    this.$scrollbarMarker = null;
+                }
+            },
+            value: false
+        }
+    });
+
+    function autofadeScrollBars(editor) {
+        //everything here should be configurable
+        var fadeTimeout;
+
+        function doFade() {
+            editor.renderer.scrollBarV.element.style.zIndex = "";
+            editor.renderer.scrollBarV.setVisible(false);
+            fadeTimeout = null;
+        }
+        var fadeScroll = function(e) {
+            if (fadeTimeout) {
+                clearTimeout(fadeTimeout);
+            } else editor.renderer.scrollBarV.setVisible(true);
+            if (!editor.renderer.$vScrollBarAlwaysVisible) {
+                fadeTimeout = setTimeout(doFade, e ? 3000 : 1000);
+                editor.renderer.scrollBarV.element.style.zIndex = 10;
+            }
+        };
+        var stop = function(e) {
+            e.stopPropagation();
+        };
+        ['ontouchstart', 'ontouchmove', 'ontouchend', 'onmousemove'].forEach(function(f) {
+            editor.renderer.scrollBarV.element[f] = stop;
+        });
+        //no resizing viewport
+        editor.renderer.scrollBarV.$minWidth = VSCROLL_WIDTH;
+        editor.renderer.scrollBarV.width = VSCROLL_WIDTH;
+        editor.renderer.scrollBarV.element.style.width = VSCROLL_WIDTH + "px";
+        //editor.renderer.scrollBarV.inner.style.width = 30+"px";
+        editor.session.on("changeScrollTop", fadeScroll);
+        editor.on("changeSession", function(s) {
+            s.oldSession && s.oldSession.off('changeScrollTop', fadeScroll);
+            s.session && s.session.on('changeScrollTop', fadeScroll);
+            fadeScroll();
+        });
+        editor.renderer.scrollBarV.setVisible(true);
+    }
+    global.autofadeScrollBars = autofadeScrollBars;
+});
+_Define(function(global) {
+    var appEvents = global.AppEvents;
     var Utils = global.Utils;
     var Docs = global.Docs;
     var EditorSettings = global.EditorSettings;
     var FocusManager = global.FocusManager;
+    var autofadeScrollBars = global.autofadeScrollBars;
 
     function getSettingsEditor() {
         return settings;
@@ -114,51 +290,27 @@ _Define(function(global) {
         edit.destroy();
     }
 
-    function autofadeScrollBars(editor) {
-        //everything here should be configurable
-        var fadeTimeout;
 
-        function doFade() {
-            editor.renderer.scrollBarV.setVisible(false);
-            fadeTimeout = null;
-        }
-        var fadeScroll = function(e) {
-            if (fadeTimeout) {
-                clearTimeout(fadeTimeout);
-            } else editor.renderer.scrollBarV.setVisible(true);
-            fadeTimeout = setTimeout(doFade, e ? 3000 : 1000);
-        };
-        var stop = function(e) {
-            e.stopPropagation();
-        };
-        ['ontouchstart', 'ontouchmove', 'ontouchend', 'onmousemove'].forEach(function(f) {
-            editor.renderer.scrollBarV.element[f] = stop;
-        });
-        //no resizing viewport
-        editor.renderer.scrollBarV.$minWidth = 25;
-        editor.renderer.scrollBarV.width = 25;
-        editor.renderer.scrollBarV.element.style.width = 25 + "px";
-        //editor.renderer.scrollBarV.inner.style.width = 30+"px";
-        editor.session.on("changeScrollTop", fadeScroll);
-        editor.on("changeSession", function(s) {
-            s.oldSession && s.oldSession.off('changeScrollTop', fadeScroll);
-            s.session && s.session.on('changeScrollTop', fadeScroll);
-            fadeScroll();
-        });
-        editor.renderer.scrollBarV.setVisible(true);
-    }
-    function keepSelect(e){
+    function keepSelect(e) {
         var event = this.$mouseHandler.mousedownEvent;
-        if(event && new Date().getTime()-event.time<global.FOCUS_RESIZE_WINDOW){
-            this.renderer.scrollCursorIntoView(null,0.1);
+        if (event && new Date().getTime() - event.time < global.FOCUS_RESIZE_WINDOW) {
+            this.renderer.scrollCursorIntoView(null, 0.1);
         }
     }
+
+    function muddleTextInput(el) {
+        el.setAttribute("autocomplete", "off");
+        el.removeAttribute("name");
+        el.setAttribute("aria-hidden", true);
+    }
+
     function createEditor(container, orphan) {
         var el = document.createElement("div");
         el.className = 'editor';
         container.appendChild(el);
         var editor = ace.edit(el);
         editor.renderer.setScrollMargin(5, 5, 0, 0);
+        muddleTextInput(editor.textInput.getElement());
         autofadeScrollBars(editor);
         editor.setAutoScrollEditorIntoView(false);
         editor.$blockScrolling = Infinity; //prevents ace from logging annoying warnings
@@ -168,7 +320,7 @@ _Define(function(global) {
             if (orphan && defaultCommands[i].mainOnly) continue;
             editor.commands.addCommand(defaultCommands[i]);
         }
-        editor.renderer.on('resize',keepSelect.bind(editor));
+        editor.renderer.on('resize', keepSelect.bind(editor));
         if (!orphan) {
             editors.push(editor);
             editor.renderer.on("themeLoaded", function(e) {
@@ -180,7 +332,7 @@ _Define(function(global) {
                 if (editor == editors[0]) {
                     settings.setOption("fontSize", editor.getFontSize());
                 }
-            })
+            });
         }
         appEvents.trigger('createEditor', {
             editor: editor,
@@ -194,7 +346,7 @@ _Define(function(global) {
         if (!Array.isArray(commands)) commands = [commands];
         if (mainOnly) {
             commands.forEach(function(e) {
-                e.mainOnly = true
+                e.mainOnly = true;
             });
         }
         defaultCommands.push.apply(defaultCommands, commands);
@@ -202,7 +354,7 @@ _Define(function(global) {
             for (var j in commands)
                 editors[i].commands.addCommand(commands[j]);
         }
-    };
+    }
     var api = Object.create(null);
     api.init = Utils.noop;
     api._editors = editors;
@@ -219,4 +371,4 @@ _Define(function(global) {
     api.closeEditor = closeEditor;
     global.Editors = api;
     global.getEditor = getEditor;
-}) /*_EndDefine*/
+}); /*_EndDefine*/

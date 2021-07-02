@@ -245,7 +245,6 @@ _Define(function(global){
         // would not immediately swap back (when dragging a small element
         // over a bigger one)
         var delta = targetWidth - dragTab.offsetWidth;
-
         var offset;
 
         if (delta > 0) {

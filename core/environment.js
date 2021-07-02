@@ -1,3 +1,4 @@
+/*globals ace*/
 var Env = {
   isBrowser: false,
   isDesktop: false, //when false, grace tries to detect and maintain soft Keyboard state
@@ -19,8 +20,8 @@ if (/^localhost/i.test(window.location.host)) {
   Env.canLocalHost = true;
   Env._server = "http:///localhost:3000";
 }
-/*@typedef {Object} GRACE*/
-var GRACE = {
+/*@typedef {Object} Grace*/
+var Grace = {
   _debugFail: 2,
   Annotations: ace.require("ace/annotations/annotations").Annotations,
   libConfig: ace.require("ace/config"),
@@ -38,24 +39,30 @@ var GRACE = {
   libLang: ace.require("ace/lib/lang"),
 };
 /** @callback Define [name:string]
- *  @param {GRACE} global
+ *  @param {Grace} global
  */
 /**
  * @param {Define} func
  * @param {any} [name]
  */
+window.debug = {
+  log: function(name){
+    console.log.apply(console,arguments);
+    console.error(typeof name=="string"?new Error(name):name);
+  }
+};
 function _Define(func, name) {
   //inlineable function
   try {
+    // console.time("load");
     if (name) {
       //async execution possible but no point for now
       //see Imports.define
-      console.time("load");
-      GRACE[name] = func(GRACE);
-      console.timeEnd("load");
-    } else func(GRACE);
+      Grace[name] = func(Grace);
+    } else func(Grace);
+    // console.timeEnd("load");
   } catch (e) {
-    if (GRACE._debugFail) {
+    if (Grace._debugFail) {
       console.error(e);
     }
   }

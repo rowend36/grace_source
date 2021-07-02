@@ -1,0 +1,15 @@
+{
+    "autocompletion.preloadFiles": "grace-load.json",
+    "linting.jshint.jquery": true,
+    "linting.jshint.unused": "vars",
+    "autocompletion.tern.ternDefsInbuilt": "ecmascript,browser,jquery",
+    "files.binaryFileExts+":[".txt"],
+    "linting.jshint.globals": {
+        "_Define": true,
+        "Env": true,
+        "ace": true
+    },
+    "files": {
+        "projectName": "GRACE"
+    }
+}

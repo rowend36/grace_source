@@ -118,6 +118,10 @@ _Define(function(global) {
                     type: "checkbox",
                     path: "scrollableGutter"
                 },
+                "Annotate Scrollbar": {
+                    type: "checkbox",
+                    path: "annotateScrollbar"
+                },
                 "Hide Non-Latin Chars": {
                     type: "checkbox",
                     path: "hideNonLatinChars"
@@ -125,7 +129,14 @@ _Define(function(global) {
             }
         });
         SettingsPanel.setEditor(Editors.getSettingsEditor());
+        SettingsPanel.on("setOption",function(){
+            for(var i in docs){
+                if(docs[i].constructor == global.SettingsDoc){
+                    docs[i].setDirty();
+                }
+            }
+        });
         return SettingsPanel;
     }
     global.createSettingsMenu = createSettingsMenu;
-}) /*_EndDefine*/
+}); /*_EndDefine*/
