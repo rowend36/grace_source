@@ -595,6 +595,24 @@ function renderCacheEntryFlags(entry) {
   )
 }
 
+const MERGE_SUFFIX = "\x00-stage:";
+function getIndexKey(path,stage){
+  switch(stage){
+    case 1:
+    case 2:
+    case 3:
+      return path+MERGE_SUFFIX+stage;
+    default: 
+      throw new Error('Invalid stage decimal: '+stage);
+  }
+}
+function clearConflicts(entries,path){
+  for(let i=1;i<=3;i++){
+    if(entries.has(getIndexKey(path,i))){
+      entries.delete(getIndexKey(path,i));
+    }
+  }
+}
 class GitIndex {
   /*::
    _entries: Map<string, CacheEntry>
@@ -673,8 +691,10 @@ class GitIndex {
           throw new InternalError('Unexpected end of file')
         }
       }
+      if(entry.flags.stage===0)
+        _entries.set(entry.path, entry);
+      else _entries.set(getIndexKey(entry.path,entry.flags.stage),entry);
       // end of awkward part
-      _entries.set(entry.path, entry);
       i++;
     }
     return new GitIndex(_entries)
@@ -694,7 +714,7 @@ class GitIndex {
     }
   }
 
-  insert({ filepath, stats, oid }) {
+  insert({ filepath, stats, oid, stage=0}) {
     stats = normalizeStats(stats);
     const bfilepath = Buffer.from(filepath);
     const entry = {
@@ -716,11 +736,20 @@ class GitIndex {
       flags: {
         assumeValid: false,
         extended: false,
-        stage: 0,
+        stage: stage,
         nameLength: bfilepath.length < 0xfff ? bfilepath.length : 0xfff,
       },
     };
-    this._entries.set(entry.path, entry);
+    if(stage===0){
+      clearConflicts(this._entries, entry.path);
+      this._entries.set(entry.path, entry);
+    }
+    else{
+      if(this._entries.has(entry.path)){
+        this._entries.delete(entry.path);
+      }
+      this._entries.set(getIndexKey(entry.path,stage),entry);
+    }
     this._dirty = true;
   }
 
@@ -728,6 +757,7 @@ class GitIndex {
     if (this._entries.has(filepath)) {
       this._entries.delete(filepath);
     } else {
+      clearConflicts(this._entries,filepath);
       for (const key of this._entries.keys()) {
         if (key.startsWith(filepath + '/')) {
           this._entries.delete(key);
@@ -934,6 +964,11 @@ function flatFileListToDirectoryStructure(files) {
       if (file.parent) file.parent.children.push(file);
       inodes.set(name, file);
     }
+    else{
+      const duplicate = inodes.get(name);
+      if(!duplicate.otherData) duplicate.otherData = [];
+      duplicate.otherData.push(metadata);
+    }
     return inodes.get(name)
   };
 
@@ -996,6 +1031,12 @@ class GitWalkerIndex {
 
       async oid() {
         return walker.oid(this)
+      }
+      
+      async isConflict() {
+        const inode = (await walker.treePromise).get(this._fullpath);
+        if(inode) return inode.metadata.flags.stage !== 0;
+        return false;
       }
     };
   }
@@ -1595,7 +1636,7 @@ class GitConfig {
 
 class GitConfigManager {
   static async get({ fs, gitdir }) {
-    // We can improve efficiency later if needed.
+    // We can improve efficiency and thread safety later if needed.
     // TODO: read from full list of git config files
     const text = await fs.read(`${gitdir}/config`, { encoding: 'utf8' });
     return GitConfig.from(text)
@@ -3283,6 +3324,16 @@ class UserCanceledError extends BaseError {
 /** @type {'UserCanceledError'} */
 UserCanceledError.code = 'UserCanceledError';
 
+class UnresolvedConflictError extends BaseError {
+  constructor() {
+    super(`Cannot continue because of unresolved merge conflicts in repository`);
+    this.code = this.name = UnresolvedConflictError.code;
+    this.data = {};
+  }
+}
+/** @type {'UnresolvedConflictError'} */
+UnresolvedConflictError.code = 'UnresolvedConflictError';
+
 
 
 var Errors = /*#__PURE__*/Object.freeze({
@@ -3311,6 +3362,7 @@ var Errors = /*#__PURE__*/Object.freeze({
   RemoteCapabilityError: RemoteCapabilityError,
   SmartHttpError: SmartHttpError,
   UnknownTransportError: UnknownTransportError,
+  UnresolvedConflictError: UnresolvedConflictError,
   UrlParseError: UrlParseError,
   UserCanceledError: UserCanceledError
 });
@@ -3935,7 +3987,7 @@ class GitWalkerFs {
 
   async oid(entry) {
     if (entry._oid === false) {
-      const { fs, gitdir, cache } = this;
+      const { fs, dir, gitdir, cache } = this;
       let oid;
       // See if we can use the SHA1 hash in the index.
       await GitIndexManager.acquire({ fs, gitdir, cache }, async function(
@@ -3944,20 +3996,30 @@ class GitWalkerFs {
         const stage = index.entriesMap.get(entry._fullpath);
         const stats = await entry.stat();
         if (!stage || compareStats(stats, stage)) {
-          const content = await entry.content();
-          if (content === undefined) {
-            oid = undefined;
+          if(dir && entry._content===false){
+            oid = await fs.getOid(dir+"/"+entry._fullpath);
           } else {
-            oid = await shasum(
-              GitObject.wrap({ type: 'blob', object: await entry.content() })
-            );
-            if (stage && oid === stage.oid) {
-              index.insert({
-                filepath: entry._fullpath,
-                stats,
-                oid: oid,
-              });
+            let content;
+            try{
+              content = await entry.content();
             }
+            catch(e){
+                //Permission issues
+            }
+            if (content === undefined) {
+              oid = undefined;
+            } else {
+              oid = await shasum(
+                GitObject.wrap({ type: 'blob', object: await entry.content() })
+              );
+            }
+          }
+          if (oid && stage && oid === stage.oid) {
+            index.insert({
+              filepath: entry._fullpath,
+              stats,
+              oid: oid,
+            });
           }
         } else {
           // Use the index SHA1 rather than compute it
@@ -4059,6 +4121,7 @@ class FileSystem {
       this._readdir = fs.promises.readdir.bind(fs.promises);
       this._readlink = fs.promises.readlink.bind(fs.promises);
       this._symlink = fs.promises.symlink.bind(fs.promises);
+      if(fs.promises.$gitBlobOid)this.getOid = fs.promises.$gitBlobOid.bind(fs.promises);
     } else {
       this._readFile = pify(fs.readFile.bind(fs));
       this._writeFile = pify(fs.writeFile.bind(fs));
@@ -4070,6 +4133,7 @@ class FileSystem {
       this._readdir = pify(fs.readdir.bind(fs));
       this._readlink = pify(fs.readlink.bind(fs));
       this._symlink = pify(fs.symlink.bind(fs));
+      if(fs.$gitBlobOid)this.getOid = pify(fs.$gitBlobOid.bind(fs));
     }
     this._original_unwrapped_fs = fs;
   }
@@ -4253,6 +4317,20 @@ class FileSystem {
   async writelink(filename, buffer) {
     return this._symlink(buffer.toString('utf8'), filename)
   }
+  
+  /**
+   * Get the git blob object id of a file ie the sha sum of 'blob ${contentLength}\x00${content}'
+   */
+  async getOid(filepath) {
+    const object = await this.read(filepath);
+    if(object){
+      return await hashObject$1({
+        gitdir:null,
+        type: 'blob',
+        object,
+      });
+    }
+  }
 }
 
 async function writeObjectLoose({ fs, gitdir, object, format, oid }) {
@@ -4369,23 +4447,35 @@ async function add({
 }
 
 async function addToIndex({ dir, gitdir, fs, filepath, index }) {
-  // TODO: Should ignore UNLESS it's already in the index.
   const ignored = await GitIgnoreManager.isIgnored({
     fs,
     dir,
     gitdir,
     filepath,
   });
-  if (ignored) return
   const stats = await fs.lstat(join(dir, filepath));
   if (!stats) throw new NotFoundError(filepath)
   if (stats.isDirectory()) {
-    const children = await fs.readdir(join(dir, filepath));
-    const promises = children.map(child =>
-      addToIndex({ dir, gitdir, fs, filepath: join(filepath, child), index })
+    var children;
+    if(ignored){
+      children = [];
+      for(var entry of index){
+        if(entry.path.startsWith(filepath+'/')){
+          children.push(entry.path);
+        }
+      }
+    } else {
+      children = await fs.readdir(join(dir, filepath)).map(child => join(filepath,child));
+    }
+    const promises = children.map(filepath =>
+      addToIndex({ dir, gitdir, fs, filepath, index })
     );
     await Promise.all(promises);
   } else {
+    if(ignored){
+      /*TODO optimize*/
+      if(!index.entries.some(e => e.path == filepath))return;
+    }
     const object = stats.isSymbolicLink()
       ? await fs.readlink(join(dir, filepath))
       : await fs.read(join(dir, filepath));
@@ -4449,9 +4539,9 @@ async function _commit({
   }
 
   return GitIndexManager.acquire({ fs, gitdir, cache }, async function(index) {
-    const inodes = flatFileListToDirectoryStructure(index.entries);
-    const inode = inodes.get('.');
     if (!tree) {
+      const inodes = flatFileListToDirectoryStructure(index.entries);
+      const inode = inodes.get('.');
       tree = await constructTree({ fs, gitdir, inode, dryRun });
     }
     if (!parent) {
@@ -4505,6 +4595,9 @@ async function constructTree({ fs, gitdir, inode, dryRun }) {
     if (inode.type === 'tree') {
       inode.metadata.mode = '040000';
       inode.metadata.oid = await constructTree({ fs, gitdir, inode, dryRun });
+    }
+    else if(inode.metadata.flags.stage !== 0){
+      throw new UnresolvedConflictError()
     }
   }
   const entries = children.map(inode => ({
@@ -5471,13 +5564,16 @@ async function _checkout({
   filepaths,
   noCheckout,
   noUpdateHead,
+  currentHead = 'HEAD',
   dryRun,
   force,
 }) {
   // Get tree oid
   let oid;
   try {
-    oid = await GitRefManager.resolve({ fs, gitdir, ref });
+    if(ref !== null)
+      oid = await GitRefManager.resolve({ fs, gitdir, ref });
+    else noUpdateHead = true
     // TODO: Figure out what to do if both 'ref' and 'remote' are specified, ref already exists,
     // and is configured to track a different remote.
   } catch (err) {
@@ -5517,6 +5613,7 @@ async function _checkout({
         gitdir,
         ref,
         force,
+        currentHead,
         filepaths,
       });
     } catch (err) {
@@ -5719,15 +5816,48 @@ async function analyze({
   ref,
   force,
   filepaths,
+  currentHead = 'HEAD'
 }) {
   let count = 0;
+  let target;
+  if (ref == null) {
+    target = STAGE();
+  } else target = TREE({
+    ref
+  });
+  /*
+    Not an exact implementation, fails for some valid cases
+    The major change is differentiating b/w checking for optimization
+    and checking for conflicts, 
+    1 conflicts arise when stage!==workdir || stage!==head
+    2 but except for file/directory are kept when stage==commit || head ==commit
+    3 updates must match head==stage && stage==workdir or force
+    4 head === workdir is never checked
+    5 commit==workdir is just an optimization
+  */
+  const isSameFile = async (a, b,ignoreMode) => {
+    //ignore mode when comparing stage to head
+    return (!a && !b) || (
+      a && b &&
+      (await a.oid()) == (await b.oid()) &&
+      (ignoreMode || (
+        (await a.mode()) == (await b.mode())
+      ))
+    )
+  }
+  const trees = [target, WORKDIR(), STAGE()]
+  if (currentHead) trees.push(TREE({ref: currentHead}))
+  const canIgnore = async function(commit, head) {
+    if (currentHead) return await isSameFile(commit, head);
+    return false;
+  }
   return _walk({
     fs,
     cache,
     dir,
     gitdir,
-    trees: [TREE({ ref }), WORKDIR(), STAGE()],
-    map: async function(fullpath, [commit, workdir, stage]) {
+    trees: trees,
+    map: async function(fullpath, [commit, workdir, stage, head]) {
       if (fullpath === '.') return
       // match against base paths
       if (filepaths && !filepaths.some(base => worthWalking(fullpath, base))) {
@@ -5796,6 +5926,15 @@ async function analyze({
               return ['conflict', fullpath]
             }
             case 'blob-blob': {
+              if (!force){
+                //must be staged and committed to update
+                if(await canIgnore(head,commit)){
+                  return ['ignore', fullpath]
+                }
+                else{
+                  return ['conflict', fullpath]
+                }
+              }
               // Is the incoming file different?
               if ((await commit.oid()) !== (await workdir.oid())) {
                 if (force) {
@@ -5838,7 +5977,7 @@ async function analyze({
               // We'll ignore submodule directories for now.
               // Users prefer we not throw an error for lack of submodule support.
               // gitlinks
-              return
+              return ['ignore', fullpath]
             }
             case 'commit-blob': {
               // TODO: submodule
@@ -5864,15 +6003,22 @@ async function analyze({
               return ['rmdir', fullpath]
             }
             case 'blob': {
-              // Git checks that the workdir.oid === stage.oid before deleting file
-              if ((await stage.oid()) !== (await workdir.oid())) {
-                if (force) {
+              //Always deleted
+              if (force) {
                   return ['delete', fullpath]
-                } else {
-                  return ['conflict', fullpath]
-                }
-              } else {
+              }
+              // Git checks that the workdir.oid === stage.oid before deleting file
+              //Ensure the change is both staged and committed
+              if (
+                await isSameFile(stage,workdir) &&
+                (!currentHead || await isSameFile(head,stage,true))
+              ) {
                 return ['delete', fullpath]
+              } else {
+                if(await canIgnore(head,commit)){
+                  return ['ignore', fullpath]
+                }
+                return ['conflict', fullpath]
               }
             }
             case 'commit': {
@@ -5900,14 +6046,29 @@ async function analyze({
               // If the file hasn't changed, there is no need to do anything.
               // Existing file modifications in the workdir can be be left as is.
               if (
+                !force &&
                 (await stage.oid()) === (await commit.oid()) &&
-                (await stage.mode()) === (await commit.mode()) &&
-                !force
+                (await stage.mode()) === (await commit.mode())
               ) {
-                return
+                return ['ignore', fullpath]
+              }
+              //If the head and the commit are the same,
+              //Uncommitted changes can be kept
+              else if (
+                !force &&
+                await canIgnore(head,commit)
+              ) {
+                return ['ignore', fullpath]
               }
 
               // Check for local changes that would be lost
+              //The git procedure is to delete the file and stage it first ie 011,010
+              if (!force && !(
+                await isSameFile(head,stage,true) &&
+                await isSameFile(stage,workdir)
+                )) {
+                return ['conflict', fullpath]
+              }
               if (workdir) {
                 // Note: canonical git only compares with the stage. But we're smart enough
                 // to compare to the stage AND the incoming commit.
@@ -6059,10 +6220,10 @@ async function checkout({
   dir,
   gitdir = join(dir, '.git'),
   remote = 'origin',
-  ref: _ref,
+  ref : _ref,
   filepaths,
   noCheckout = false,
-  noUpdateHead = _ref === undefined,
+  noUpdateHead = _ref === undefined || _ref === null,
   dryRun = false,
   force = false,
 }) {
@@ -6070,8 +6231,7 @@ async function checkout({
     assertParameter('fs', fs);
     assertParameter('dir', dir);
     assertParameter('gitdir', gitdir);
-
-    const ref = _ref || 'HEAD';
+    const ref = _ref===undefined?'HEAD':_ref;
     return await _checkout({
       fs: new FileSystem(fs),
       cache: {},
@@ -6084,6 +6244,37 @@ async function checkout({
       noCheckout,
       noUpdateHead,
       dryRun,
+      force,
+    })
+  } catch (err) {
+    err.caller = 'git.checkout';
+    throw err
+  }
+}
+/* TODO add documentationn*/
+async function showCheckout({
+  fs,
+  onProgress,
+  dir,
+  gitdir = join(dir, '.git'),
+  ref = 'HEAD',
+  cache = {},
+  filepaths,
+  force = false,
+}) {
+  try {
+    assertParameter('fs', fs);
+    assertParameter('dir', dir);
+    assertParameter('gitdir', gitdir);
+
+    return await analyze({
+      fs: new FileSystem(fs),
+      cache,
+      onProgress,
+      dir,
+      gitdir,
+      ref,
+      filepaths,
       force,
     })
   } catch (err) {
@@ -8579,6 +8770,12 @@ async function _merge({
   }
   if (baseOid === ourOid) {
     if (!dryRun && !noUpdateBranch) {
+      await GitRefManager.writeRef({
+        fs,
+        gitdir,
+        ref: 'ORIG_HEAD',
+        value: ourOid
+      })
       await GitRefManager.writeRef({ fs, gitdir, ref: ours, value: theirOid });
     }
     return {
@@ -8607,6 +8804,12 @@ async function _merge({
         ours
       )}`;
     }
+    await GitRefManager.writeRef({
+      fs,
+      gitdir,
+      ref: 'ORIG_HEAD',
+      value: ourOid
+    })
     const oid = await _commit({
       fs,
       cache,
@@ -8740,6 +8943,7 @@ async function _pull({
       dir,
       gitdir,
       ref,
+      currentHead: 'ORIG_HEAD',
       remote,
       noCheckout: false,
     });
@@ -12367,14 +12571,8 @@ async function resetIndex({
       size: 0,
     };
     // If the file exists in the workdir...
-    const object = dir && (await fs.read(join(dir, filepath)));
-    if (object) {
-      // ... and has the same hash as the desired state...
-      workdirOid = await hashObject$1({
-        gitdir,
-        type: 'blob',
-        object,
-      });
+    if(dir){
+      workdirOid = (await fs.getOid(join(dir,filepath)));
       if (oid === workdirOid) {
         // ... use the workdir Stats object
         stats = await fs.lstat(join(dir, filepath));
@@ -12388,6 +12586,121 @@ async function resetIndex({
     });
   } catch (err) {
     err.caller = 'git.reset';
+    throw err
+  }
+}
+
+/*
+  Return a resolved conflict back to unresolved state
+  Clients are in charge of checking whether this is an
+  automatically resolvable conflict for instance, using
+  `conflictStatus`. This method just adds the conflicts
+  to the index.
+*/
+async function undoResolve({
+  fs: _fs,
+  dir,
+  gitdir = join(dir, '.git'),
+  filepath,
+  base,
+  theirs = 'MERGE_HEAD',
+  ours = 'HEAD',
+  cache = {},
+  noBase = false
+}) {
+  try {
+    assertParameter('fs', _fs);
+    assertParameter('gitdir', gitdir);
+    assertParameter('filepath', filepath);
+    assertParameter('ours', ours);
+    assertParameter('theirs', theirs);
+    const fs = new FileSystem(_fs);
+    theirs = GitRefManager.resolve({fs, gitdir, theirs})
+    ours = GitRefManager.resolve({fs, gitdir, ours})
+    if(noBase){
+      //Empty tree sha
+      base = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+    }
+    else if(base){
+      base = GitRefManager.resolve({fs, gitdir, base})
+    }
+    else{
+      if(!cache.bases){
+        cache.bases = new Map();
+      }
+      const key = gitdir+":"+ours+"|"+theirs;
+      if(cache.bases.has(key)){
+        base = cache.bases.get(key);
+      }
+      else{
+        const mergeBases = findMergeBase({
+          fs,gitdir,oids:[ours,theirs]
+        })
+        if(mergeBases.length === 1){
+          base = mergeBases[0];
+          cache.bases.set(key,mergeBases[0])
+        }
+        const error = new MergeNotSupportedError('No suitable merge base found')
+        error.data = mergeBases;
+        throw error;
+      }
+    }
+    let _oid = dir ? false : null;
+    const workdirOid = async () => {
+      if(_oid !== false)return _oid;
+      _oid = await fs.getOid(join(dir,filepath))
+    }
+    let _stats = dir ? false : null;
+    const workdirStats = async () => {
+      if(_stats !== false)return _stats;
+      _stats = await fs.lstat(join(dir,filepath))
+    }
+    const entries = await Promise.all([base,ours,theirs].map( async (oid,index) => {
+      try {
+        // Resolve blob
+        oid = await resolveFilepath({
+          fs,
+          cache,
+          gitdir,
+          oid,
+          filepath,
+        });
+      } catch (e) {
+        // This means we're resetting the file to a "deleted" state
+        return null
+      }
+      // For files that aren't in the workdir use zeros
+      let stats = {
+        ctime: new Date(0),
+        mtime: new Date(0),
+        dev: 0,
+        ino: 0,
+        mode: 0,
+        uid: 0,
+        gid: 0,
+        size: 0,
+      };
+      
+      // If the file exists in the workdir...
+      if (oid === (await workdirOid())) {
+        // ... use the workdir Stats object
+        stats = await workdirStats()
+      }
+      return {
+        stats,
+        oid,
+        stage: index+1
+      }
+    }))
+    entries = entries.filter(Boolean)
+    await GitIndexManager.acquire({ fs, gitdir, cache }, async function(index) {
+        index.delete({ filepath });
+        entries.forEach(({stats,oid,stage})=>{
+          index.insert({ filepath, stats, oid, stage });
+        })
+      });
+  } catch (err) {
+    err.caller = 'git.conflictReset';
     throw err
   }
 }
@@ -12532,6 +12845,7 @@ async function setConfig({
  * | `"*absent"`           | file not present in working dir or HEAD commit, but present in the index              |
  * | `"*undeleted"`        | file was deleted from the index, but is still in the working dir                      |
  * | `"*undeletemodified"` | file was deleted from the index, but is present with modifications in the working dir |
+ * | `"*conflict"`         | file has unresolved conflicts                                                         |
  *
  * @param {object} args
  * @param {FsClient} args.fs - a file system client
@@ -12551,6 +12865,7 @@ async function status({
   dir,
   gitdir = join(dir, '.git'),
   filepath,
+  cache = {}
 }) {
   try {
     assertParameter('fs', _fs);
@@ -12558,7 +12873,6 @@ async function status({
     assertParameter('filepath', filepath);
 
     const fs = new FileSystem(_fs);
-    const cache = {};
     const ignored = await GitIgnoreManager.isIgnored({
       fs,
       gitdir,
@@ -12595,12 +12909,8 @@ async function status({
       if (I && !compareStats(indexEntry, stats)) {
         return indexEntry.oid
       } else {
-        const object = await fs.read(join(dir, filepath));
-        const workdirOid = await hashObject$1({
-          gitdir,
-          type: 'blob',
-          object,
-        });
+        const workdirOid = await fs.getOid(join(dir,filepath));
+        
         // If the oid in the index === working dir oid but stats differed update cache
         if (I && indexEntry.oid === workdirOid) {
           // and as long as our fs.stats aren't bad.
@@ -12618,7 +12928,8 @@ async function status({
         return workdirOid
       }
     };
-
+    
+    if(I && indexEntry.flags.stage!==0) return '*conflict'
     if (!H && !W && !I) return 'absent' // ---
     if (!H && !W && I) return '*absent' // -A-
     if (!H && W && !I) return '*added' // --A
@@ -12647,11 +12958,14 @@ async function status({
       }
     }
     /*
+    conflict
     ---
     -A-
     --A
     -AA
     -AB
+    
+    
     A--
     AA-
     AB-
@@ -12664,6 +12978,74 @@ async function status({
     */
   } catch (err) {
     err.caller = 'git.status';
+    throw err
+  }
+}
+/*
+  TODO add proper documentation
+
+
+*/
+function shortMessage(status){
+  switch(status){
+    case '0000':
+      //removed
+    case '0111':
+      //added
+      return ''//resolved
+    case '0100':
+      //deleted by both
+      return 'DD'
+    case '0101':
+    case '0103':
+      //deleted by us
+      return 'DU'
+    case '0110':
+    case '0120':
+      //deleted by them
+      return 'UD'
+    case '0113':
+    case '0121':
+    case '0122':
+    case '0123':
+      //modified by us or/and them
+      return 'UU'
+    case '0003':
+      //added by them
+      return 'UA'
+    case '0020':
+      //added by us
+      return 'AU'
+    case '0022':
+    case '0023':
+      //added by both
+      return 'AA'
+  }
+}
+async function conflictStatus({ fs, cache={}, gitdir,tree, path }) {
+  try {
+    assertParameter('fs', _fs);
+    assertParameter('dir', dir);
+    assertParameter('gitdir', gitdir);
+    assertParameter('filepath', filepath);
+
+    const fs = new FileSystem(_fs);
+    const stages = [undefined,undefined,undefined,undefined]
+    await GitIndexManager.acquire({ fs, gitdir, cache }, async function(index) {
+      for(const entry of index){
+        if(entry.path==filepath){
+          stages[entry.flags.stage]=entry.oid;
+        }
+      }
+    });
+    var matrix = stages.map(oid => results.indexOf(oid))
+    return {
+      short: shortMessage(matrix.join("")),
+      oids: stages,
+      statusRow: matrix
+    };
+  } catch (err) {
+    err.caller = 'git.conflictStatus';
     throw err
   }
 }
@@ -12838,6 +13220,7 @@ async function getHeadTree({ fs, cache, gitdir }) {
  * | 1    | 2       | 1     | ` M`                            |
  * | 1    | 2       | 2     | `M `                            |
  * | 1    | 2       | 3     | `MM`                            |
+ * | [01] | [012]   | 4     | `merge conflict;use git.conflictStatus`|   
  *
  * @param {object} args
  * @param {FsClient} args.fs - a file system client
@@ -12855,6 +13238,7 @@ async function statusMatrix({
   dir,
   gitdir = join(dir, '.git'),
   ref = 'HEAD',
+  cache = {},
   filepaths = ['.'],
   filter,
 }) {
@@ -12864,7 +13248,6 @@ async function statusMatrix({
     assertParameter('ref', ref);
 
     const fs = new FileSystem(_fs);
-    const cache = {};
     return await _walk({
       fs,
       cache,
@@ -12907,7 +13290,9 @@ async function statusMatrix({
 
         // Figure out the oids, using the staged oid for the working dir oid if the stats match.
         const headOid = head ? await head.oid() : undefined;
-        const stageOid = stage ? await stage.oid() : undefined;
+        const isConflict = await (stage && stage.isConflict());
+        const stageOid = isConflict ? '42': stage ? await stage.oid() : undefined;
+        const conflictOid = isConflict ? '35' : stageOid;
         let workdirOid;
         if (!head && workdir && !stage) {
           // We don't actually NEED the sha. Any sha will do
@@ -12916,10 +13301,10 @@ async function statusMatrix({
         } else if (workdir) {
           workdirOid = await workdir.oid();
         }
-        const entry = [undefined, headOid, workdirOid, stageOid];
+        const entry = [undefined, headOid, workdirOid, conflictOid, stageOid];
         const result = entry.map(value => entry.indexOf(value));
-        result.shift(); // remove leading undefined entry
-        return [filepath, ...result]
+        // remove leading undefined entry
+        return [filepath,result[1],result[2],result[4]]
       },
     })
   } catch (err) {
@@ -13712,6 +14097,7 @@ var index = {
   addRemote,
   annotatedTag,
   branch,
+  showCheckout,
   checkout,
   clone,
   commit,
@@ -13755,9 +14141,11 @@ var index = {
   remove,
   removeNote,
   renameBranch,
+  undoResolve,
   resetIndex,
   resolveRef,
   status,
+  conflictStatus,
   statusMatrix,
   tag,
   version,
@@ -13779,6 +14167,7 @@ exports.addNote = addNote;
 exports.addRemote = addRemote;
 exports.annotatedTag = annotatedTag;
 exports.branch = branch;
+exports.showCheckout = showCheckout;
 exports.checkout = checkout;
 exports.clone = clone;
 exports.commit = commit;
@@ -13823,10 +14212,12 @@ exports.remove = remove;
 exports.removeNote = removeNote;
 exports.renameBranch = renameBranch;
 exports.resetIndex = resetIndex;
+exports.undoResolve = undoResolve;
 exports.resolveRef = resolveRef;
 exports.setConfig = setConfig;
 exports.status = status;
 exports.statusMatrix = statusMatrix;
+exports.conflictStatus = conflictStatus;
 exports.tag = tag;
 exports.version = version;
 exports.walk = walk;
