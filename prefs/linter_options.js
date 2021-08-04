@@ -1,42 +1,12 @@
 _Define(function(global) {
     var config = global.registerAll({
-        // "css": {
-        //     "ignore": ["*should not be qualified*"],
-        //     "setInfo": [],
-        //     "setWarning": [],
-        //     "setError": []
-        // },
-        // "typescript": {
-        //     "ignore": [],
-        //     "setInfo": [],
-        //     "setWarning": [],
-        //     "setError": []
-        // },
-        // "javascript": {
-        //     "ignore": [],
-        //     "setInfo": [],
-        //     "setWarning": [],
-        //     "setError": []
-        // },
-        // "jsx": {
-        //     "ignore": [],
-        //     "setInfo": [],
-        //     "setWarning": [],
-        //     "setError": []
-        // },
-        // "tsx": {
-        //     "ignore": [],
-        //     "setInfo": [],
-        //     "setWarning": [],
-        //     "setError": []
-        // },
-        "all": {
+        "filters": {
             "ignore": ["*should not be qualified*"],
             "setInfo": [],
             "setWarning": [],
-            "setError": []
+            "setError": [],
+            "maxNumErrors": 200
         },
-        "setError": [],
         "jshint": {
             // JSHint Default Configuration File (as on JSHint website)
             // See http://jshint.com/docs/ for more details
@@ -59,15 +29,8 @@ _Define(function(global) {
             "nonew": false, // true: Prohibit use of constructors for side-effects (without assignment)
             "plusplus": false, // true: Prohibit use of `++` and `--`
             "quotmark": false, // Quotation mark consistency:
-            //   false    : do nothing (default)
-            //   true     : ensure whatever is used is consistent
-            //   "single" : require single quotes
-            //   "double" : require double quotes
             "undef": true, // true: Require all non-global variables to be declared (prevents global leaks)
             "unused": true, // Unused variables:
-            //   true     : all variables, last function parameter
-            //   "vars"   : all variables only
-            //   "strict" : all variables, all function parameters
             "strict": false, // true: Requires all functions run in ES5 Strict Mode
             "maxparams": false, // {int} Max number of formal params allowed per function
             "maxdepth": false, // {int} Max depth of nested blocks (within functions)
@@ -146,15 +109,21 @@ _Define(function(global) {
             "plusplus": "true: Prohibit use of `++` and `--`",
             "quotmark": {
                 doc: "Quotation mark consistency:",
-                values: ["false    : do nothing (default)", "true     : ensure whatever is used is consistent", "single : require single quotes", "double : require double quotes", ]
+                values: [
+                    [false, "do nothing (default)"],
+                    [true, "ensure whatever is used is consistent"],
+                    ["single", "require single quotes"],
+                    ["double", "require double quotes"],
+                ]
             },
             "undef": "true: Require all non-global variables to be declared (prevents global leaks)",
             "unused": {
                 doc: "Unused variables:",
                 values: [
-                    "   true     : all variables, last function parameter",
-                    "   vars   : all variables only",
-                    "   strict : all variables, all function parameters"
+                    [true, "all variables, last function parameter"],
+                    ["vars", "all variables only"],
+                    ["strict", "all variables, all function parameters"],
+                    false
                 ]
             },
             "strict": "true: Requires all functions run in ES5 Strict Mode",
@@ -213,24 +182,35 @@ _Define(function(global) {
             "globals": "Additional predefined global variables"
         },
         "linting.jshint");
+
+    var typeFilter = {
+        type: ["string"]
+    };
     global.registerValues({
-            "all.ignore": "A list of warnings/errors to suppress, suppressed warnings will be replaced with a single annotation. You can use * to represent any extra characters. Try to use the actual linting configuration before falling back to this option"
+            "filters": "Modify how errors are displayed. Use document flag fl-lintFilters to add document specific options ",
+            "filters.ignore": {
+                type: typeFilter.type,
+                doc: "A list of warnings/errors to suppress, suppressed warnings will be replaced with a single annotation. You can use * to represent any extra characters."
+            },
+            "filters.setError": typeFilter,
+            "filters.setInfo": typeFilter,
+            "filters.setWarning": typeFilter
         },
-        "linting.jshint");
+        "linting");
     //Hack to save this as a single value
     var jshintGlobals = global.getObj("linting.jshint.globals", {});
     global.Config.setHandler("linting.jshint.globals", {
         getValue: function() {
             return jshintGlobals;
         },
-        updateValue: function(from, overwrite,opts) {
+        updateValue: function(from, overwrite, opts) {
             if (!from || typeof from != 'object' || Array.isArray(from)) {
                 global.Notify.error("Invalid option value for jshint.globals");
                 return true;
             }
-            if(opts && opts.depth){
+            if (opts && opts.depth) {
                 //this should be loadsettings:deepSet or aceinlinediff:extend when opts.depth>1
-                from = Object.assign(jshintGlobals,from);
+                from = Object.assign(jshintGlobals, from);
             }
             if (overwrite) global.putObj("linting.jshint.globals", from);
             jshintGlobals = from;
@@ -265,36 +245,59 @@ _Define(function(global) {
     var filterAll = function(anno) {
         // var mode = this.session.getMode().$id.split("/").pop();
         //todo use the source of the annotation
-        var regexIgnore = config.all.ignore.map(transform);
-        var regexError = config.all.setError.map(transform);
-        var regexInfo = config.all.setInfo.map(transform);
-        var regexWarning = config.all.setWarning.map(transform);
-        if (!(regexIgnore.length ||
-                regexWarning.length ||
-                regexInfo.length ||
-                regexError.length
-            )) return anno;
+        var regexIgnore = config.filters.ignore.map(transform);
+        var regexError = config.filters.setError.map(transform);
+        var regexInfo = config.filters.setInfo.map(transform);
+        var regexWarning = config.filters.setWarning.map(transform);
+        var maxNumErrors = parseInt(config.filters.maxNumErrors);
+        if (this.flags && this.flags.linting) {
+            var opts = this.flags.linting;
+            if (opts.ignore)
+                regexIgnore.push.apply(regexIgnore, opts.ignore);
+            if (opts.setError)
+                regexIgnore.push.apply(regexIgnore, opts.ignore);
+            if (opts.setWarning)
+                regexWarning.push.apply(regexWarning, opts.warning);
+            if (opts.setInfo)
+                regexInfo.push.apply(regexInfo, opts.setInfo);
+            if (opts.maxNumErrors)
+                maxNumErrors = parseInt(opts.maxNumErrors);
+        }
         var found = 0;
-        anno = anno.filter(function(e) {
-            function test(t) {
-                return t.test(e.text);
-            }
-            if (regexIgnore.some(test)) {
-                found++;
-                return false;
-            }
-            if (regexError.some(test)) {
-                e.type = 'error';
-            } else if (regexWarning.some(test)) {
-                e.type = 'warning';
-            } else if (regexInfo.some(test)) {
-                e.type = 'info';
-            }
-            return true;
-        });
+        var last;
+
+        if (regexIgnore.length ||
+            regexWarning.length ||
+            regexInfo.length ||
+            regexError.length
+        ) {
+            anno = anno.filter(function(e) {
+                function test(t) {
+                    return t.test(e.text);
+                }
+                if (regexIgnore.some(test)) {
+                    found++;
+                    last = e.row;
+                    return false;
+                }
+                if (regexError.some(test)) {
+                    e.type = 'error';
+                } else if (regexWarning.some(test)) {
+                    e.type = 'warning';
+                } else if (regexInfo.some(test)) {
+                    e.type = 'info';
+                }
+                return true;
+            });
+        }
+        if (maxNumErrors && anno.length > maxNumErrors) {
+            found = anno.length - maxNumErrors;
+            last = anno[maxNumErrors].row;
+            anno = anno.slice(0, maxNumErrors);
+        }
         if (found) {
             anno.push({
-                row: this.session.getLength(),
+                row: last || this.session.getLength() - 1,
                 column: 0,
                 text: "Suppressed " + Utils.plural(found, "warning") + ".",
                 type: 'info'

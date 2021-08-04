@@ -125,22 +125,6 @@ _Define(function(global) {
     };
     var Utils = global.Utils;
 
-    function FastestCache(factory, el, els, size) {
-        //Useful only if the number of els
-        //visible on screen never changes
-        //ie every detached element is either
-        //reused or offscreen
-        //FastCache solves this with its sync
-        //method
-        var arr = els || new Array(size || 100);
-        for (var i = 0; i < arr.length; i++) {
-            arr[i] = factory();
-            arr[i].addClass('destroyed');
-            stats.append++;
-            el.appendChild(arr[i][0]);
-        }
-        return arr;
-    }
 
     var toClear = [];
     var clear = Utils.debounce(function() {

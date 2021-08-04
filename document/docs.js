@@ -17,11 +17,26 @@ _Define(function(global) {
   global.registerValues({
     "clearCache": "Set to true to clear all cached content",
     "allowAutoSave": "Enable autosave once a document has been saved once",
-    "stashExpiryTime": "If keepDocumentsOnClose is enabled, this specifies how long they should be kept",
+    "stashExpiryTime": {
+      type: "time",
+      doc: "If keepDocumentsOnClose is enabled, this specifies how long they should be kept"
+    },
     "keepDocumentsOnClose": "Allows the editor to save your undo history when a document is closed",
-    "maxStoreSize": "Configures how much storage can be used in total for storing documents",
-    "maxDocCacheSize": "The maximum size of documents that can be cached for later opening. Useful if using a slow network file server.",
-    "maxDocDataSize": "The maximum size of data that should be stored for a single document. Avoid setting this value higher than 1mb.",
+    "maxStoreSize": {
+      type: "size",
+      doc: "Configures how much storage can be used in total for storing documents"
+    },
+    "maxDocCacheSize": {
+      type: "size",
+      doc: "The maximum size of documents that can be cached for later opening. Useful if using a slow network file server."
+    },
+    "autosaveInterval": {
+      type: "time"
+    },
+    "maxDocDataSize": {
+      type: "size",
+      doc: "The maximum size of data that should be stored for a single document. Avoid setting this value higher than 1mb."
+    },
     "nextCleanTime": "no-user-config"
   }, "documents");
   var configEvents = global.ConfigEvents;
@@ -31,7 +46,8 @@ _Define(function(global) {
       case "clearCache":
         if (ev.newValue === true) maxStoreSize = 0;
         Docs.cleanBlobs(true);
-        configure(appConfig.nextCleanTime, Math.min(appConfig.nextCleanTime, new Date().getTime() + 1000 * 60 * 60 * 24), "documents");
+        configure(appConfig.nextCleanTime, Math.min(appConfig.nextCleanTime, new Date().getTime() + 1000 * 60 *
+          60 * 24), "documents");
         ev.preventDefault();
         Notify.info("Cache cleared");
         /*fall through*/
@@ -55,7 +71,6 @@ _Define(function(global) {
   var Utils = global.Utils;
   var Breaks = global.Recovery;
   var Tabs;
-  var State = global.State;
   //priority for content for recovering session
   var CONTENT_PRIORITY = 10;
   //priority for closed docs
@@ -132,7 +147,7 @@ _Define(function(global) {
         var lastSave = Docs.hasBlob(doc.id, "content");
         if (lastSave) {
           var a = blobRegistry[lastSave];
-          if (20 > Math.abs(a.rev - doc.getRevision())) return obj;
+          if (50 > Math.abs(a.rev - doc.getRevision())) return obj;
         }
         Docs.saveBlob(doc.id, "content", res, CONTENT_PRIORITY, {
           rev: doc.getRevision()
@@ -316,9 +331,9 @@ _Define(function(global) {
     if (res === undefined || res === null) {
       doc.setDirty();
       Notify.info('File deleted ' + name);
-      return callback && callback(doc, {
+      return callback && callback(doc, global.createError({
         code: 'ENOENT'
-      });
+      }));
     }
     if (doc.$needsRecoveryFromRefresh) {
       contentLoader.refresh(doc, res);
@@ -361,7 +376,7 @@ _Define(function(global) {
     } while (data.length > targetSize);
     return data;
   }
-  
+
   Docs.tempSave = function(id, force, cleaned) {
     if (id === undefined) {
       for (var i in docs)
@@ -377,8 +392,8 @@ _Define(function(global) {
     if (!doc) return console.warn('Temp saving closed doc');
     try {
       data = JSON.stringify(obj);
-      if (data > maxDocDataSize) {
-        shrinkData(obj, maxDocDataSize);
+      if (data.length > maxDocDataSize) {
+        data = shrinkData(obj, maxDocDataSize);
       }
       appStorage.setItem(id, data);
       docs[id].safe = true;
@@ -396,15 +411,17 @@ _Define(function(global) {
           //nothing can really be done
         }
       }
-      if (notified < 3) {
-        Notify.error('There was an error caching ' + doc.getPath() + '. This might be as a result of low storage or wrong global configuration. Contact developer if issue persists.');
+      if (notified < 2) {
+        Notify.error('There was an error caching ' + doc.getPath() +
+          '. This might be as a result of low storage or wrong global configuration. Contact developer if issue persists.'
+        );
         notified++;
       }
-      console.error(e, {
+      console.log(e, {
         maxDocCacheSize: maxDocCacheSize,
         maxDocDataSize: maxDocDataSize,
         maxStoreSize: maxStoreSize,
-        dataSize: data.length
+        dataSize: data === undefined ? data.length : null
       });
     }
   };
@@ -413,6 +430,10 @@ _Define(function(global) {
     fileServer = fileServer || FileUtils.defaultServer;
     if (doc.isTemp()) {
       doc.setPath(newpath);
+      app.trigger('renameDoc', {
+        doc: docs[id]
+      });
+
       Tabs.setName(id, Docs.getName(id));
       Docs.persist();
     } else {
@@ -429,18 +450,91 @@ _Define(function(global) {
     }
     docs[id].save(callback);
   };
-  Docs.rename = function(path, newpath, server) {
-    var doc = Docs.forPath(path, server);
-    if (doc) {
-      doc.setPath(newpath);
-      Tabs.setName(doc.id, Docs.getName(doc.id));
-      doc.safe = false;
-      sessionSave();
-      Docs.persist();
-      return true;
+
+  Docs.rename = function(path, newpath, fs) {
+    var sep = FileUtils.sep;
+    path = FileUtils.removeTrailingSlash(path);
+    newpath = FileUtils.removeTrailingSlash(newpath);
+    var affected = Object.keys(docs).filter(function(e) {
+      var save = docs[e].getSavePath();
+      if (save && (save == path || save.startsWith(path + sep))) {
+        if (!fs || docs[e].getFileServer().getDisk() == fs.getDisk()) return true;
+      }
+    });
+    if (!affected.length) return;
+    if (affected.length == 1) {
+      doRename();
+    } else {
+      var el = $(Notify.modal({
+        header: "Update documents to match new path?",
+        dismissible: false,
+        form: affected.map(
+          function(e) {
+            return {
+              type: 'accept',
+              value: true,
+              caption: docs[e].getPath()
+            };
+          }),
+        footers: ['Rename All', 'Proceed']
+      }, function() {
+        el.find('input').off();
+        el.find('.modal-rename_all').off();
+        el.find('.modal-proceed').off();
+      }));
+      el.find('.modal-rename_all').click(function() {
+        doRename();
+      }).addClass('error');
+      el.find('.modal-proceed').click(function() {
+        var els = el.find('input');
+        for (var i = els.length; i-- > 0;) {
+          if (!els[i].checked) {
+            affected.splice(i, 0);
+          }
+        }
+        doRename();
+      });
     }
-    return false;
+
+    function doRename() {
+      el && el.modal('close');
+      affected.forEach(function(e) {
+        var doc = docs[e];
+        var docpath = doc && doc.getSavePath() || "";
+        if (docpath.startsWith(path)) {
+          docpath = doc.setPath(newpath + docpath.substring(path.length));
+        }
+        Tabs.setName(e, Docs.getName(e));
+        doc.safe = false;
+        sessionSave();
+        app.trigger('renameDoc', {
+          doc: docs[e]
+        });
+
+      });
+      Docs.persist();
+    }
   };
+  Docs.delete = function(path, fs) {
+    var sep = FileUtils.sep;
+    path = FileUtils.removeTrailingSlash(path);
+    var affected = Object.keys(docs).filter(function(e) {
+      var save = docs[e].getSavePath();
+      if (save && (save == path || save.startsWith(path + sep))) {
+        if (!fs || docs[e].getFileServer().getDisk() == fs.getDisk()) return true;
+      }
+    });
+    if (!affected.length) return;
+    affected.forEach(function(e) {
+      var doc = docs[e];
+      doc.setDirty();
+      app.trigger('deleteDoc', {
+        doc: docs[e]
+      });
+    });
+    Docs.persist();
+  };
+
   Docs.setEncoding = function(id, encoding) {
     ///TODO not quite working yet
     var doc = docs[id];
@@ -465,17 +559,29 @@ _Define(function(global) {
    */
   Docs.saveDocs = function(id, callback, force) {
     if (id !== undefined) {
-      if (docs[id].shadowDoc) {
-        var mainDoc = Docs.forPath(docs[id].getSavePath(), docs[id].getFileServer());
+      app.trigger('saveDoc', {
+        doc: docs[id]
+      });
+
+      if (docs[id].duplicateId) {
+        var savePath = docs[id].getSavePath();
+        var mainDoc = Docs.forPath(savePath, docs[id].getFileServer());
         if (mainDoc && mainDoc.allowAutoSave) {
-          mainDoc.shadowDoc = docs[id].shadowDoc;
+          mainDoc.duplicateId = docs[id].duplicateId;
           mainDoc.allowAutoSave = undefined;
           if (!mainDoc.warned) {
             mainDoc.warned = true;
             Notify.warn("Saving Duplicate Document.</br> Autosave turned off.", 1000);
           }
         }
-        docs[id].shadowDoc = false;
+        docs[id].duplicateId = false;
+        for (var k in docs) {
+          var _doc = docs[k];
+          if (_doc.duplicateId &&
+            _doc.getSavePath() == savePath) {
+            _doc.setDirty();
+          }
+        }
       }
       if (docs[id].allowAutoSave === undefined) {
         docs[id].allowAutoSave = appConfig.allowAutoSave;
@@ -486,7 +592,8 @@ _Define(function(global) {
       docs[id].save(callback);
     } else {
       for (var i in docs)
-        if ((docs[i].dirty || force) && docs[i].allowAutoSave && !docs[i].shadowDoc) Docs.saveDocs(i, callback);
+        if ((docs[i].dirty || force) && docs[i].allowAutoSave && !docs[i].duplicateId) Docs.saveDocs(i,
+          callback);
       autoSave.cancel();
     }
   };
@@ -514,15 +621,14 @@ _Define(function(global) {
     docs[id].setDirty();
   };
   var sessionSave = Docs.$sessionSave = Utils.delay(Docs.tempSave, 5000);
-  var autoSave = Docs.$autoSave = Utils.delay(Docs.saveDocs, Math.max(Utils.parseTime(appConfig.autosaveInterval), 5000));
+  var autoSave = Docs.$autoSave = Utils.delay(Docs.saveDocs, Math.max(Utils.parseTime(appConfig
+      .autosaveInterval),
+    5000));
   Docs.numDocs = function() {
     //Just counting keys for now
-    var num = 0;
-    for (var i in docs) num++;
-    return num;
+    return Object.keys(docs).length;
   };
   Docs.forPath = function(path, server) {
-    var shadow = null;
     for (var i in docs) {
       if (docs[i].getPath() == path) {
         if (server && (server.getDisk() !== docs[i].getFileServer().getDisk())) {
@@ -542,7 +648,7 @@ _Define(function(global) {
   var sameQueue;
   var clearSameQueue = Utils.debounce(function() {
     sameQueue = false;
-  });
+  }, 1000);
   Docs.createPlaceHolder = function() {
     var doc = docs[addDoc.apply(null, arguments)];
     var grp = Utils.eventGroup(app);
@@ -550,19 +656,24 @@ _Define(function(global) {
     clearSameQueue();
 
     function remove() {
-      if (!doc.getValue() && !sameQueue) {
+      if (!sameQueue) {
         closeDoc(doc.id);
       }
     }
+    function cancel(){
+      grp.off();
+      doc.$removeAutoClose = null;
+    }
     grp.once("createDoc", remove);
-    grp.once("change", grp.off, doc.session);
+    grp.once("change", cancel, doc.session);
+    grp.once("changeTab", cancel);
     grp.on("closeDoc", function(e) {
       if (e.doc == doc) {
-        grp.off();
+        cancel();
       }
-      doc.isPlaceholder = null;
     });
-    doc.isPlaceholder = grp;
+    //Used by filebrowser when opening multiple docs
+    doc.$removeAutoClose = cancel;
   };
   Docs.forSession = function(session) {
     if (session) {
@@ -587,9 +698,7 @@ _Define(function(global) {
         doc.clones[0] = session;
         doc.session = temp;
         if (doc.bound) {
-          session.off("change", doc.onChange);
           session.off('changeMode', doc.onChangeMode);
-          doc.session.on("change", doc.onChange);
           doc.session.on('changeMode', doc.onChangeMode);
         }
       }
@@ -603,6 +712,8 @@ _Define(function(global) {
     session.destroy();
     return true;
   };
+
+  //Managed data storage for stuff you can afford to lose
   var blobRegistry = getObj('blobRegistry', {
     size: 0
   });
@@ -615,7 +726,7 @@ _Define(function(global) {
           appStorage.removeItem(e);
       });
     }
-    configure("nextCleanTime", time + 60 /*s*/ * 60 /*m*/ * 24 /*h*/ * 7 /*days*/ , 'documents');
+    configure("nextCleanTime", Math.floor(time) + 60 /*s*/ * 60 /*m*/ * 24 /*h*/ * 7 /*days*/ , 'documents');
   }
   var blobClearTimeout;
   //must be a synchronous file storage
@@ -634,8 +745,6 @@ _Define(function(global) {
       return size;
     }
   };
-  //blob is like stash for open documents
-  //unlike stash it uses size as a metric
   Docs.saveBlob = function(id, name, value, priority, data) {
     var t = Docs.hasBlob(id, name);
     if (t) Docs.removeBlob(t);
@@ -721,7 +830,7 @@ _Define(function(global) {
       clearTimeout(blobClearTimeout);
       blobClearTimeout = null;
     }
-    var now = new Date().getTime();
+    var now = new Date();
     //recent blobs have higher priority
     var t = 1;
     for (var i in blobRegistry) {
@@ -729,7 +838,7 @@ _Define(function(global) {
       var size = blobRegistry[i].size;
       var priority = blobRegistry[i].pr;
       var score = t * priority / size;
-      t += (Utils.getCreationTime(t) - now);
+      t += (Utils.getCreationDate(i) - now);
       toClean.push({
         key: i,
         score: score
@@ -757,14 +866,8 @@ _Define(function(global) {
     }
     return ids;
   };
-  var __factory = {};
-  Docs.registerFactory = function(type, constructor) {
-    if(constructor){
-      //to prevent infinite looping in Docs.$loadData
-      __factory[type] = constructor;
-      FileUtils.ownChannel("docs-" + type, Docs.$loadData);
-    }
-  };
+
+  //Keep documents on cose
   Docs.stashDoc = function(path, text) {
     var key;
     if (path && !path.startsWith(":")) key = Docs.saveBlob("stashExpiry", path, text, STASH_PRIORITY, {
@@ -788,7 +891,9 @@ _Define(function(global) {
     var key = Docs.hasBlob('stashExpiry', path);
     if (key) {
       var text = Docs.restoreBlob(key);
-      Docs.removeBlob(key);
+      //After this saved my life a couple of times, 
+      //decided to leave it, but it's not exposed
+      //Docs.removeBlob(key);
       try {
         var content = JSON.parse(text);
         var value = doc.getValue();
@@ -802,16 +907,23 @@ _Define(function(global) {
       return doc;
     }
   };
+
+  //Plugin Doc Types
+  var __factory = {};
+  Docs.registerFactory = function(type, constructor) {
+    if (constructor) {
+      //to prevent infinite looping in Docs.$loadData
+      __factory[type] = constructor;
+      FileUtils.ownChannel("docs-" + type, Docs.$loadData);
+    }
+  };
   Docs.initialize = function(tabs, activeTab) {
     Tabs = tabs;
-    app.on('changeTab', function(e) {
-      updateIcon(e.tab, true);
+    app.on('changeDoc', function(e) {
+      updateIcon(e.doc ? e.doc.id : 'none', true);
     });
     app.on('app-paused', function() {
       Docs.tempSave();
-    });
-    app.once('app-loaded', function() {
-      updateIcon(Tabs.active);
     });
     Tabs.registerPopulator('m', Docs);
     Tabs.fromJSON();
@@ -868,16 +980,16 @@ _Define(function(global) {
     var load;
     var ids = Object.keys(json);
     if (idToLoadSync) {
-      var i = ids.indexOf(idToLoadSync);
+      var firstId = ids.indexOf(idToLoadSync);
       var loaded = false;
-      if (i > -1) {
-        loaded = loadOne(idToLoadSync, i, function() {
+      if (firstId > -1) {
+        loaded = loadOne(idToLoadSync, firstId, function() {
           return true;
         });
       }
       //Load at least one document
-      for (i = 0; !loaded && i < ids.length; i++) {
-        loaded = loadOne(ids[i], i, function() {
+      for (firstId = 0; !loaded && firstId < ids.length; firstId++) {
+        loaded = loadOne(ids[firstId], firstId, function() {
           return true;
         });
       }
@@ -888,9 +1000,9 @@ _Define(function(global) {
     Breaks.breakpoint("loadDocuments", null, 2000);
     Utils.asyncForEach(ids, load, cb, 2);
 
-    function loadOne(i, index, next) {
-      if (docs[i]) return next();
-      var state = appStorage.getItem(i);
+    function loadOne(id, index, next) {
+      if (docs[id]) return next();
+      var state = appStorage.getItem(id);
       if (state) {
         try {
           state = JSON.parse(state);
@@ -898,11 +1010,21 @@ _Define(function(global) {
           state = null;
         }
       }
-      if (Breaks.hasFailures(i)) {
-        Notify.ask('Proceed to load ' + (json[i] || "Document " + i) + " ?", Docs.$loadData.bind(null, i, json[i], state),
-          Docs.persist);
+      if (Breaks.hasFailures(id)) {
+        Notify.ask('Proceed to load ' + (json[id] || "Document " + id) + " ?", Docs.$loadData.bind(null, id,
+            json[
+              id],
+            state),
+          function() {
+            var key;
+            while ((key = Docs.hasBlob(id))) {
+              Docs.removeBlob(key);
+            }
+            appStorage.removeItem(id);
+            Docs.persist();
+          });
       } else {
-        Docs.$loadData(i, json[i], state);
+        Docs.$loadData(id, json[id], state);
       }
       return next();
     }
@@ -910,46 +1032,43 @@ _Define(function(global) {
 
   function onHandlePreviousFail(json, cb) {
     var el = $(Notify.modal({
-      header: "<i class='material-icons close-icon'>error</i><h5 class='center'>Error Loading Documents</h5>",
+      header: "<h6 class='center'>Error Loading Documents</h6>",
       dismissible: false,
-      body: ["<h6>There seems to have been an error during the previous start.</br>Choose documents to load</h6><form>"].concat(Object.keys(json).map(
+      form: [
+        "<i class='material-icons text-icon'>error</i>There was an error during the last application start. To proceed, you can select which documents to keep."
+      ].concat(Object.keys(json).map(
         function(e) {
-          return "<input data-id='" + e + "' type='checkbox'" + (json[e] ? "" : " checked") + "></input><span>" + (
-            json[e] || "Temporary " + e) + "</span>";
-        })).concat(["</form>"]).join(""),
+          return {
+            type: 'accept',
+            value: !json[e],
+            name: e,
+            caption: json[e] || "Temporary " + e
+          };
+        })),
       footers: ['Load All', 'Proceed']
-    }, function() {
-      el.find('input').off();
-      el.find('.modal-load_all').off();
-      el.find('.modal-proceed').off();
     }));
-    el.find('.modal-load_all').click(function() {
+    el.submit(function() {
       el.modal('close');
-      Breaks.removeBreakpoint('loadDocuments');
-      Docs.fromJSON(json, true, null, cb);
-    }).addClass('error');
-    el.find('.modal-proceed').click(function() {
-      el.modal('close');
-      var toDelete = [];
-      var els = el.find('input');
-      for (var i = els.length; i-- > 0;) {
-        if (!els[i].checked) {
-          toDelete.push(i);
-          delete json[els[i].getAttribute('data-id')];
+      var result = global.Form.parse(el);
+      for (var id in result) {
+        if (!result[id]) {
+          delete json[id];
+          var key;
+          while ((key = Docs.hasBlob(id))) {
+            Docs.removeBlob(key);
+          }
+          appStorage.removeItem(id);
         }
-      }
-      for (var j in toDelete) {
-        var id = toDelete[j];
-        var key;
-        while ((key = Docs.hasBlob(id))) {
-          Docs.removeBlob(key);
-        }
-        appStorage.removeItem(id);
       }
       Breaks.removeBreakpoint('loadDocuments');
       Docs.fromJSON(json, true, null, cb);
     });
-    global.styleCheckbox(el);
+    el.find('.modal-load_all').click(function(e) {
+      e.preventDefault();
+      el.modal('close');
+      Breaks.removeBreakpoint('loadDocuments');
+      Docs.fromJSON(json, true, null, cb);
+    }).addClass('error');
   }
   Docs.$loadData = function(id, path, state) {
     Breaks.setBreakpoint(id);
@@ -960,7 +1079,7 @@ _Define(function(global) {
           docs[id] = new C("", path, undefined, id);
         } else {
           //factory not registered
-          FileUtils.postChannel('docs-'+state.factory,id,path,state);
+          FileUtils.postChannel('docs-' + state.factory, id, path, state);
           console.warn('Unknown factory ' + state.factory);
           return;
         }
@@ -993,7 +1112,8 @@ _Define(function(global) {
   Docs.persist = function() {
     appStorage.setItem("docs", Docs.toJSON());
   };
-  //move to tabs
+
+  //Tabs
   Docs.addTabAnnotation = function(id, anno) {
     Tabs.addAnnotation(id, anno);
   };
@@ -1054,15 +1174,8 @@ _Define(function(global) {
     if (!doc.bound) {
       if (path) Docs.restoreStash(path, doc);
       doc.onChange = Doc.prototype.onChange.bind(doc);
-      doc.onChangeMode = function() {
-        var mode = doc.session.getMode();
-        if (mode.$id != doc.options.mode) {
-          doc.options.mode = mode.$id;
-          doc.safe = false;
-          sessionSave();
-        }
-      };
-      doc.session.on("change", doc.onChange);
+      doc.onChangeMode = Doc.prototype.onChangeMode.bind(doc);
+      doc.session.getDocument().on("change", doc.onChange);
       doc.session.on('changeMode', doc.onChangeMode);
       doc.bound = true;
       app.trigger('createDoc', {
@@ -1098,7 +1211,7 @@ _Define(function(global) {
       if (doc.safe) console.error("Unsafe doc with safe flag");
     }
     if (doc.bound) {
-      doc.session.off("change", doc.onChange);
+      doc.session.getDocument().off("change", doc.onChange);
       doc.session.off("changeMode'", doc.onChangeMode);
       try {
         app.trigger('closeDoc', {
@@ -1117,7 +1230,6 @@ _Define(function(global) {
         Docs.createPlaceHolder();
       }
     }
-
     doc.session.destroy();
   }
 
@@ -1126,52 +1238,12 @@ _Define(function(global) {
       mode: editor ? editor.getOption('mode') : null
     });
   }
-  var updateIcon = Docs.$updateIcon = function(id, fromEvent) {
-    //status indicator
-    //used to show change in status
-    //if need be there might be a change status
-    //event but for now, it has only one listener
-    //TODO add status to tabs,see nametags
-    if (docs[id])
-      $("[data-file=" + id + "]").toggleClass("status_pending", docs[id].dirty);
-    if (!fromEvent && id != Tabs.active) return;
-    var saveEls = $("#save");
-    var color = "";
-    if (!docs[id] || !docs[id].dirty) color = "";
-    else if (docs[id].allowAutoSave) color = "status_pending";
-    else {
-      color = "status_unsaved";
-    }
-    saveEls.attr('class', color);
-  };
-  //this should be in Editors
-  //it is just a legacy method now
-  Docs.swapDoc = function(id) {
-    if (Tabs.active != id) {
-      Tabs.setActive(id, true, true);
-    } else {
-      State.ensure(appConfig.disableBackButtonTabSwitch ? "tabs" : id);
-    }
-  };
   Docs.openDoc = function(path, server, cb) {
     FileUtils.getDoc(path, server, function(doc, error) {
       if (error) {
         var et = "";
         if (cb) return cb(error);
         else if (error == 'binary') et = 'Binary file';
-        else switch (error.code) {
-          case 'ENOENT':
-            et = 'File does not exist';
-            break;
-          case 'EACCESS':
-            et = 'Permission denied';
-            break;
-          case 'ETOOLARGE':
-            et = 'File Too Large';
-            break;
-          default:
-            et = error.code;
-        }
         return Notify.error(et);
       }
       (appConfig.autoCloseDocs ? Docs.createPlaceHolder : addDoc)(null, doc);
@@ -1195,7 +1267,8 @@ _Define(function(global) {
       var obj = {};
       keys.forEach(function(e) {
         obj[e] = appStorage.getItem(e);
-        if (obj[e].length > 100) obj[e] = obj[e].substring(0, 100) + "...";
+        //ddon't get how this returns undefined
+        if (obj[e] && obj[e].length > 100) obj[e] = obj[e].substring(0, 100) + "...";
       });
       return obj;
     })() : Object.create(appStorage);
@@ -1204,16 +1277,52 @@ _Define(function(global) {
       mode: "ace/mode/json"
     });
   };
+  var recoverDoc = function() {
+    var keys = Docs.allBlobs('stashExpiry');
+    keys.forEach(function(e) {
+      var doc = new Doc('', 'temp://' + blobRegistry[e].type);
+      var data = Docs.restoreBlob(e);
+      try {
+        data = JSON.parse(data);
+        doc.unserialize(data);
+        addDoc('recovery', doc);
+      } catch (e) {
+        console.error(e);
+      }
+    });
+  };
   Docs.getAnnotations = function(id) {
     return Tabs.getAnnotations(id);
   };
   //BUG to fix
   Docs.getInfo = function(id) {
-    return (docs[id] ? (docs[id].isTemp() ? "<i>" + docs[id].id + "</i>" : docs[id].getSavePath() || "<i>" + docs[id].id +
+    return (docs[id] ? (docs[id].isTemp() ? "<i>" + docs[id].id + "</i>" : docs[id].getSavePath() || "<i>" +
+      docs[
+        id].id +
       "</i>") : null);
     //+"<i class='right' style='text-transform:uppercase'>"+docs[id].getEncoding()+"</i>";
   };
+  var updateIcon = Docs.$updateIcon = function(id, fromEvent) {
+    //status indicator
+    //used to show change in status
+    //if need be there might be a change status
+    //event but for now, it has only one listener
+    //TODO add status to tabs,see nametags
+    if (docs[id])
+      $("[data-file=" + id + "]").toggleClass("status_pending", docs[id].dirty);
+    if (fromEvent || docs[id] === global.getActiveDoc()) {
+      var saveEls = $("#save");
+      var color = "";
+      if (!docs[id] || !docs[id].dirty) color = "";
+      else if (docs[id].allowAutoSave) color = "status_pending";
+      else {
+        color = "status_unsaved";
+      }
+      saveEls.attr('class', color);
+    }
+  };
 
+  global.$recovery = recoverDoc;
   global.$determineQuota = determineQuota;
   global.$inspect = inspectMemory;
   global.Functions.newDoc = newDoc;

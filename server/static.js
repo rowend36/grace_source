@@ -1,3 +1,4 @@
+var fs = require('fs');
 exports.static = function(rootFile, rootPrefix) {
     return function(req, res) {
         var url = req.path;
@@ -33,4 +34,4 @@ exports.static = function(rootFile, rootPrefix) {
             }
         });
     };
-}
+};

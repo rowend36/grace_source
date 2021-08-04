@@ -24,6 +24,9 @@ _Define(function(global) {
             currentLoad = esize;
             count = ecount;
         };
+        this.increment = function(size) {
+            currentLoad += size;
+        };
         this.getOpts = function() {
             return opts;
         };
@@ -60,22 +63,20 @@ _Define(function(global) {
                 server.stat(path, function(e, s) {
                     if (s) {
                         e = assertSize(s.size);
-                        if(e){
-                            next(e,null,path);
-                        }
-                        else loadFile(path, server, next);
-                    }
-                    else next({
-                        reason: e || "unknown"
-                    },null,path);
+                        if (e) {
+                            next(e, null, path);
+                        } else loadFile(path, server, next);
+                    } else next(e || {
+                        reason: "unknown"
+                    }, null, path);
                 });
             } else
                 server.readFile(path, FileUtils.encodingFor(path), function(e, res) {
                     if (!e && res) {
                         e = assertSize(res.length);
-                        if(!e){
+                        if (!e) {
                             count++;
-                            currentLoad+=res.length + BASE_FILE_SIZE;
+                            currentLoad += res.length + BASE_FILE_SIZE;
                         }
                     }
                     next(e, res, path);

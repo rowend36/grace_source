@@ -1,19 +1,19 @@
-_Define(function(global){
-   
+_Define(function(global) {
+
     var EditSession = global.EditSession;
     var AceDocument = global.Document;
     var Utils = global.Utils;
     var FileUtils = global.FileUtils;
     var Notify = global.Notify;
-    
+
     var docs = Object.create(null);
     var Range = global.Range;
-    var Docs = global.Docs || (global.Docs={});
-    var appConfig = global.registerAll({},"documents");
-    
+    var Docs = global.Docs || (global.Docs = {});
+    var appConfig = global.registerAll({}, "documents");
+
     //an extension to Ace Document that manges it's own session
     function Doc(content, path, mode, id, orphan) {
-        Doc.super(this,[content||""]);
+        Doc.super(this, [content || ""]);
         if (id) {
             this.id = id;
         } else {
@@ -23,14 +23,14 @@ _Define(function(global){
             throw new Error("Creating doc with existing id");
         }
         this.setPath(path);
-        
+
         //circular reference
         this.session = new EditSession(this, mode);
-        
+
         if (orphan) {
             this.orphan = orphan;
         } else docs[this.id] = this;
-        
+
         this.session.setOptions(Docs.$defaults);
         //needs saving
         this.dirty = false;
@@ -38,14 +38,14 @@ _Define(function(global){
         this.safe = false;
         this.options = {};
     }
-    Utils.inherits(Doc,AceDocument);
-    
+    Utils.inherits(Doc, AceDocument);
+
     //a unique path for all opened docs
-    //uses shadowDoc for duplicates
+    //uses duplicateId for duplicates
     //there is usually no reason to change this
     //code and it may be inlined in future
     Doc.prototype.getPath = function() {
-        return (this.shadowDoc ? this.path + "~~" + this.shadowDoc : this.path);
+        return (this.duplicateId ? this.path + "~~" + this.duplicateId : this.path);
     };
     Doc.prototype.setPath = function(path) {
         if (!path) {
@@ -57,13 +57,13 @@ _Define(function(global){
         if (path == this.path) return;
         //shadow docs,
         //ensure getpath is unique
-        //save file to update shadowDoc value
+        //save file to update duplicateId value
         if (Docs.forPath(path)) {
             //0 would test false
-            this.shadowDoc = 1;
+            this.duplicateId = 1;
             var a;
-            while ((a = Docs.forPath(path + "~~" + this.shadowDoc))) {
-                this.shadowDoc++;
+            while ((a = Docs.forPath(path + "~~" + this.duplicateId))) {
+                this.duplicateId++;
                 if (a == this) throw new Error("Infinite Looping caught!!");
             }
             this.allowAutoSave = undefined;
@@ -90,7 +90,7 @@ _Define(function(global){
             rev = this.session.$undoManager.startNewGroup();
         }
         var res = this.session.getValue();
-        
+
         fs.writeFile(this.path, res, this.getEncoding(), function(err) {
             if (!err && rev != undefined)
                 self.setClean(rev, res);
@@ -117,13 +117,12 @@ _Define(function(global){
         load();
         return true;
     };
-    
+
     Doc.prototype.isTemp = function() {
         return this.path.startsWith('temp:/');
     };
-    
-    
-    
+
+
     Doc.prototype.serialize = function() {
         var obj = sessionToJson(this.session);
         obj.lastSave = this.lastSave;
@@ -155,7 +154,7 @@ _Define(function(global){
         this.dirty = obj.dirty;
     };
 
-    
+
     function filterHistory(deltas) {
         return deltas.filter(function(d) {
             return d.action != "removeFolds";
@@ -182,7 +181,8 @@ _Define(function(global){
                 undo: shrink(undoManager.$undoStack).map(filterHistory),
                 redo: undoManager.$redoStack.map(filterHistory),
                 m: undoManager.$maxRev,
-                b: (undoManager.$redoStackBaseRev !== undoManager.$rev) ? undoManager.$redoStackBaseRev : "",
+                b: (undoManager.$redoStackBaseRev !== undoManager.$rev) ? undoManager.$redoStackBaseRev :
+                    "",
             } : null,
             folds: session.getAllFolds().map(function(fold) {
                 return {
@@ -236,13 +236,13 @@ _Define(function(global){
         }
     }
 
-    
+
     Doc.prototype.isReadOnly = function(e) {
         return (this.editorOptions && this.editorOptions.readOnly);
     };
     Doc.prototype.setValue = function(e, isClean) {
-        AceDocument.prototype.setValue.call(this,e);
-        
+        AceDocument.prototype.setValue.call(this, e);
+
         var u = this.session.$undoManager;
         if (u && u.$undoStack.length === 1 && u.$redoStack.length === 0 && u.$undoStack[0].length === 1) {
             this.session.$undoManager.reset();
@@ -251,7 +251,7 @@ _Define(function(global){
             this.setClean(null, e);
         }
     };
-    
+
     Doc.prototype.updateValue = function(res, isClean) {
         var a = Docs.generateDiff(this.getValue(), res);
         var t = this;
@@ -267,7 +267,7 @@ _Define(function(global){
     };
     Doc.prototype.getSize = function() {
         var lastLine = this.session.getLength();
-        if(lastLine<1)return 0;
+        if (lastLine < 1) return 0;
         var doc = this;
         var sum = doc.getNewLineCharacter().length * (lastLine - 1);
         for (; lastLine > 0;) {
@@ -320,7 +320,7 @@ _Define(function(global){
     Doc.prototype.onChange = function() {
         var self = this;
         if (self.$fromSerial) return;
-        if (self.session.$fromUndo)
+        if (self.session.$undoManager.$fromUndo)
             checkRevision(self);
         if (self.safe)
             self.safe = false;
@@ -331,8 +331,16 @@ _Define(function(global){
         }
         Docs.$sessionSave();
     };
+    Doc.prototype.onChangeMode = function() {
+        var mode = this.session.getMode();
+        if (mode.$id != this.options.mode) {
+            this.options.mode = mode.$id;
+            this.safe = false;
+            Docs.$sessionSave();
+        }
+    };
     Doc.prototype.setDirty = function(fromChange) {
-        if(!fromChange){
+        if (!fromChange) {
             this.lastSave = null;
         }
         this.dirty = true;
@@ -342,11 +350,11 @@ _Define(function(global){
         var doc = this;
         doc.lastSave = rev || doc.getRevision();
         //last save checksum, for now we use length
-        doc._LSC = doc.getChecksum();
+        doc._LSC = doc.getChecksum(res);
         doc.dirty = false;
         //todo put this data elsewhere
         //like in a smaller header
-        doc.safe = false; 
+        doc.safe = false;
         Docs.$sessionSave();
         Docs.$updateIcon(this.id);
     };
@@ -365,8 +373,8 @@ _Define(function(global){
         fork.unserialize(data);
         return fork;
     };
-    
-    
+
+
     Doc.prototype.cloneSession = function() {
         var session = this.session;
         var s = new EditSession(this, session.getMode());
@@ -386,7 +394,7 @@ _Define(function(global){
         this.clones.push(s);
         return s;
     };
-    
+
     Docs.$jsonToSession = jsonToSession;
     Docs.$sessionToJson = sessionToJson;
     global.Doc = Doc;

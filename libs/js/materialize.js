@@ -1209,7 +1209,6 @@ M.anime = Object.assign(function(opts){
         if ('duration' in options) {
             Effect.duration = options.duration;
         }
-
         //Wrap input inside <i> tag
         Effect.wrapInput($$('.waves-effect'));
 
@@ -1529,6 +1528,7 @@ M.anime = Object.assign(function(opts){
             preventScrolling: true,
             dismissible: true,
             startingTop: '4%',
+            centerY: false,
             endingTop: '10%'
         };
 
@@ -1700,6 +1700,7 @@ M.anime = Object.assign(function(opts){
                 key: "_handleFocus",
                 value: function _handleFocus(e) {
                     // Only trap focus if this modal is the last model opened (prevents loops in nested modals).
+                    if(e.target.className.indexOf('keyboard-listener')>-1)return;
                     if (!this.el.contains(e.target) && this._nthModalOpened === Modal._modalsOpen) {
                         this.el.focus();
                     }
@@ -1737,6 +1738,7 @@ M.anime = Object.assign(function(opts){
                         targets: this.el,
                         duration: this.options.inDuration,
                         easing: 'easeOutCubic',
+                        opacity: 1,
                         // Handle modal onOpenEnd callback
                         complete: function() {
                             if (typeof _this13.options.onOpenEnd === 'function') {
@@ -1748,16 +1750,24 @@ M.anime = Object.assign(function(opts){
                     // Bottom sheet animation
                     if (this.el.classList.contains('bottom-sheet')) {
                         $.extend(enterAnimOptions, {
-                            bottom: 0,
-                            opacity: 1
+                            bottom: 0
                         });
                         anim(enterAnimOptions);
 
                         // Normal modal animation
                     } else {
-                        $.extend(enterAnimOptions, {
+                        if(this.options.centerY){
+                            this.options.startingTop =
+                            this.options.endingTop = "45%";
+                            $.extend(enterAnimOptions, {
+                                top: [this.options.startingTop, this.options.endingTop],
+                                scaleX: [0.8, 1],
+                                scaleY: [0.8, 1],
+                                translateY: "-50%"
+                            })
+                        }
+                        else $.extend(enterAnimOptions, {
                             top: [this.options.startingTop, this.options.endingTop],
-                            opacity: 1,
                             scaleX: [0.8, 1],
                             scaleY: [0.8, 1]
                         });
@@ -1813,7 +1823,8 @@ M.anime = Object.assign(function(opts){
                             top: [this.options.endingTop, this.options.startingTop],
                             opacity: 0,
                             scaleX: 0.8,
-                            scaleY: 0.8
+                            scaleY: 0.8,
+                            translateY: this.options.centerY?["-50%","-30%"]:0
                         });
                         anim(exitAnimOptions);
                     }
@@ -1866,7 +1877,7 @@ M.anime = Object.assign(function(opts){
                     this._animateIn();
 
                     // Focus modal
-                    this.el.focus();
+                    // this.el.focus();
 
                     return this;
                 }
@@ -1900,7 +1911,7 @@ M.anime = Object.assign(function(opts){
 
                     if (this.options.dismissible) {
                         document.removeEventListener('keydown', this._handleKeydownBound);
-                        // document.removeEventListener('focus', this._handleFocusBound, true);
+                        document.removeEventListener('focus', this._handleFocusBound, true);
                     }
 
                     anim.remove(this.el);
@@ -2313,406 +2324,5 @@ M.anime = Object.assign(function(opts){
         M.toast = function(options) {
             return new Toast(options);
         };
-    })(cash, M.anime);
-    //Floating Action Button
-    ;
-    (function($, anim) {
-        'use strict';
-
-        var _defaults = {
-            direction: 'top',
-            hoverEnabled: true,
-            toolbarEnabled: false
-        };
-
-        $.fn.reverse = [].reverse;
-
-        /**
-         * @class
-         *
-         */
-
-        var FloatingActionButton = function(_Component14) {
-            _inherits(FloatingActionButton, _Component14);
-
-            /**
-             * Construct FloatingActionButton instance
-             * @constructor
-             * @param {Element} el
-             * @param {Object} options
-             */
-            function FloatingActionButton(el, options) {
-                _classCallCheck(this, FloatingActionButton);
-
-                var _this47 = _possibleConstructorReturn(this, (FloatingActionButton.__proto__ || Object.getPrototypeOf(FloatingActionButton)).call(this, FloatingActionButton, el, options));
-
-                _this47.el.M_FloatingActionButton = _this47;
-
-                /**
-                 * Options for the fab
-                 * @member FloatingActionButton#options
-                 * @prop {Boolean} [direction] - Direction fab menu opens
-                 * @prop {Boolean} [hoverEnabled=true] - Enable hover vs click
-                 * @prop {Boolean} [toolbarEnabled=false] - Enable toolbar transition
-                 */
-                _this47.options = $.extend({}, FloatingActionButton.defaults, options);
-
-                _this47.isOpen = false;
-                _this47.$anchor = _this47.$el.children('a').first();
-                _this47.$menu = _this47.$el.children('ul').first();
-                _this47.$floatingBtns = _this47.$el.find('ul .btn-floating');
-                _this47.$floatingBtnsReverse = _this47.$el.find('ul .btn-floating').reverse();
-                _this47.offsetY = 0;
-                _this47.offsetX = 0;
-
-                _this47.$el.addClass("direction-" + _this47.options.direction);
-                if (_this47.options.direction === 'top') {
-                    _this47.offsetY = 40;
-                } else if (_this47.options.direction === 'right') {
-                    _this47.offsetX = -40;
-                } else if (_this47.options.direction === 'bottom') {
-                    _this47.offsetY = -40;
-                } else {
-                    _this47.offsetX = 40;
-                }
-                _this47._setupEventHandlers();
-                return _this47;
-            }
-
-            _createClass(FloatingActionButton, [{
-                key: "destroy",
-
-
-                /**
-                 * Teardown component
-                 */
-                value: function destroy() {
-                    this._removeEventHandlers();
-                    this.el.M_FloatingActionButton = undefined;
-                }
-
-                /**
-                 * Setup Event Handlers
-                 */
-
-            }, {
-                key: "_setupEventHandlers",
-                value: function _setupEventHandlers() {
-                    this._handleFABClickBound = this._handleFABClick.bind(this);
-                    this._handleOpenBound = this.open.bind(this);
-                    this._handleCloseBound = this.close.bind(this);
-
-                    if (this.options.hoverEnabled && !this.options.toolbarEnabled) {
-                        this.el.addEventListener('mouseenter', this._handleOpenBound);
-                        this.el.addEventListener('mouseleave', this._handleCloseBound);
-                    } else {
-                        this.el.addEventListener('click', this._handleFABClickBound);
-                    }
-                }
-
-                /**
-                 * Remove Event Handlers
-                 */
-
-            }, {
-                key: "_removeEventHandlers",
-                value: function _removeEventHandlers() {
-                    if (this.options.hoverEnabled && !this.options.toolbarEnabled) {
-                        this.el.removeEventListener('mouseenter', this._handleOpenBound);
-                        this.el.removeEventListener('mouseleave', this._handleCloseBound);
-                    } else {
-                        this.el.removeEventListener('click', this._handleFABClickBound);
-                    }
-                }
-
-                /**
-                 * Handle FAB Click
-                 */
-
-            }, {
-                key: "_handleFABClick",
-                value: function _handleFABClick() {
-                    if (this.isOpen) {
-                        this.close();
-                    } else {
-                        this.open();
-                    }
-                }
-
-                /**
-                 * Handle Document Click
-                 * @param {Event} e
-                 */
-
-            }, {
-                key: "_handleDocumentClick",
-                value: function _handleDocumentClick(e) {
-                    if (!$(e.target).closest(this.$menu).length) {
-                        this.close();
-                    }
-                }
-
-                /**
-                 * Open FAB
-                 */
-
-            }, {
-                key: "open",
-                value: function open() {
-                    if (this.isOpen) {
-                        return;
-                    }
-
-                    if (this.options.toolbarEnabled) {
-                        this._animateInToolbar();
-                    } else {
-                        this._animateInFAB();
-                    }
-                    this.isOpen = true;
-                }
-
-                /**
-                 * Close FAB
-                 */
-
-            }, {
-                key: "close",
-                value: function close() {
-                    if (!this.isOpen) {
-                        return;
-                    }
-
-                    if (this.options.toolbarEnabled) {
-                        window.removeEventListener('scroll', this._handleCloseBound, true);
-                        document.body.removeEventListener('click', this._handleDocumentClickBound, true);
-                        this._animateOutToolbar();
-                    } else {
-                        this._animateOutFAB();
-                    }
-                    this.isOpen = false;
-                }
-
-                /**
-                 * Classic FAB Menu open
-                 */
-
-            }, {
-                key: "_animateInFAB",
-                value: function _animateInFAB() {
-                    var _this48 = this;
-
-                    this.$el.addClass('active');
-
-                    var time = 0;
-                    this.$floatingBtnsReverse.each(function(el) {
-                        anim({
-                            targets: el,
-                            opacity: 1,
-                            scale: [0.4, 1],
-                            translateY: [_this48.offsetY, 0],
-                            translateX: [_this48.offsetX, 0],
-                            duration: 275,
-                            delay: time,
-                            easing: 'easeInOutQuad'
-                        });
-                        time += 40;
-                    });
-                }
-
-                /**
-                 * Classic FAB Menu close
-                 */
-
-            }, {
-                key: "_animateOutFAB",
-                value: function _animateOutFAB() {
-                    var _this49 = this;
-
-                    this.$floatingBtnsReverse.each(function(el) {
-                        anim.remove(el);
-                        anim({
-                            targets: el,
-                            opacity: 0,
-                            scale: 0.4,
-                            translateY: _this49.offsetY,
-                            translateX: _this49.offsetX,
-                            duration: 175,
-                            easing: 'easeOutQuad',
-                            complete: function() {
-                                _this49.$el.removeClass('active');
-                            }
-                        });
-                    });
-                }
-
-                /**
-                 * Toolbar transition Menu open
-                 */
-
-            }, {
-                key: "_animateInToolbar",
-                value: function _animateInToolbar() {
-                    var _this50 = this;
-
-                    var scaleFactor = void 0;
-                    var windowWidth = window.innerWidth;
-                    var windowHeight = window.innerHeight;
-                    var btnRect = this.el.getBoundingClientRect();
-                    var backdrop = $('<div class="fab-backdrop"></div>');
-                    var fabColor = this.$anchor.css('background-color');
-                    this.$anchor.append(backdrop);
-
-                    this.offsetX = btnRect.left - windowWidth / 2 + btnRect.width / 2;
-                    this.offsetY = windowHeight - btnRect.bottom;
-                    scaleFactor = windowWidth / backdrop[0].clientWidth;
-                    this.btnBottom = btnRect.bottom;
-                    this.btnLeft = btnRect.left;
-                    this.btnWidth = btnRect.width;
-
-                    // Set initial state
-                    this.$el.addClass('active');
-                    this.$el.css({
-                        'text-align': 'center',
-                        width: '100%',
-                        bottom: 0,
-                        left: 0,
-                        transform: 'translateX(' + this.offsetX + 'px)',
-                        transition: 'none'
-                    });
-                    this.$anchor.css({
-                        transform: 'translateY(' + -this.offsetY + 'px)',
-                        transition: 'none'
-                    });
-                    backdrop.css({
-                        'background-color': fabColor
-                    });
-
-                    setTimeout(function() {
-                        _this50.$el.css({
-                            transform: '',
-                            transition: 'transform .2s cubic-bezier(0.550, 0.085, 0.680, 0.530), background-color 0s linear .2s'
-                        });
-                        _this50.$anchor.css({
-                            overflow: 'visible',
-                            transform: '',
-                            transition: 'transform .2s'
-                        });
-
-                        setTimeout(function() {
-                            _this50.$el.css({
-                                overflow: 'hidden',
-                                'background-color': fabColor
-                            });
-                            backdrop.css({
-                                transform: 'scale(' + scaleFactor + ')',
-                                transition: 'transform .2s cubic-bezier(0.550, 0.055, 0.675, 0.190)'
-                            });
-                            _this50.$menu.children('li').children('a').css({
-                                opacity: 1
-                            });
-
-                            // Scroll to close.
-                            _this50._handleDocumentClickBound = _this50._handleDocumentClick.bind(_this50);
-                            window.addEventListener('scroll', _this50._handleCloseBound, true);
-                            document.body.addEventListener('click', _this50._handleDocumentClickBound, true);
-                        }, 100);
-                    }, 0);
-                }
-
-                /**
-                 * Toolbar transition Menu close
-                 */
-
-            }, {
-                key: "_animateOutToolbar",
-                value: function _animateOutToolbar() {
-                    var _this51 = this;
-
-                    var windowWidth = window.innerWidth;
-                    var windowHeight = window.innerHeight;
-                    var backdrop = this.$el.find('.fab-backdrop');
-                    var fabColor = this.$anchor.css('background-color');
-
-                    this.offsetX = this.btnLeft - windowWidth / 2 + this.btnWidth / 2;
-                    this.offsetY = windowHeight - this.btnBottom;
-
-                    // Hide backdrop
-                    this.$el.removeClass('active');
-                    this.$el.css({
-                        'background-color': 'transparent',
-                        transition: 'none'
-                    });
-                    this.$anchor.css({
-                        transition: 'none'
-                    });
-                    backdrop.css({
-                        transform: 'scale(0)',
-                        'background-color': fabColor
-                    });
-                    this.$menu.children('li').children('a').css({
-                        opacity: ''
-                    });
-
-                    setTimeout(function() {
-                        backdrop.remove();
-
-                        // Set initial state.
-                        _this51.$el.css({
-                            'text-align': '',
-                            width: '',
-                            bottom: '',
-                            left: '',
-                            overflow: '',
-                            'background-color': '',
-                            transform: 'translate3d(' + -_this51.offsetX + 'px,0,0)'
-                        });
-                        _this51.$anchor.css({
-                            overflow: '',
-                            transform: 'translate3d(0,' + _this51.offsetY + 'px,0)'
-                        });
-
-                        setTimeout(function() {
-                            _this51.$el.css({
-                                transform: 'translate3d(0,0,0)',
-                                transition: 'transform .2s'
-                            });
-                            _this51.$anchor.css({
-                                transform: 'translate3d(0,0,0)',
-                                transition: 'transform .2s cubic-bezier(0.550, 0.055, 0.675, 0.190)'
-                            });
-                        }, 20);
-                    }, 200);
-                }
-            }], [{
-                key: "init",
-                value: function init(els, options) {
-                    return _get(FloatingActionButton.__proto__ || Object.getPrototypeOf(FloatingActionButton), "init", this).call(this, this, els, options);
-                }
-
-                /**
-                 * Get Instance
-                 */
-
-            }, {
-                key: "getInstance",
-                value: function getInstance(el) {
-                    var domElem = !!el.jquery ? el[0] : el;
-                    return domElem.M_FloatingActionButton;
-                }
-            }, {
-                key: "defaults",
-                get: function() {
-                    return _defaults;
-                }
-            }]);
-
-            return FloatingActionButton;
-        }(Component);
-
-        M.FloatingActionButton = FloatingActionButton;
-
-        if (M.jQueryLoaded) {
-            M.initializeJqueryWrapper(FloatingActionButton, 'floatingActionButton', 'M_FloatingActionButton');
-        }
     })(cash, M.anime);
 })()

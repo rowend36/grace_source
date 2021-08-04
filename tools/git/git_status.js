@@ -19,7 +19,9 @@ _Define(function(global) {
         return function(status) {
             var name = clean(view.attr("filename"));
             var text = "";
-            if (status == "unmodified" || status == "ignored") {
+            if (status == "*conflict") {
+                text = "<span class= 'status red'>" + status + "</span>";
+            } else if (status == "conflict" || status == "unmodified" || status == "ignored") {
                 text = "<span class= 'status'>" + status + "</span>";
             } else {
                 if (status[0] == "*") {
@@ -38,12 +40,10 @@ _Define(function(global) {
         var r = [ev.filepath];
         var stub = ev.browser;
         if (ev.marked) {
-            prov = prov.cached();
             r = ev.marked.map(function(t) {
                 return ev.rootDir + t;
             });
         }
-        console.log(r);
         r.forEach(function(p) {
             var a = {
                 filepath: clean(relative(prov.dir, p)),
@@ -54,7 +54,6 @@ _Define(function(global) {
                     prov.status(a).then(updateView(view));
                 }
             };
-            console.log(a, prov);
             if (ev.browser.getElement(ev.browser.filename(p)).attr('deleted')) {
                 prov.remove(a).then(end);
             } else prov.add(a).then(end);
@@ -64,7 +63,6 @@ _Define(function(global) {
         var r = [ev.filepath];
         var stub = ev.browser;
         if (ev.marked) {
-            prov = prov.cached();
             r = ev.marked.map(function(t) {
                 return ev.rootDir + t;
             });
@@ -94,7 +92,6 @@ _Define(function(global) {
             ev.browser.reload();
         }, 200);
         if (ev.marked) {
-            prov = prov.cached();
             r = ev.marked.map(function(t) {
                 return ev.rootDir + t;
             });
@@ -116,8 +113,7 @@ _Define(function(global) {
     };
 
     function statusFiles(prov, stub, next) {
-        prov = prov.cached();
-        var r = stub.hier.slice(stub.pageStart, stub.pageEnd).map(function(t) {
+        var r = stub.names.slice(stub.pageStart, stub.pageEnd).map(function(t) {
             return stub.rootDir + t;
         });
         var startRootDir = stub.rootDir;
@@ -153,7 +149,6 @@ _Define(function(global) {
         var r = [ev.filepath];
         var stub = ev.browser;
         if (ev.marked) {
-            prov = prov.cached();
             r = ev.marked.map(function(t) {
                 return ev.rootDir + t;
             });
@@ -177,10 +172,10 @@ _Define(function(global) {
     /*Status*/
     var unmodifiedCache;
 
-    function JSONIndex(fs, dir, commit) {
+    function JSONIndex(fs, gitdir, commit) {
         this.entries = Object.create(null);
         this.fs = fs;
-        this.dir = dir;
+        this.gitdir = gitdir;
         this.commit = commit;
         this.clean = true; //has pending changes
     }
@@ -244,30 +239,30 @@ _Define(function(global) {
     //or to check the index for actual difference in stats
     //but for now, it works so I'm cool
     */
-    function cleanCachedStatus(dir, fs) {
+    function cleanCachedStatus(gitdir, fs) {
         if (!appConfig.gitUseCachedStatus) return;
-        if (unmodifiedCache && (unmodifiedCache.fs != fs || unmodifiedCache.dir != dir)) {
+        if (unmodifiedCache && (unmodifiedCache.fs != fs || unmodifiedCache.gitdir != gitdir)) {
             saveStatusCache();
             unmodifiedCache = null;
         }
     }
 
-    function splitStatus(dir, batchSize, fs, files, sendBatch, progress) {
+    function splitStatus(gitdir, batchSize, fs, files, sendBatch, progress) {
         if (batchSize > files.length) {
             return sendBatch(files.slice(0), true);
         }
-        cleanCachedStatus(dir, fs);
+        cleanCachedStatus(gitdir, fs);
         if (!unmodifiedCache) {
-            FileUtils.getConfig(appConfig.gitdir + "-status", function(err, s) {
-                if (s && (unmodifiedCache = JSONIndex.from(s, fs, dir))) {
+            GitCommands.readFile("status", {
+                gitdir: gitdir,
+                fs: fs
+            }, function(err, s) {
+                if (s && (unmodifiedCache = JSONIndex.from(s, fs, gitdir))) {
                     genList();
                 } else {
                     sendBatch(files.slice(0), true);
                     progress(100);
                 }
-            }, {
-                rootDir: dir,
-                fileServer: fs
             });
         } else genList();
 
@@ -291,26 +286,23 @@ _Define(function(global) {
     function saveStatusCache() {
         if (unmodifiedCache && !unmodifiedCache.clean) {
             var a = unmodifiedCache.toString();
-            FileUtils.saveConfig(appConfig.gitdir + "-status", a, Utils.noop, {
-                rootDir: unmodifiedCache.dir,
-                fileServer: unmodifiedCache.fs
-            });
+            GitCommands.writeFile("status", a, unmodifiedCache, Utils.noop, );
             unmodifiedCache.clean = true;
         }
     }
 
-    function pushUnmodified(dir, fs, name /*, commit*/ ) {
-        cleanCachedStatus(dir, fs);
+    function pushUnmodified(gitdir, fs, name /*, commit*/ ) {
+        cleanCachedStatus(gitdir, fs);
         if (!unmodifiedCache /*|| statusCache.commit != commit*/ ) {
-            unmodifiedCache = new JSONIndex(fs, dir);
+            unmodifiedCache = new JSONIndex(fs, gitdir);
         }
         unmodifiedCache.set(name);
     }
 
-    function removeUnmodified(dir, fs, name /*, commit*/ ) {
-        cleanCachedStatus(dir, fs);
+    function removeUnmodified(gitdir, fs, name /*, commit*/ ) {
+        cleanCachedStatus(gitdir, fs);
         if (!unmodifiedCache /*|| statusCache.commit != commit*/ ) {
-            unmodifiedCache = new JSONIndex(fs, dir);
+            unmodifiedCache = new JSONIndex(fs, gitdir);
         }
         unmodifiedCache.remove(name);
     }
@@ -391,15 +383,19 @@ _Define(function(global) {
         this.prov = prov;
         var modal = this.modal = $(Notify.modal({
             header: 'Git Status',
+            large: true,
             body: ["<span class='progress' ><span class='determinate'></span></span>",
                 "<h6 class='stage-group-header'>Staged<button id='removeAllButton' class='btn btn-flat right'>Remove all</button></h6>",
-                "<ul class='group-staged fileview'></ul>",
+                "<ul class='part group-staged fileview'></ul>",
                 "<h6 class='stage-group-header'>Unstaged<button id='addAllButton' class='btn btn-flat right'>Add all</button></h6>",
-                "<ul class='group-unstaged fileview'></ul>", "<h6 class='stage-group-header'>Untracked</h6>",
-                "<ul class='group-untracked fileview'></ul>"
+                "<ul class='part group-unstaged fileview'></ul>",
+                "<h6 class='stage-group-header'>Untracked</h6>",
+                "<ul class='part group-untracked fileview'></ul>"
             ].join(""),
+            large: true,
             footers: ['Commit']
         }, this.signal.abort));
+        modal.addClass('modal-large');
         this.safe = this.signal.control.bind(this.signal);
         this.signal.notify(this.onDismiss.bind(this));
         this.updateName = this.safe(this.updateName.bind(this));
@@ -447,17 +443,23 @@ _Define(function(global) {
             var files = Array.prototype.map.apply(els, [function(a) {
                 return [a.getAttribute('data-status'), a.getAttribute('data-file')];
             }]);
-            if (files.length) Notify.ask((staged ? 'Unstage all files?' : 'Stage all files?'), function() {
-                Utils.asyncForEach(files, function(e, i, n) {
-                    n = self.signal.control(n);
-                    changeStatus(self.prov, e[0], staged, {
-                        filepath: e[1],
-                    }, function() {
-                        self.updateName(e[1], els[i]);
-                        n();
-                    }, n);
-                }, success, files.length > 100 ? 4 : 10);
-            });
+            els.remove();
+            if (files.length) Notify.ask((staged ? 'Unstage all files?' : 'Stage all files?'),
+                function() {
+                    var prov = self.prov;
+                    Utils.asyncForEach(files, function(e, i, n) {
+                        n = self.signal.control(n);
+
+                        function next() {
+                            self.updateName(e[1], els[i]);
+                            n();
+                        }
+                        changeStatus(self.prov, e[0], staged, {
+                            filepath: e[1],
+                        }, next, next);
+                    }, success, (files.length > prov.batchSize ? prov.batchSize / 5 : prov
+                        .batchSize));
+                });
         };
         this.handleClick = function(e) {
             var a = e.target;
@@ -469,7 +471,8 @@ _Define(function(global) {
 
                 var addAll = function() {
                     var sample = list.slice(0, 20).join(' ,');
-                    Notify.ask('Add all files in ' + name + "?\n   " + (sample.length > 100 ? sample.substring(0, 100) + '....' :
+                    Notify.ask('Add all files in ' + name + "?\n   " + (sample.length > 100 ? sample
+                        .substring(0, 100) + '....' :
                         sample) + "(" + list.length + " files)", function() {
                         $(a).detach();
                         Utils.asyncForEach(list, function(item, i, next, cancel) {
@@ -488,7 +491,8 @@ _Define(function(global) {
                             else {
                                 success();
                             }
-                        }, (list.length > 100 ? 4 : 10), false, true);
+                        }, (list.length > prov.batchSize ? prov.batchSize / 5 : prov
+                            .batchSize), false, true);
                     });
                 };
                 if (self.folded) { //we used statusAll
@@ -503,13 +507,14 @@ _Define(function(global) {
             } else {
                 var staged = $(e.target).closest('ul').hasClass('group-staged');
                 var s = a.getAttribute('data-status');
-                Notify.ask((staged ? 'Unstage file ' : 'Stage file (') + name + ':' + s + ')', function() {
-                    changeStatus(prov, s, staged, {
-                        filepath: name
-                    }, function() {
-                        self.updateName(name, e.target);
-                    }, failure);
-                });
+                Notify.ask((staged ? 'Unstage file ' : 'Stage file (') + name + ':' + s + ')',
+                    function() {
+                        changeStatus(prov, s, staged, {
+                            filepath: name
+                        }, function() {
+                            self.updateName(name, e.target);
+                        }, failure);
+                    });
             }
         };
         this.updateName = function(name, a) {
@@ -527,20 +532,23 @@ _Define(function(global) {
         this.addName = function(name, status) {
             var prov = this.prov;
             if (status == 'unmodified') {
-                pushUnmodified(prov.dir, prov.fs, name, this.currentRef);
+                pushUnmodified(prov.gitdir, prov.fs, name, this.currentRef);
                 return;
-            } else removeUnmodified(prov.dir, prov.fs, name, this.currentRef);
+            } else removeUnmodified(prov.gitdir, prov.fs, name, this.currentRef);
             var staged = true;
             if (!status || status[0] == "*") {
                 status = status.substring(1);
                 staged = false;
             }
-            var el = this.modal.find(staged ? '.group-staged' : '.group-unstaged').append("<li class='file-item git-item git-" + status + "' data-status='" + status + "' >" + Utils.htmlEncode(name) + "  :" +
+            var el = this.modal.find(staged ? '.group-staged' : '.group-unstaged').append(
+                "<li class='git-item git-" + status + "' data-status='" + status + "' >" +
+                Utils.htmlEncode(name) + "  :" +
                 status + "</li>").children().last();
             el.attr('data-file', name);
         };
         this.addUntracked = function(name) {
-            var el = this.modal.find('.group-untracked').append("<li class='file-item git-item git-" + status + "'>" + Utils.htmlEncode(name) + "  :" +
+            var el = this.modal.find('.group-untracked').append("<li class='git-item git-" +
+                status + "'>" + Utils.htmlEncode(name) + "  :" +
                 'untracked' + "</li>").children().last();
             el.attr('data-file', name);
         };
@@ -582,7 +590,8 @@ _Define(function(global) {
                     for (var i = name.length;
                         (i = name.lastIndexOf("/", i - 1)) > 0;) {
                         var folder = name.substring(0, i + 1);
-                        if (opened[folder] || (opened[folder] = (status !== "*added"))) break;
+                        if (opened[folder] || (opened[folder] = (status !== "*added")))
+                            break;
                     }
                     names.push({
                         name: name,
@@ -632,7 +641,8 @@ _Define(function(global) {
             function loadUntracked() {
                 if (appConfig.gitSkipGitIgnore) {
                     var skipRe = FileUtils.globToRegex(appConfig.gitIgnore.join(","));
-                    return getUntracked(prov.dir, prov.dir + "/", prov.fs, list, self.safe(function(names) {
+                    return getUntracked(prov.dir, prov.dir + "/", prov.fs, list, self.safe(function(
+                        names) {
                         names.filter(function(e) {
                             return !(skipRe.test(e) || skipRe.test(basename(e)));
                         }).forEach(self.addUntracked, self);
@@ -667,13 +677,14 @@ _Define(function(global) {
                             }
                         }
                     }).finally(function() {
-                        self.modal.find('.indeterminate').attr('class', 'determinate');
+                        self.modal.find('.indeterminate').attr('class',
+                            'determinate');
                         self.finish();
                     });
                 }));
             }
             var notifyQueue;
-            splitStatus(prov.dir, prov.batchSize, prov.fs, list, function(dirty, finished) {
+            splitStatus(prov.gitdir, prov.batchSize, prov.fs, list, function(dirty, finished) {
                 if (notifyQueue) {
                     toCheck.push(dirty);
                     total += dirty.length;
@@ -698,7 +709,6 @@ _Define(function(global) {
         };
     }).call(StageModal.prototype);
     GitCommands.showStage = function(ev, prov) {
-        prov = prov.cached();
         var stage = new StageModal(prov);
         //todo use batches
         prov.listFiles().then(function(list) {

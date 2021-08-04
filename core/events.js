@@ -38,9 +38,33 @@ _Define(function(global) {
                 this.trigger(eventname, obj, delegate);
             }).bind(this));
         },
+        debug: function(){
+          this._debug = true;  
+        },
         trigger: function(eventname, obj, noEventObj) {
             if (!noEventObj)
                 obj = this.createEvent(obj);
+            var id = null;
+            if(this._debug){
+                switch (eventname) {
+                    case 'createEditor':
+                    case 'changeEditor':
+                    case 'closeEditor':
+                        id = obj.editor.id;
+                        break;
+                    case 'beforeCloseTab':
+                    case 'changeTab':
+                        id = obj.tab;
+                        break;
+                    case 'createDoc':
+                    case 'closeDoc':
+                    case 'changeDoc':
+                        id = obj.doc && obj.doc.id;
+                }
+                if (id) {
+                    console.log(eventname + ':' + id);
+                }
+            }
             var handlers = this._eventRegistry[eventname];
             if (handlers) {
                 if (typeof handlers == 'function') {
@@ -125,6 +149,9 @@ _Define(function(global) {
         'fully-loaded': null,
         'filebrowsers': null,
         'createDoc': null,
+        'changeDoc': null,
+        'deleteDoc': null,
+        'renameDoc': null,
         'closeDoc': null,
         'changeTab': null,
         "closeTab": null,

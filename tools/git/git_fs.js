@@ -1,33 +1,44 @@
-
 //later on
 _Define(function(global) {
-    function GitTreeBrowser() {
-        GitTreeBrowser.super(this, arguments);
-    }
-    //Utils.extend(GitTreeBrowser,Hierarchy);
-}); /*_EndDefine*/
-_Define(function(global) {
+    var git = window.git;
     var relative = global.FileUtils.relative;
     var normalize = global.FileUtils.normalize;
     var clean = global.FileUtils.removeTrailingSlash;
     var dirname = global.FileUtils.dirname;
+    var pleaseCache = global.createCacheFs;
+    var Utils = global.Utils;
+    var BaseFs = global.BaseFs;
+    global.GitCommands.browseCommit = function(ev, prov) {
+        global.GitCommands.promptCommit(prov, 'Enter commit id/message', function(ref) {
+            var opts = {
+                dir: prov.dir,
+                gitdir: prov.gitdir,
+                fs: prov.fs.id,
+                ref: ref,
+                icon: 'sync',
+                type: '!gitfs'
+            };
+            global.FileUtils.initBrowser(opts);
+        });
+    };
 
-    function GitFileServer(opts, commit) {
+    function GitFileServer(opts) {
+        BaseFs.call(this);
+        var fs = global.FileUtils.getFileServer(opts.fs);
         this.opts = {
-            fs: opts.fs,
+            fs: fs && pleaseCache(fs),
             dir: opts.dir,
             gitdir: opts.gitdir,
-            cache: opts.cache
+            cache: opts.cache || {},
+            ref: opts.ref
         };
-        if (commit) {
-            this.trees = {
-                "!oid": commit.tree,
-                "!isDir": true
-            };
-        }
+        //todo handle missing fs
         this.ref = this.opts.ref;
     }
+
+    Utils.inherits(GitFileServer.prototype, BaseFs);
     (function() {
+        this.icon = 'sync';
         this.getOpts = function(d) {
             return Object.assign({
                 fs: this.opts.fs,
@@ -37,143 +48,134 @@ _Define(function(global) {
             }, d);
         };
         this.resolve = function(cb) {
+            var self = this;
             git.resolveRef(this.getOpts({
                 ref: this.ref
             })).then(function(sha) {
-                git.readCommit(this.getOpts({
+                git.readCommit(self.getOpts({
                     oid: sha
                 })).then(function(obj) {
-                    if (!this.trees) {
-                        this.trees = {};
-                        this.trees["!oid"] = obj.commit.tree;
-                        this.trees["!isDir"] = true;
+                    if (!self.trees) {
+                        self.trees = {};
+                        self.trees["!oid"] = obj.commit.tree;
+                        self.trees["!isDir"] = true;
                     }
                     cb();
                 }, cb);
             }, cb);
         };
         this.readFile = function(path, opts, cb) {
+            var self = this;
             if (typeof opts == "function") {
                 cb = opts;
                 opts = null;
             }
             var enc = !opts || typeof opts == 'string' ? opts : opts.encoding;
-            this.readdir(dirname(path), function(e) {
-                if (e) cb(e);
-                else {
-                    var cache = this.trees;
-                    var segments = relative(this.opts.dir, clean(normalize(path))).split("/");
-                    while (segments.length) {
-                        cache = cache[segments.shift()];
-                    }
-                    if (!cache) {
-                        cb({
-                            code: 'ENOENT'
-                        });
-                    } else if (cache["!isDir"]) {
-                        cb({
-                            code: 'EISDIR'
-                        });
-                    }
-                    git.readBlob(this.getOpts({
-                        oid: cache["!oid"]
-                    })).then(function(t) {
-                        var res = t.blob;
-                        if (!enc) {
-                            cb(null, res);
-                        } else {
-                            var error;
-                            try {
-                                res = new TextDecoder(enc).decode(res);
-                            } catch (e) {
-                                error = e;
-                            }
-                            cb(error, error ? undefined : res);
-                        }
-                    }, cb);
+            var segments = self.toSegments(path);
+            this.resolveTree(segments.slice(0, -1), function(e, tree) {
+                if (e) return cb(e);
+                var file = tree[segments.pop()];
+                if (!file) {
+                    return cb(global.createError({
+                        code: 'ENOENT'
+                    }));
+                } else if (file["!isDir"]) {
+                    return cb(global.createError({
+                        code: 'EISDIR'
+                    }));
                 }
+                return git.readBlob(self.getOpts({
+                    oid: file["!oid"]
+                })).then(function(t) {
+                    var res = t.blob;
+                    if (!enc) {
+                        cb(null, res);
+                    } else {
+                        var error;
+                        try {
+                            res = new TextDecoder(enc).decode(res);
+                        } catch (e) {
+                            error = e;
+                        }
+                        cb(error, error ? undefined : res);
+                    }
+                }, cb);
             });
         };
-        this.writeFile = function(path, content, opts, cb) {
-            setTimeout(function() {
-                cb({
-                    code: 'EUNSUPPORTED'
-                });
-            });
+        this.resolveTree = function(segments, cb, from) {
+            var self = this;
+            if (!from) {
+                if (this.trees) {
+                    from = this.trees;
+                } else {
+                    //read commit object
+                    return this.resolve(function(e) {
+                        if (e) cb(e);
+                        else {
+                            from = self.trees;
+                            self.resolveTree(segments, cb);
+                        }
+                    });
+                }
+            }
+
+            if (from["!loaded"]) {
+                if (!segments.length) {
+                    if (!from["!isDir"]) {
+                        return cb(global.createError({
+                            code: 'ENOTDIR'
+                        }));
+                    }
+                    return cb(null, from);
+                }
+                from = from[segments.shift()];
+                if (!from) {
+                    return cb(global.createError({
+                        code: 'ENOENT'
+                    }));
+                }
+                return this.resolveTree(segments, cb, from);
+            }
+            git.readTree(self.getOpts({
+                oid: from["!oid"]
+            })).then(function(res) {
+                if (!from["!loaded"]) {
+                    for (var i = 0; i < res.tree.length; i++) {
+                        from[res.tree[i].path] = {
+                            "!oid": res.tree[i].oid,
+                            "!isDir": res.tree[i].type == 'tree'
+                        };
+                    }
+                    from["!loaded"] = true;
+                }
+                if (!from) {
+                    return cb(global.createError({
+                        code: 'ENOENT'
+                    }));
+                }
+                self.resolveTree(segments, cb, from);
+            }, cb);
         };
+
         this.readdir = function(path, opts, cb) {
             if (typeof opts == "function") {
                 cb = opts;
                 opts = null;
             }
-
-            // Read a commit object
-            var segments = relative(this.opts.dir, clean(normalize(path))).split("/");
-            var treeOid = null;
-            var cache = this.trees;
-            if (!cache) {
-                this.resolve(function(e) {
-                    if (e) cb(e);
-                    else {
-                        cache = this.trees;
-                        dip();
-                    }
-                });
-            } else {
-                while (segments.length) {
-                    if ((cache[segments[0]])) {
-                        cache = cache[segments.shift()];
-                    } else break;
-                }
-                if (!segments.length) {
-                    if (cache["!loaded"]) {
-                        cb(null, Object.keys(cache).filter(function(i) {
-                            return i != "!oid" && i != "!isDir" && i != "!loaded";
-                        }));
-                    }
-                }
-                dip();
-            }
-
-            function dip() {
-                git.readTree(this.getOpts({
-                    oid: cache["!oid"]
-                })).then(function(res) {
-                    for (var i = 0; i < res.tree.length; i++) {
-                        cache[res.tree[i].path] = {
-                            "!oid": res.tree[i].oid,
-                            "!isDir": res.tree[i].type == 'tree'
-                        };
-                    }
-                    cache["!loaded"] = true;
-                    if (segments.length === 0) {
-                        cb(null, res.tree.map(function(e) {
-                            return e.path;
-                        }));
-                    } else {
-                        var name = segments.shift();
-                        var tree = res.tree[name];
-                        if (!tree) {
-                            return cb({
-                                code: 'ENOENT'
-                            });
-                        } else if (!tree["!isDir"]) {
-                            return cb({
-                                code: 'ENOTDIR'
-                            });
-                        } else {
-                            cache = tree;
-                            dip();
-                        }
-                    }
-                }, cb);
-            }
+            var segments = this.toSegments(path);
+            this.resolveTree(segments, function(e, tree) {
+                if (e) cb(e);
+                else cb(null,Object.keys(tree).filter(function(i) {
+                    return i != "!oid" && i != "!isDir" && i != "!loaded";
+                }));
+            });
         };
         this.getFiles = function(path, cb) {
-            var segments = relative(this.opts.dir, clean(normalize(path))).split("/");
+            var segments = this.toSegments(path);
+            var self = this;
             this.readdir(path, function(e, res) {
-                if (e) cb(e);
-                var cache = this.trees;
+                if (e) return cb(e);
+                var cache = self.trees;
                 while (segments.length) {
                     cache = cache[segments.shift()];
                 }
@@ -185,79 +187,63 @@ _Define(function(global) {
                 }));
             });
         };
-        this.stat = function() {
-            this.opts.fs.stat.apply(fs, arguments);
+        this.stat = this.lstat = function(path, opts, cb) {
+            var self = this;
+            if (typeof opts == "function") {
+                cb = opts;
+                opts = null;
+            }
+            var segments = self.toSegments(path);
+            this.resolveTree(segments.slice(0, -1), function(e, tree) {
+                if (e) cb(e);
+                else {
+                    var file = tree[segments.pop()];
+                    if (!file) {
+                        return cb(global.createError({
+                            code: 'ENOENT'
+                        }));
+                    }
+                    return cb(null, global.FileUtils.createStats({
+                        type: file["!isDir"] ? "dir" : "file"
+                    }));
+                }
+            });
         };
-        this.lstat = function() {
-            this.opts.fs.lstat.apply(fs, arguments);
-        };
+
         this.href = null;
-        this.isEncoding = function() {
-            this.opts.fs.isEncoding.apply(fs, arguments);
+        this.toSegments = function(path) {
+            path = clean(normalize(path));
+            if (path[0] == "/") {
+                path = relative(this.getRoot(), path);
+            }
+            return path ? path.split("/") : [];
         };
-        this.getEncodings = function() {
-            this.opts.fs.getEncodings.apply(fs, arguments);
-        };
+
         this.getDisk = function() {
-            this.opts.fs.getDisk.apply(fs, arguments);
+            return this.ref;
         };
         this.getRoot = function() {
-            return this.opts.dir; //.apply(fs, arguments);
+            return "/" + this.ref;
         };
-        this.copyFile = function() {
-            var cb = this.arguments[this.arguments.length - 1];
-            cb({
-                code: 'UNSUPORTED'
-            })
-        };
-        this.moveFile = function() {
-            var cb = this.arguments[this.arguments.length - 1];
-            cb({
-                code: 'UNSUPORTED'
-            })
-        };
-        this.mkdir = function() {
-            var cb = this.arguments[this.arguments.length - 1];
-            cb({
-                code: 'UNSUPORTED'
-            })
-        };
-        this.rename = function() {
-            var cb = this.arguments[this.arguments.length - 1];
-            cb({
-                code: 'UNSUPORTED'
-            })
-        };
-        this.delete = function() {
-            var cb = this.arguments[this.arguments.length - 1];
-            cb({
-                code: 'UNSUPORTED'
-            })
-        };
-        this.rmdir = function() {
-            var cb = this.arguments[this.arguments.length - 1];
-            cb({
-                code: 'UNSUPORTED'
-            })
-        };
-        this.unlink = function() {
-            var cb = this.arguments[this.arguments.length - 1];
-            cb({
-                code: 'UNSUPORTED'
-            })
-        };
-        this.symlink = function() {
-            var cb = this.arguments[this.arguments.length - 1];
-            cb({
-                code: 'UNSUPORTED'
-            })
-        };
-        this.readlink = function() {
-            var cb = this.arguments[this.arguments.length - 1];
-            cb({
-                code: 'UNSUPORTED'
-            })
-        };
+
+        this.writeFile =
+            this.copyFile =
+            this.moveFile =
+            this.mkdir =
+            this.rename =
+            this.delete =
+            this.rmdir =
+            this.unlink =
+            this.symlink = function() {
+                var cb = arguments[arguments.length - 1];
+                cb(global.createError({
+                    code: 'UNSUPORTED',
+                    message: 'This operation is not supported on a readonly file system'
+                }));
+            };
     }).apply(GitFileServer.prototype);
     global.GitFileServer = GitFileServer;
+    global.FileUtils.registerFsExtension('!gitfs', null, function(opts) {
+        return new GitFileServer(opts);
+    }, null);
 }); /*_EndDefine*/

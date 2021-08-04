@@ -1,7 +1,9 @@
 _Define(function(global) {
     'use strict';
     const exports = {};
-    Object.defineProperty(exports, '__esModule', { value: true });
+    Object.defineProperty(exports, '__esModule', {
+        value: true
+    });
 
     /**
      * @typedef {Object} GitProgressEvent
@@ -53,7 +55,10 @@ _Define(function(global) {
         let queue = [value];
         return {
             next() {
-                return Promise.resolve({ done: queue.length === 0, value: queue.pop() })
+                return Promise.resolve({
+                    done: queue.length === 0,
+                    value: queue.pop()
+                })
             },
             return () {
                 queue = [];
@@ -82,7 +87,10 @@ _Define(function(global) {
     async function forAwait(iterable, cb) {
         const iter = getIterator(iterable);
         while (true) {
-            const { value, done } = await iter.next();
+            const {
+                value,
+                done
+            } = await iter.next();
             if (value) await cb(value);
             if (done) break
         }
@@ -145,11 +153,15 @@ _Define(function(global) {
         if (body) {
             body = await collect(body);
         }
-        const res = await fetch(url, { method, headers, body });
+        const res = await fetch(url, {
+            method,
+            headers,
+            body
+        });
         const iter =
             res.body && res.body.getReader ?
-            fromStream(res.body) :
-            [new Uint8Array(await res.arrayBuffer())];
+            fromStream(res.body) : [new Uint8Array(await res.arrayBuffer())];
+        console.log(res.body && res.body.getReader);
         // convert Header object to ordinary JSON
         headers = {};
         for (const [key, value] of res.headers.entries()) {
@@ -164,10 +176,81 @@ _Define(function(global) {
             headers: headers,
         }
     }
+    // const delayFunc = (r) => setTimeout(r, 10);
+    // async function delay() {
+    //     await new Promise(delayFunc);
+    // }
 
-    var index = { request };
+    // async function slowRequest(opts) {
+    //     var res = await request(opts);
+    //     //parsing extremely long request bodies blocks ui
+    //     //emulate streaming, perharps we should not be running downloads on
+    //     //the main thread
+    //     //throttles parse speed to a maximum of about 333kb/s in 100kb bursts
+    //     if (!res.body) return res;
+    //     var reader, body = res.body;
+    //     var MAX_CHUNK_SIZE = 10000;
+    //     var index = 0,
+    //         current = null,
+    //         done = false,
+    //         waiting, release;
+    //     var iter = {
+    //         next: async function() {
+    //             //mutex cus async functions are traitors
+    //             while (waiting) await waiting;
+    //             if (current == null) {
+    //                 waiting = new Promise((r) => {
+    //                     release = r;
+    //                 });
+    //                 //Get a new chunk
+    //                 if (!reader) reader = getIterator(body);
+    //                 var result = await reader.next();
+    //                 done = result.done;
+    //                 current = result.value;
+    //                 waiting = null;
+    //                 release();
+    //                 if (!result.value) return result;
+    //             }
+    //             let slice;
+    //             if (index + MAX_CHUNK_SIZE >= current.length) {
+    //                 console.log(index + "/" + current.length);
+    //                 //finished this chunk
+    //                 slice = current.slice(index);
+    //                 index=0,current = null;
+    //                 await delay();
+    //                 return {
+    //                     done: done,
+    //                     value: slice
+    //                 };
+    //             } else {
+    //                 //send the chunks slice by slice
+    //                 slice = current.slice(index, index + MAX_CHUNK_SIZE);
+    //                 index += MAX_CHUNK_SIZE;
+    //                 await delay();
+    //                 return {
+    //                     done: false,
+    //                     value: slice
+    //                 };
+    //             }
+    //         },
+    //         return () {
+    //             body = null;
+    //             console.log('return');
+    //             if (reader && reader.return) return reader.return();
+    //         },
+    //         [Symbol.asyncIterator]: function() {
+    //             return this;
+    //         },
+    //     };
+    //     res.body = iter;
+    //     return res;
+    // }
+
+    var index = {
+        request
+    };
 
     exports.default = index;
     exports.request = request;
     return exports;
-},"http")/*_EndDefine*/;
+}, "http") /*_EndDefine*/ ;

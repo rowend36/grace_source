@@ -1,7 +1,8 @@
 /*globals ace*/
 var Env = {
   isBrowser: false,
-  isDesktop: false, //when false, grace tries to detect and maintain soft Keyboard state
+  //When false, Grace tries to detect and maintain softkeyboard visibility
+  isHardwareKeyboard: false,
   isLocalHost: false,
   canLocalHost: false,
   // delayStorage: false
@@ -20,10 +21,10 @@ if (/^localhost/i.test(window.location.host)) {
   Env.canLocalHost = true;
   Env._server = "http:///localhost:3000";
 }
-/*@typedef {Object} Grace*/
 var Grace = {
   _debugFail: 2,
-  Annotations: ace.require("ace/annotations/annotations").Annotations,
+  dom: ace.require("ace/lib/dom"),
+  Annotations: ace.require("ace/annotations").Annotations,
   libConfig: ace.require("ace/config"),
   Range: ace.require("ace/range").Range,
   Editor: ace.require("ace/editor").Editor,
@@ -37,20 +38,23 @@ var Grace = {
   Document: ace.require("ace/document").Document,
   HashHandler: ace.require("ace/keyboard/hash_handler").HashHandler,
   libLang: ace.require("ace/lib/lang"),
+  Tokenizer: ace.require("ace/tokenizer").Tokenizer,
+  Snippets: ace.require("ace/snippets").snippetManager
 };
-/** @callback Define [name:string]
- *  @param {Grace} global
+window.debug = {
+  log: function(name) {
+    console.log.apply(console, arguments);
+    console.error(typeof name == "string" ? new Error(name) : name);
+  }
+};
+
+/** @callback Define
+ *  @param global {Grace}
  */
 /**
  * @param {Define} func
  * @param {any} [name]
  */
-window.debug = {
-  log: function(name){
-    console.log.apply(console,arguments);
-    console.error(typeof name=="string"?new Error(name):name);
-  }
-};
 function _Define(func, name) {
   //inlineable function
   try {
@@ -155,7 +159,8 @@ _Define(function(global) {
     }
     var config = namespace ? namespaces[namespace] : appConfig;
     config[key] = value;
-    if (save) appStorage.setItem((namespace && namespace != "application" ? namespace + "." : "") + key, "" + value ||
+    if (save) appStorage.setItem((namespace && namespace != "application" ? namespace + "." : "") + key, "" +
+      value ||
       ":EMPTY:");
   }
 
@@ -195,6 +200,27 @@ _Define(function(global) {
   };
 
   //namespacing
+  global.createError = function(obj) {
+    if(!obj.message || obj.message==obj.code){
+      switch (obj.code) {
+          case 'ENOENT':
+            obj.message = 'File does not exist';
+            break;
+          case 'EACCESS':
+            obj.message = 'Permission denied';
+            break;
+          case 'ETOOLARGE':
+            obj.message = 'File Too Large';
+            break;
+          default:
+            obj.message = 'Encountered error: '+obj.code;
+        }
+    }
+    var err = new Error(obj.message);
+    if (err.stack) err.stack = err.stack.split("\n").splice(1).join("\n");
+    Object.assign(err, obj);
+    return err;
+  };
   global.appStorage = appStorage;
   global.putObj = putObj;
   global.withoutStorage = withoutStorage;

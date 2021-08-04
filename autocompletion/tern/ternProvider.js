@@ -34,17 +34,7 @@ _Define(function(global) {
         ternOptions.workerScript = ace.config.moduleUrl('worker/tern');
       }
       if (!window.tern && ternOptions.useWorker === false) {
-        var id = 'ace_tern_files';
-        var el = document.getElementById(id);
-        if (el) {
-          el.addEventListener('load', inner);
-        } else {
-          el = document.createElement('script');
-          el.setAttribute('id', id);
-          document.head.appendChild(el);
-          el.onload = inner;
-          el.setAttribute('src', ternOptions.workerScript);
-        }
+        Imports.define(ternOptions.workerScript)(inner);
       } else inner();
 
       function inner() {
@@ -119,7 +109,8 @@ _Define(function(global) {
       loadDefs();
       loadFiles(null, server);
       for (var id in docs) {
-        if (ternModes[docs[id].options.mode || docs[id].session.getMode().$id]) server.addDoc(docs[id].getPath(), docs[id]
+        if (ternModes[docs[id].options.mode || docs[id].session.getMode().$id]) server.addDoc(docs[id].getPath(),
+          docs[id]
           .session);
       }
       appEvents.on('createDoc', onTernCreateDoc);
@@ -142,7 +133,7 @@ _Define(function(global) {
       plugins: ternPlugins,
       useWorker: ternConfig.useWebWorkerForTern,
       /* if your editor supports switching between different files (such as tabbed interface) then tern can do this when jump to defnition of function in another file is called, but you must tell tern what to execute in order to jump to the specified file */
-      timeout: parseInt(ternConfig.completionTimeout) || (ternConfig.useWebWorkerForTern ? 3000 : 1000),
+      timeout: ternConfig.useWebWorkerForTern ? 3000 : 1000,
     });
   }
   loadConfig();
@@ -155,10 +146,6 @@ _Define(function(global) {
       case "ternDefFiles":
         setImmediate(loadDefs);
         break;
-      case "completionTimeout":
-        if (ternServer) {
-          ternServer.queryTimeout = Utils.parseTime(e.newValue) || ternServer.queryTimeout;
-        }
     }
   });
   var ternModes = {
@@ -200,10 +187,10 @@ _Define(function(global) {
   function loadDef(path, fs, cb) {
     function fail(e) {
       console.error(e);
-      Notify.error('Unable to add defs from ' + path);
+      global.Notify.error('Unable to add defs from ' + path);
       cb && cb(e);
     }
-    fs.readFile(path, FileUtils.encodingFor(path, server), function(e, res) {
+    fs.readFile(path, FileUtils.encodingFor(path, fs), function(e, res) {
       if (res) {
         try {
           var json = JSON.parse(res);

@@ -1,8 +1,8 @@
 _Define(function(global) {
-    var appStorage = global.appStorage;
-    var appEvents = global.AppEvents;
+    var getObj = global.getObj;
+    var putObj = global.putObj;
     var Utils = global.Utils;
-    var SettingsDoc = global.SettingsDoc;
+    var Config = global.Config;
     var getEditor = global.getMainEditor;
     var defaultBindings = {
         "gotoend": "Ctrl-End",
@@ -126,10 +126,10 @@ _Define(function(global) {
     };
 
     global.registerValues({
-        "keyBindings": "Configure ace commands. Note: These bindings are overriden by the vim/emacs/sublime/vscode keymaps. Also some plugins like emmet,etc might override the bindings with default bindings. This does not show their commands either. Use the command menu for that",
-    });
+        "!root": "Configure ace commands. Note: These bindings are overriden by the vim/emacs/sublime/vscode keymaps. Also some plugins like emmet,etc might override the bindings with default bindings. This does not show their commands either. Use the command menu for that",
+    }, "keyBindings");
     //TODO create a keyboard handler and move keys to appConfig instead of json
-    global.saveBindings = function(editor) {
+    var saveBindings = Utils.delay(function(editor) {
         var bindings = {};
         var a = global.getBindings(editor);
         for (var i in a) {
@@ -137,14 +137,14 @@ _Define(function(global) {
             //if it is unset ignore if no default
             if (!i && !defaultBindings[i]) continue;
             if (global.getConfigInfo('keyBindings.' + i) != 'no-user-config')
-                if (binding && (!defaultBindings[i] || binding.toLowerCase() != defaultBindings[i].toLowerCase())) {
+                if (binding && (!defaultBindings[i] || binding.toLowerCase() != defaultBindings[i]
+                        .toLowerCase())) {
                     bindings[i] = binding;
                 }
         }
-        appStorage.setItem("keyBindings", JSON.stringify(bindings));
-    };
-    global.setBinding = function(command, value, editor, noSave, oldValue) {
-        var a = editor.commands;
+        putObj("keyBindings", bindings);
+    }, 3000);
+    var setBinding = global.setBinding = function(command, value, editor, noSave, oldValue) {
         var mappings = value.split("|");
         mappings.forEach(function(u) {
             var named = (editor.editor || editor).commands.commandKeyBinding;
@@ -152,7 +152,8 @@ _Define(function(global) {
             var prev = named[key];
             if (prev) {
                 if (Array.isArray(prev)) {
-                    if (!command && (defaultBindings[oldValue]))//should we check nah, the user will
+                    if (!command && (defaultBindings[
+                            oldValue])) //should we check nah, the user will
                         command = "passKeysToBrowser";
                     if (!command) {
                         prev = prev.filter(function(e) {
@@ -172,21 +173,17 @@ _Define(function(global) {
             named[key] = prev;
         });
         if (noSave) return;
-        if (!saveBindings) saveBindings = Utils.delay(function() {
-            global.saveBindings(getEditor());
-            saveBindings = null;
-        }, 3000);
-        saveBindings();
+        saveBindings(getEditor());
     };
+    //Overridable
     global.restoreBindings = function(editor) {
-        var bindings = appStorage.getItem('keyBindings');
-        if (bindings) {
-            bindings = JSON.parse(bindings);
-            for (var i in bindings) {
-                global.setBinding(i, bindings[i], editor, true, defaultBindings[i]);
-            }
+        var bindings = getObj('keyBindings', {});
+        for (var i in bindings) {
+            setBinding(i, bindings[i], editor, true, defaultBindings[i]);
         }
+
     };
+    //Overrideable
     global.getBindings = function(editor, includeOverrides) {
         var bindings = {};
         if (editor.editor) editor = editor.editor;
@@ -234,9 +231,10 @@ _Define(function(global) {
                     bindings[o] = "";
                 }
         }
-        sorted = {};
+        var sorted = {};
         Object.keys(bindings).sort(function(a, b) {
-            return !bindings[a] && bindings[b] ? 1 : !bindings[b] && bindings[a] ? -1 : !(bindings[a] || bindings[b]) ? 0 : a.toLowerCase().localeCompare(b.toLowerCase());
+            return !bindings[a] && bindings[b] ? 1 : !bindings[b] && bindings[a] ? -1 : !(bindings[
+                a] || bindings[b]) ? 0 : a.toLowerCase().localeCompare(b.toLowerCase());
         }).forEach(function(t) {
             sorted[t] = bindings[t];
         });
@@ -245,8 +243,60 @@ _Define(function(global) {
         }
         return sorted;
     };
-    var saveBindings;
-    appEvents.on("createEditor", function(e) {
-        global.restoreBindings(e.editor);
-    });
-}) /*_EndDefine*/
+    var Notify = global.Notify;
+    var Schema = global.Schema;
+    Schema.IsKey = {
+        invalid: function(key) {
+            var s = key.split("|");
+            if (s.some(function(e) {
+                    return !
+                        /^(Ctrl-)?(Alt-)?(Shift-)?(((Page)?(Down|Up))|Left|Right|Delete|Tab|Home|End|Insert|Esc|Backspace|Space|Enter|.|F1?[0-9])$/i
+                        .test(e);
+                }))
+                return "Invalid Key " + key;
+        }
+    };
+    Config.setHandler(
+        "keyBindings", {
+            updateValue: function(from, saveToMemory) {
+                var failed = false;
+                var editor = getEditor();
+                var bindings = global.getBindings(editor);
+                for (var i in from) {
+                    var value = from[i];
+                    if (i == "$shadowed") continue;
+                    if (typeof value == 'object') {
+                        Config.apply(value, null, "keyBindings." + i);
+                        continue;
+                    }
+                    if (!bindings.hasOwnProperty(i)) {
+                        continue;
+                        // Notify.warn('Unknown command ' + i);
+                        // failed = true;
+                    }
+                    if (!value) {
+                        setBinding("", bindings[i], editor, !saveToMemory, i);
+                    } else {
+                        var error = Schema.IsKey.invalid(value);
+                        if (error) {
+                            Notify.warn(error);
+                            failed = true;
+                        }
+                        if (bindings[i] != value) setBinding(i, value, editor, !saveToMemory);
+                    }
+                }
+                return failed;
+            },
+            getValue: function() {
+                return global.getBindings(getEditor(), true);
+            }
+        });
+    var appEvents = global.AppEvents;
+    appEvents.once('fully-loaded', function() {
+        var Editors = global.Editors;
+        Editors.forEach(function(e) {
+            global.restoreBindings(e);
+        });
+        appEvents.on("createEditor", global.restoreBindings);
+    }, true /*necessary to execute before settings doc*/ );
+}); /*_EndDefine*/

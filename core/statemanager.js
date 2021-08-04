@@ -34,9 +34,9 @@ _Define(function(global) {
             return _location.hash == '#' + tag;
         };
         obj.ensure = function(tag, handled) {
-            if (back){
+            if (back) {
                 back = false;
-            } 
+            }
             if (!obj.is(tag)) {
                 var a = oldhash;
                 oldhash = tag;
@@ -57,7 +57,7 @@ _Define(function(global) {
         };
         obj.back = function() {
             if (back) return;
-            if (back == undefined){
+            if (back == undefined) {
                 _history.back();
             }
             back = true;
@@ -87,18 +87,20 @@ _Define(function(global) {
         function stateTracker() {
             var hash = ("" + _location.hash).substring(1);
             if (back === false) {
-                if(hash)
+                if (hash)
                     back = undefined;
                 oldhash && obj.ensure(oldhash, true);
                 return;
-            }
-            else if(back && hash){
-                back = undefined;   
+            } else if (back && hash) {
+                back = undefined;
             }
             if (hash == oldhash)
                 return;
-            if (obj.onChange(hash, oldhash)) {
+            var result = obj.onChange(hash, oldhash);
+            if(result ===true) {
                 oldhash = hash;
+            } else if(result){
+                obj.ensure(result);
             } else obj.back();
         }
         obj.detach = function() {
@@ -110,13 +112,16 @@ _Define(function(global) {
         };
         //the current state
         var oldhash = ("" + _location.hash).substring(1);
-        window.addEventListener('popstate', stateTracker);
+        if (window == window.parent)
+            window.addEventListener('popstate', stateTracker);
         global.State = obj;
 
         return obj;
     };
 }); /*_EndDefine*/
 _Define(function(global) {
+    ///The listener interface was a bit too much
+    //wrapped it with this
     var mngr = global.manageState(window);
     var ids = [];
     var values = [];
@@ -125,6 +130,10 @@ _Define(function(global) {
             var index2 = ids.indexOf(newD);
             for (var i = ids.length - 1; i > index2; i--) {
                 var value = values.pop();
+                if (value.$preventDismiss) {
+                    values.push(value);
+                    return ids[i];
+                }
                 ids.pop();
                 value.close();
             }
@@ -136,7 +145,8 @@ _Define(function(global) {
     });
     global.AutoCloseable = {
         add: function(id, closeable) {
-            if (!closeable || !closeable.close) throw new Error('Error: expected a Closeable object, got', closeable);
+            if (!closeable || !closeable.close) throw new Error(
+                'Error: expected a Closeable object, got', closeable);
             global.AutoCloseable.remove(id);
             ids.push(id);
             values.push(closeable);

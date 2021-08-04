@@ -46,7 +46,7 @@ _Define(function(global) {
                 var e = info.path;
                 var server = FileUtils.getFileServer(info.server);
                 if (!server) {
-                    opts.onReadFail(info, { code: SearchReplace.SERVER_DELETED });
+                    opts.onReadFail(info, global.createError({ code: SearchReplace.SERVER_DELETED }));
                     return next();
                 }
                 var doc = Docs.forPath(e, server);

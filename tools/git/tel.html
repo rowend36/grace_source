@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+
+<html>
+
+<body>
+    <style type="text/css" media="all">
+        .box {
+            background: grey;
+            float: left;
+            width: 50%;
+            box-sizing: border-box;
+        }
+
+
+        .small-box {
+            margin-bottom: 20px;
+            padding: 5px;
+        }
+
+        .big-box {
+            min-width: 100px;
+        }
+
+        .profile {
+            height: 30px;
+            width: 76px;
+            height: 76px;
+            margin: 10px;
+            border: 2px solid #eefeee;
+            background: #ddeedd;
+            border-radius: 50%;
+        }
+        input{
+            height: 100%;
+            width: 100%;
+            line-height: 100%;
+            border: 2px solid #2222bb;
+            box-sizing: border-box;
+        }
+        #root {
+            border: 0;
+            width: 100%;
+            height: 100%;
+            padding: 20px;
+        }
+
+        html,
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+    <div id="root">
+        <div class="box big-box">
+            <div class="profile">
+                <img src="" alt="" />
+
+            </div>
+        </div>
+        <div class="box small-box">
+            <input type="text" name="Email" id="Email" placeholder='hello' value="" />
+            <input type="text" name="Email" id="Email" placeholder='hello' value="" />
+            <input type="text" name="Email" id="Email" placeholder='hello' value="" />
+        </div>
+    </div>
+</body>
+</html>

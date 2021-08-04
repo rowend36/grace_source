@@ -19,12 +19,12 @@ _Define(function(global) {
 
     function showNameTag(edit) {
         if (!edit) return;
-        var session = Docs.forSession(edit.session);
-        if (!session) return;
+        var doc = Docs.forSession(edit.session);
+        if (!doc) return;
         var nameTag = edit.container.getElementsByClassName(nameTagClass);
         if (nameTag.length) {
             nameTag[0].style.opacity = "0.7";
-            nameTag[0].children.item(0).innerHTML = session.path;
+            nameTag[0].children.item(0).innerHTML = doc.path;
             nameTag[0].children.item(1).style.padding = '';
             nameTag[0].children.item(1).style.boxShadow = 'none';
 
@@ -111,22 +111,17 @@ _Define(function(global) {
     var host = global.getHostEditor;
     var Notify = global.Notify;
     var NameTags = global.NameTags;
-    var clickable = global.showClickable;
-    var unclickable = global.hideClickable;
     
-    function mousedown(e) {
-        Editors.setEditor(e.editor);
-    }
     var splitEditors = [];
 
     function createSplitEditor(edit, direction) {
         //recall sizes
+        var hostEditor = host(edit);
+        if(!hostEditor)return;
         if (splitEditors.length === 0) {
-            var hostEditor = host(edit);
             app.on('beforeCloseTab', onBeforeCloseTab);
             NameTags.show();
             splitEditors.push(hostEditor);
-            hostEditor.on("mousedown", mousedown);
             NameTags.createTag(hostEditor);
         }
         var container = SplitManager.add($(edit.container), direction);
@@ -135,10 +130,10 @@ _Define(function(global) {
         if (doc)
             editor.setSession(doc.cloneSession());
         splitEditors.push(editor);
-        editor.on("mousedown", mousedown);
         NameTags.createTag(editor);
         Editors.setEditor(editor);
         editor.focus();
+        return editor;
     }
 
     function removeSplitEditor(edit) {
@@ -148,15 +143,13 @@ _Define(function(global) {
         }
         if (SplitManager.remove($(edit.container))) {
             splitEditors.splice(splitEditors.indexOf(hostEditor), 1);
-            hostEditor.off('mousedown', mousedown);
             NameTags.removeTag(hostEditor);
             Editors.closeEditor(hostEditor);
             //unclickable(hostEditor.container);
             if (splitEditors.length === 1) {
-                var mainEditor = host(getEditor());
+                var mainEditor = getEditor();
                 //unclickable(mainEditor.container);
                 splitEditors.splice(splitEditors.indexOf(mainEditor), 1);
-                mainEditor.off('mousedown', mousedown);
                 NameTags.removeTag(mainEditor);
                 app.off('beforeCloseTab', onBeforeCloseTab);
                 NameTags.hide();
@@ -188,7 +181,7 @@ _Define(function(global) {
     MainMenu.addOption("splits-m", {
         caption: "Splits",
         icon: "view_module",
-        childHier: {
+        subTree: {
             "add-split": {
                 caption: "Add Split Horizontal",
                 onclick: function() {
@@ -210,12 +203,10 @@ _Define(function(global) {
 
         }
     });
-
     var onBeforeCloseTab = function(e) {
         if (splitEditors.length < 2) {
             console.error('Invalid State');
             if (splitEditors[0]) {
-                splitEditors[0].off('mousedown', mousedown);
                 NameTags.removeTag(splitEditors[0]);
             }
             NameTags.hide();
@@ -234,7 +225,7 @@ _Define(function(global) {
                 //Not all holders are assured to call
                 //closeDoc and closeSession does not do
                 //it automatically yet
-                Notify.warn('Document is in use by another plugin');
+                Notify.warn('Document is in use by plugin');
             }
             e.preventDefault();
         } else {

@@ -3,13 +3,27 @@ var express = require("express");
 var exec = require('child_process').exec;
 var debug_static = require("./static");
 var files = require("./files");
+var url = require('url');
 var multiparty = require("multiparty");
 var body = require("body-parser");
 var iconv = require("iconv-lite");
 var app = express();
 var proxy = require("./cors-proxy-es5/middleware.js");
+var password, port = process.env.GRACE_PORT;
 //app.set('port',process.env.PORT || 0)
 app.use(body());
+app.use(function(req, res, next) {
+    if (!password || (req.body && req.body.password == password)) {
+        return next();
+    }
+    var parsed = url.parse(req.url);
+    if (parsed.pathname == "/save") {
+        return next();
+    }
+    doError({
+        code: 'EACCESS'
+    }, res);
+});
 var sendHtml = function(res, html) {
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Content-Length', Buffer.byteLength(html));
@@ -25,6 +39,7 @@ var errors = {
     402: "EISDIR",
     405: 'ENOTDIR',
     406: 'EXDEV',
+    410: 'EACCESS',
     412: 'ETOOLARGE',
     413: 'ENOTENCODING'
 };
@@ -34,7 +49,7 @@ for (var i in errors) {
 }
 
 function doError(err, res) {
-	   res.status(errorCodes[err.code] || 501);
+    res.status(errorCodes[err.code] || 501);
     res.send(err.code || err.message || 'SERVER_ERROR');
 }
 app.post("/files", function(req, res) {
@@ -47,7 +62,7 @@ app.post("/files", function(req, res) {
             res.end();
         });
     } catch (e) {
-        doError(e,res);
+        doError(e, res);
     }
 });
 //args path
@@ -56,10 +71,10 @@ app.post("/new", function(req, res) {
         if (e) {
             return doError(e, res);
         } else {
-            res.send(200)
+            res.send(200);
         }
-    })
-})
+    });
+});
 //args path dest overwrite
 app.post("/copy", function(req, res) {
     files.copyFile(req.body.path, req.body.dest, function(err) {
@@ -81,7 +96,8 @@ app.post("/info", function(req, res) {
                 mode: st.mode,
                 ino: st.ino,
                 mtimeMs: st.mtime.getTime(),
-                type: req.body.isLstat && st.isSymbolicLink() ? "symlink" : st.isDirectory() ? "dir" : "file"
+                type: req.body.isLstat && st.isSymbolicLink() ? "symlink" : st.isDirectory() ?
+                    "dir" : "file"
             };
             res.status(200);
             res.json(stat);
@@ -106,10 +122,10 @@ app.post("/fastGetOid", function(req, res) {
     fs.stat(filename, function(e, stat) {
         if (e && e.code != 'ENOENT') {
             doError(e, res);
-        } else if (e){
+        } else if (e) {
             res.send(null);
             return;
-        } 
+        }
         const hash = crypto.createHash('sha1');
         let input;
         try {
@@ -157,7 +173,8 @@ app.post("/encodings", function(req, res) {
 });
 //args command currentDir
 var env = Object.create(process.env);
-env.PATH = "/data/user/0/io.tempage.dorynode/files/usr/sbin:/data/user/0/io.tempage.dorynode/files/usr/bin:/data/user/0/io.tempage.dorynode/files/sbin:/data/user/0/io.tempage.dorynode/files/bin:/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/vendor/xbin"
+env.PATH =
+    "/data/user/0/io.tempage.dorynode/files/usr/sbin:/data/user/0/io.tempage.dorynode/files/usr/bin:/data/user/0/io.tempage.dorynode/files/sbin:/data/user/0/io.tempage.dorynode/files/bin:/sbin:/system/sbin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/vendor/xbin";
 app.post("/run", function(req, res) {
     exec(req.body.command, {
         cwd: req.body.currentDir,
@@ -168,7 +185,7 @@ app.post("/run", function(req, res) {
         result.output = stdout;
         res.send(JSON.stringify(result));
     });
-})
+});
 //args path
 app.post("/delete", function(req, res) {
     fs.stat(req.body.path, function(e, s) {
@@ -183,10 +200,13 @@ app.post("/delete", function(req, res) {
                     res.end();
                 }
 
-            }
+            };
             if (s.isDirectory()) {
-                files.deleteFolder(req.body.path, callback)
-            } else fs.unlink(req.body.path, callback)
+                if (req.body.recursive) {
+                    files.deleteFolder(req.body.path, callback);
+                } else
+                    fs.rmdir(req.body.path, callback);
+            } else fs.unlink(req.body.path, callback);
         }
     });
 });
@@ -229,9 +249,6 @@ app.post("/open", function(req, res) {
 });
 //args path text
 /**/
-function parseData(req, cb) {
-
-}
 /*/
 function parseData(req, cb) {
     var enc = req.body.encoding;
@@ -242,27 +259,24 @@ function parseData(req, cb) {
     cb(null, content, req.body.path);
 }
 //*/
-var Batch = function(icount, callback) {
+var ArgsCounter = function(icount, callback) {
     var args = {};
     args.length = icount;
     var count = icount;
     this.push = function(index, value) {
-        if (args.hasOwnProperty(index)) {
-            this.end({
-                cause: 'bad data',
-                index: index,
-                oldVal: args[index],
-                newVal: value
-            });
-            return;
-        }
         args[index] = value;
-        if (--count < 1) {
+        if (--count === 0) {
             count = icount;
             callback.apply(this, args);
         }
-    }
-}
+    };
+    this.end = function() {
+        if(count<icount && count>0){
+            count = 0;
+            callback.apply(this, args);
+        }
+    };
+};
 app.post("/save", function(req, res) {
     var form = new multiparty.Form();
     var ended;
@@ -270,7 +284,7 @@ app.post("/save", function(req, res) {
         if (!ended) {
             ended = true;
             if (e) {
-                console.error('Error saving form ' + JSON.stringify(e))
+                console.error('Error saving form ' + JSON.stringify(e));
                 doError(e, res);
             } else {
                 res.status(200);
@@ -279,9 +293,14 @@ app.post("/save", function(req, res) {
         } else {
             console.error(['End called twice', e]);
         }
-    }
-    var batch = new Batch(3, function(stream, path, encoding) {
+    };
+    var batch = new ArgsCounter(4, function(stream, path, encoding, pass) {
         try {
+            if (password && password !== pass) {
+                return end({
+                    code: 'EACCESS'
+                });
+            }
             if (encoding && encoding != "undefined" && encoding != "null") {
                 if (!iconv.encodingExists(encoding)) {
                     stream.resume();
@@ -298,7 +317,7 @@ app.post("/save", function(req, res) {
                 end(err);
             });
             fd.on('close', function() {
-                fd.end()
+                fd.end();
                 end();
             });
             stream.pipe(fd);
@@ -309,6 +328,8 @@ app.post("/save", function(req, res) {
     form.on('field', function(name, value) {
         if (name == "encoding") {
             batch.push(2, value);
+        } else if (name == "password") {
+            batch.push(3, value);
         }
     });
     form.on('part', function(part) {
@@ -316,15 +337,14 @@ app.post("/save", function(req, res) {
             if (part.name == "content") {
                 batch.push(0, part);
                 batch.push(1, part.filename);
-                return;
+                return batch.end();
             }
         }
         part.resume();
-    })
-    //form.on('close', batch.end);
+    });
+    form.on('close', batch.end);
     form.on('error', end);
     form.parse(req);
-
 });
 app.get("/", function(req, res) {
     sendHtml(res, fs.readFileSync("./index.html"));
@@ -336,8 +356,33 @@ app.use(debug_static.static(".", "/root/"));
 app.use(function(err, req, res, next) {
     console.error(err);
 });
-
-const server = app.listen(process.env.GRACE_PORT||0,function() {
-    console.log('Grace express file server started on http://localhost:' +
-        server.address().port + '; press Ctrl-C to terminate.');
-});
+var args = process.argv;
+var isHelp = false;
+for (var i = 2; i < args.length && !isHelp; i++) {
+    switch (args[i]) {
+        case "--port":
+            port = parseInt(args[++i]);
+            continue;
+        case "--pass":
+            password = String(args[++i]);
+            continue;
+        case "--help":
+        case "-h":
+            isHelp = true;
+            /*falls through*/
+        default:
+            if (!isHelp) {
+                isHelp = true;
+                console.error('Unknown option ' + args[i]);
+            }
+            console.log(
+                "Usage server.js [--port PORT][--pass PASSWORD]\nStart a file system server from specified path");
+            break;
+    }
+}
+if (!isHelp) {
+    const server = app.listen(port || 0, function() {
+        console.log('Grace express file server started on http://localhost:' +
+            server.address().port + '; press Ctrl-C to terminate.');
+    });
+}

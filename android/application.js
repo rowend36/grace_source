@@ -7,7 +7,8 @@ _Define(function(global) {
     window[TAG] = handler;
     var accessKey = app.requestAccessKey();
     var config = global.registerAll({
-        "runInNewProcess": false
+        "runInNewProcess": false,
+        "runInExternalBrowser": false
     }, "execute");
     var request = global.request;
     var requestBuffer = global.requestBuffer;
@@ -24,7 +25,7 @@ _Define(function(global) {
     Env.newWindow = function(path) {
         global.Docs.tempSave();
         appStorage.__doSync && appStorage.__doSync();
-        app.runFile(path, config.runInNewProcess, accessKey);
+        app.runFile(path, config.runInExternalBrowser?"browser":config.runInNewProcess?"process":"webview", accessKey);
     };
     handler._onNewIntent = function(inte) {
         var intent = JSON.parse(inte);
@@ -33,14 +34,18 @@ _Define(function(global) {
             var dir = FileUtils.dirname(intent.path);
             if(dir)FileUtils.addToRecents(dir);
         }
-        global.addDoc(intent.name || "", intent.value || "", intent.path || "");
+        if(intent.hasOwnProperty('value')){
+            global.addDoc(intent.name || "", intent.value || "", intent.path || "");
+        }
+        else if(intent.path)
+            FileUtils.openIntent(intent);
     };
     handler._pause = function() {
-        window.blur();
         appEvents.trigger('app-paused');
         appStorage.__doSync && appStorage.__doSync();
     };
     handler._resume = function() {
+        setTimeout(window.blur.bind(window),50);
         //if(window.Grace && window.Grace.loaded)
         appEvents.trigger('app-resumed');
     };
@@ -48,7 +53,6 @@ _Define(function(global) {
         appEvents.on("app-loaded", function() {
             var intent = app.getIntent(accessKey);
             if (intent) {
-                global.Notify.info('Loading file..');
                 handler._onNewIntent(intent);
             }
         });
@@ -284,7 +288,8 @@ _Define(function(global) {
                 throwError(err);
             }
         };
-        this.statSync = function(path, isLstat) {
+        this.statSync = function(path, opts) {
+            var isLstat = (opts === true || (opts && opts.isLstat));
             try {
                 return FileUtils.createStats(JSON.parse(app.stat(path, !!isLstat, accessKey)));
             } catch (err) {
@@ -324,12 +329,18 @@ _Define(function(global) {
         };
         var deleteSync = function(path) {
             try {
+                return app.deleteRecursively(path, accessKey);
+            } catch (err) {
+                throwError(err);
+            }
+        };
+        this.unlinkSync = this.rmdirSync = function(path) {
+            try {
                 return app.delete(path, accessKey);
             } catch (err) {
                 throwError(err);
             }
         };
-        this.unlinkSync = this.rmdirSync = deleteSync;
         this.readFile = function(path, opts, callback) {
             var encoding;
             if (opts) {
@@ -347,7 +358,9 @@ _Define(function(global) {
                 }
                 return;
             }
-            (encoding ? request : requestBuffer)(this.href + path, path, function(e, r) {
+            (encoding ? request : requestBuffer)(this.href + path, {
+                path:path
+            }, function(e, r) {
                 if (!e) return callback(null, r);
                 var stat;
                 try {
@@ -356,10 +369,7 @@ _Define(function(global) {
                     return callback(err);
                 }
                 if (stat.type == "dir") {
-                    return callback({
-                        code: "EISDIR",
-                        message: "EISDIR"
-                    });
+                    return callback(toNodeError("is a directory"));
                 }
                 if (encoding) {
                     app.getFileAsync(path, encoding, createCallback(callback), accessKey);
@@ -438,8 +448,9 @@ _Define(function(global) {
         };
         this.mkdir = asyncify(this, this.mkdirSync, 1);
         this.rename = asyncify(this, this.renameSync, 2);
-        this.unlink = this.rmdir = this.delete = asyncify(this, deleteSync, 1);
-        this.fastGetOid = function(path, callback) {
+        this.unlink = this.rmdir =  asyncify(this, this.unlinkSync, 1);
+        this.delete = asyncify(this, deleteSync, 1);
+        this.$gitBlobOid = function(path, callback) {
             count++;
             try {
                 app.getGitBlobIdAsync(path, createCallback(callback), accessKey);
@@ -493,5 +504,5 @@ _Define(function(global) {
         caption: "Root Directory",
         value: '/sdcard/',
         type: "text"
-    }]);
+    }],true);
 }); /*_EndDefine*/

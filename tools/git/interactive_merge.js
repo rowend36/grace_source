@@ -19,7 +19,7 @@ _Define(function(global) {
 	}
 	var TREE = git.TREE;
 	var _walk = git.walk;
-	var MergeNotSupportedError = git.Errors.MergeNotSupportedError;
+	var UnresolvedConflictError = git.Errors.UnresolvedConflictError;
 	var MissingParameterError = git.Errors.MissingParameterError;
 	var FastForwardError = git.Errors.FastForwardError;
 	var _writeObject = git.writeObject;
@@ -30,120 +30,6 @@ _Define(function(global) {
 	const _resolveRef = git.resolveRef;
 	const _expandRef = git.expandRef;
 	const _currentBranch = git.currentBranch;
-    
-	exports.merge = async function merge({
-		fs,
-		cache,
-		gitdir,
-		ours,
-		theirs,
-		fastForwardOnly = false,
-		dryRun = false,
-		noUpdateBranch = false,
-		message,
-		author,
-		committer,
-		signingKey,
-	}) {
-		if (ours === undefined) {
-			ours = await _currentBranch({
-				cache: cache,
-				fs,
-				gitdir,
-				fullname: true
-			})
-		}
-		ours = await _expandRef({
-			fs,
-			gitdir,
-			cache,
-			ref: ours,
-		})
-		theirs = await _expandRef({
-			fs,
-			gitdir,
-			cache,
-			ref: theirs,
-		})
-		const ourOid = await _resolveRef({
-			fs,
-			gitdir,
-			cache,
-			ref: ours,
-		})
-		const theirOid = await _resolveRef({
-			fs,
-			gitdir,
-			cache,
-			ref: theirs,
-		})
-		// find most recent common ancestor of ref a and ref b
-		const baseOids = await _findMergeBase({
-			fs,
-			cache,
-			gitdir,
-			oids: [ourOid, theirOid],
-		})
-		const baseOid = baseOids[0]
-		if (baseOids.length === 1) {
-
-			// handle fast-forward case
-			if (baseOid === theirOid) {
-				return {
-					oid: ourOid,
-					alreadyMerged: true,
-					sameRef: (baseOid==ourOid),
-				}
-			}
-			if (baseOid === ourOid) {
-				if (!dryRun && !noUpdateBranch) {
-					await git.writeRef({
-						fs,
-						gitdir,
-						cache,
-						ref: ours,
-						value: theirOid
-					})
-				}
-				return {
-					oid: theirOid,
-					fastForward: true,
-				}
-			}
-		}
-		// not a simple fast-forward
-		if (fastForwardOnly) {
-			throw new FastForwardError()
-		}
-		// try a fancier merge
-		const tree = await exports.diffTree({
-			fs,
-			gitdir,
-			ourOid,
-			baseOid,
-			theirOid,
-			cache,
-			ourName: ours,
-			baseName: 'base',
-			theirName: theirs,
-		});
-		return {
-			fs,
-			gitdir,
-			ours,
-			theirs,
-			tree,
-			cache,
-			ourOid,
-			theirOid,
-			baseOid,
-			author,
-			committer,
-			signingKey,
-		};
-
-	}
-
 
 	const writeTrees = async function({
 		fs,
@@ -166,7 +52,7 @@ _Define(function(global) {
 		tree.forEach(function(e) {
 			resolve[e.path] = e;
 			if (!e.type) throw new MissingParameterError('type');
-			if (e.conflict) throw new MergeNotSupportedError();
+			if (e.conflict) throw new UnresolvedConflictError();
 			if (e.head) return;
 			if (e.type == 'tree') return;
 			if (!e.mode) {
@@ -247,7 +133,127 @@ _Define(function(global) {
 			}
 		});
 	}
-
+	exports.merge = async function merge({
+		fs,
+		cache,
+		gitdir,
+		ours,
+		theirs,
+		fastForwardOnly = false,
+		dryRun = false,
+		noUpdateBranch = true,
+		message,
+		author,
+		diffFormat,
+		committer,
+		signingKey,
+	}) {
+		if (ours === undefined) {
+			ours = await _currentBranch({
+				cache: cache,
+				fs,
+				gitdir,
+				fullname: true
+			})
+		}
+		ours = await _expandRef({
+			fs,
+			gitdir,
+			cache,
+			ref: ours,
+		})
+		theirs = await _expandRef({
+			fs,
+			gitdir,
+			cache,
+			ref: theirs,
+		})
+		const ourOid = await _resolveRef({
+			fs,
+			gitdir,
+			cache,
+			ref: ours,
+		})
+		const theirOid = await _resolveRef({
+			fs,
+			gitdir,
+			cache,
+			ref: theirs,
+		})
+		// find most recent common ancestor of ref a and ref b
+		const baseOids = await _findMergeBase({
+			fs,
+			cache,
+			gitdir,
+			oids: [ourOid, theirOid],
+		})
+		const baseOid = baseOids[0]
+		if (baseOids.length === 1) {
+			// handle fast-forward case
+			if (baseOid === theirOid) {
+				return {
+					oid: ourOid,
+					alreadyMerged: true,
+					sameRef: (baseOid == ourOid),
+				}
+			}
+			if (baseOid === ourOid) {
+				if (!dryRun && !noUpdateBranch) {
+					await git.writeRef({
+						fs,
+						gitdir,
+						ref: 'ORIG_HEAD',
+						value: ourOid,
+						force: true
+					})
+					await git.writeRef({
+						fs,
+						gitdir,
+						cache,
+						force: true,
+						ref: ours,
+						value: theirOid
+					})
+				}
+				return {
+					oid: theirOid,
+					fastForward: true,
+				}
+			}
+		}
+		// not a simple fast-forward
+		if (fastForwardOnly) {
+			throw new FastForwardError()
+		}
+		// try a fancier merge
+		const tree = await exports.diffTree({
+			fs,
+			gitdir,
+			ourOid,
+			baseOid,
+			theirOid,
+			cache,
+			diffFormat,
+			ourName: ours,
+			baseName: 'base',
+			theirName: theirs,
+		});
+		return {
+			fs,
+			gitdir,
+			ours,
+			theirs,
+			tree,
+			cache,
+			ourOid,
+			theirOid,
+			baseOid,
+			author,
+			committer,
+			signingKey,
+		};
+	}
+	
 	exports.completeMerge = async function({
 		fs,
 		cache,
@@ -263,6 +269,13 @@ _Define(function(global) {
 		message = `Merge branch '${abbreviateRef(theirs)}' into ${abbreviateRef(ours)}`
 	}) {
 		var tree = await writeTrees.apply(null, arguments);
+		await git.writeRef({
+			fs,
+			gitdir,
+			ref: 'ORIG_HEAD',
+			value: ourOid,
+			force: true
+		})
 		const oid = await git.commit({
 			fs,
 			cache,
@@ -295,6 +308,46 @@ _Define(function(global) {
 	 * * * * @returns {Promise<Object>} - The proposed new tree
 	 * * * *
 	 * * * */
+	/*	Returns an array of changes
+		A ready merge is one in which each element is of the form
+		1 - {
+			path:string,
+			mode?:number,//ignored for trees
+			oid?: if unchanged or is a file,
+			type: blob|tree|commit
+		}
+		A computed merge will also have these parameters
+		2 - {
+			head: if present, together with path attribute 
+		     means the remaining attributes are in the tree specified
+			   when this is 'ours', we do not include it as it is unnecessary,
+			isAdd: boolean,
+		  isDelete: boolean
+		}
+		File conflicts are solveable using simple merge strategy, if that fails,
+		it falls back to diff3merge.
+		3 - {
+			conflict: whether the merge was successful,
+		  mode: computed mode,
+		  mergedText: the result when using diff3 whether complete or not
+		  result: the diff3merge object
+		}
+		A conflict is also when a file is modified in one branch and deleted in another
+		4 - { 
+		present: string - name of branch where modified
+		absent: string - name of branch where deleted
+		 }
+		 Or when two different types exist at the same path
+		 This case typically requires cancelling the merge
+		5 - {
+		 type: [blob|tree|commit]-[blob|tree|commit]
+		}
+		Mode changes are autosolved for directories
+		For now, both are not shown in preview
+		Once the merge conflicts are resolved, we only have
+		to run completeMerge
+	*/
+
 	exports.diffTree = async function({
 		fs,
 		cache,
@@ -305,6 +358,7 @@ _Define(function(global) {
 		theirOid,
 		ourName = 'ours',
 		baseName = 'base',
+		diffFormat = 'diff3',
 		theirName = 'theirs',
 		dryRun = false,
 	}) {
@@ -321,24 +375,6 @@ _Define(function(global) {
 			});
 			trees.push(baseTree)
 		}
-		//A ready merge consists of things
-		/*1 - {
-		path,
-		mode,
-		oid,
-		type
-		}*/
-		/*head param supplies any of path,mode,type*/
-		/*isDelete param means the path is deleted any of path,mode,type*/
-		//mode changes are autosolved for directories
-		//using either base or ours
-		//File mode changes are also autosolveable
-		//For now, both are not shown in preview
-		//Once the merge conflicts are resolved, we only have
-		//to run completeMerge
-		//type conflicts will require the user to cancel merge
-		//for now since we have no index
-		//but perharps later, we can add a rename/choose feature ie move
 		const results = await _walk({
 			fs,
 			dir,
@@ -402,6 +438,7 @@ _Define(function(global) {
 									path,
 									ours,
 									base,
+									format: diffFormat,
 									theirs,
 									ourName,
 									baseName,
@@ -432,7 +469,6 @@ _Define(function(global) {
 									theirName,
 									format: 'diff'
 								}));
-								result.conflict = true;
 							}
 							return result;
 
@@ -462,6 +498,7 @@ _Define(function(global) {
 		});
 		return results;
 	}
+
 
 	/**
 	 * * * *
@@ -504,6 +541,7 @@ _Define(function(global) {
 	 * * * */
 	const LINEBREAKS = /^.*(\r?\n|$)/gm
 	var diff3Merge = global.diff3Merge;
+
 	var mergeFile = exports.mergeFile = function({
 		ourContent,
 		baseContent,
@@ -621,5 +659,9 @@ _Define(function(global) {
 		result.type = type;
 		return result;
 	}
+
+	//TODO add enter merge state which involves
+	//doing the opposite of exitMergeState
+
 	global.InteractiveMerge = exports;
 }) /*_EndDefine*/

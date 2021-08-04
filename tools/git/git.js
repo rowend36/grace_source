@@ -4,6 +4,7 @@ _Define(function(global) {
     var Utils = global.Utils;
     var GitCommands = global.GitCommands = Object.create(null);
     var Notify = global.Notify;
+    var UiThread = global.UiThread;
     var padStart = typeof String.prototype.padStart === 'undefined' ? function(str, len, pad) {
         var t = Utils.repeat(Math.floor((len - str.length) / pad.length), pad);
         return t + pad.substring(0, (len - str.length - t.length)) + str;
@@ -21,27 +22,36 @@ _Define(function(global) {
     GitCommands.success = function() {
         Notify.info('Done');
     };
+
     GitCommands.createProgress = function(status) {
         var el = $(Notify.modal({
             header: status || 'Starting....',
-            body: "<span class='progress'><span class='determinate'></span></span><div class='modal-footer'><button class='modal-close btn right'>Hide</button></div>",
+            body: "<span class='progress'><span class='determinate'></span></span>",
+            footers: ['Cancel'],
             dismissible: true
         }, function() {
             el = null;
         }));
+        el.addClass('modal-alert');
+        el.find('.modal-cancel').text('Hide');
         return {
             update: function(event) {
                 if (el) {
                     el.find('.modal-header').text(event.phase);
                     if (event.total) {
-                        el.find('.progress').children('determinate').css("width", ((event.loaded / event.total) * 100) + "%")
-                            .children().remove();
+                        if (el.find('.progress').children('.determinate').length < 1) {
+                            el.find('.progress').html("<span class='determinate'></span>");
+                        }
+                        el.find('.progress').children('.determinate').css("width", ((event.loaded /
+                                event
+                                .total) * 100) + "%");
                     } else {
                         if (el.find('.progress').children('.indeterminate').length < 1) {
                             el.find('.progress').html("<span class='indeterminate'></span>");
                         }
                     }
                 }
+                return UiThread.awaitIdle();
             },
             dismiss: function() {
                 if (el) {
@@ -73,6 +83,7 @@ _Define(function(global) {
     };
     GitCommands.failure = function(e) {
         GitCommands.handleError(e);
+        if (e.toString == {}.toString) e = e.message || e.code;
         Notify.error("Error: " + e.toString());
     };
 }); /*_EndDefine*/
@@ -81,35 +92,74 @@ _Define(function(global) {
     var Notify = global.Notify;
     var appConfig = global.registerAll({}, "git");
     var GitCommands = global.GitCommands;
-    var checkBox = global.styleCheckbox;
+    var createProgress = GitCommands.createProgress;
     var failure = GitCommands.failure;
     var testUrl = GitCommands.testUrl;
     /*basic tasks*/
+    GitCommands.writeFile = function(name, content, prov, cb) {
+        var fs = prov.fs;
+        var dir = prov.gitdir;
+        fs.mkdir(dir + "/grace", function() {
+            fs.writeFile(dir + "/grace/" + name, content, cb);
+        });
+    };
+    GitCommands.readFile = function(name, prov, cb) {
+        var fs = prov.fs;
+        var dir = prov.gitdir;
+        fs.readFile(dir + "/grace/" + name, 'utf8', cb);
+    };
+    GitCommands.removeFile = function(name, prov, cb) {
+        var fs = prov.fs;
+        var dir = prov.gitdir;
+        fs.unlink(dir + "/grace/" + name, cb);
+    };
     GitCommands.init = function(ev, prov) {
-        prov.init().then(function(a) {
+        prov.init().then(function() {
             Notify.info("New repository created");
             ev.browser.reload(true);
         }, failure);
     };
     GitCommands.clone = function(ev, prov) {
-        var html = ["<form>", "<label>Enter repository url</label>",
-            "<input style='margin-bottom:10px' id=inputName name=inputName type=text value='https://github.com/'/>",
-            "<input type='checkbox' name='cloneShallow' id='cloneShallow'/>",
-            "<span style='margin-right:30px'>Shallow clone</span>",
-            "<input type='checkbox' name='singleBranch' id='singleBranch'/>", "<span>Single branch</span></br>",
-            "<input style='margin:10px' class='git-warning btn modal-close' type='button' value='Cancel' />",
-            "<input style='margin:10px' class='btn right' name=doSubmit type='submit' value='Clone'/>", "</form>",
-        ].join("");
+        var progress = createProgress();
         var el = $(Notify.modal({
             header: "Clone Repository",
-            body: html,
+            form: [{
+                    caption: 'Enter repository url',
+                    type: 'text',
+                    name: 'repoUrl',
+                    value: "https://github.com/"
+                },
+                {
+                    caption: 'Shallow clone',
+                    type: 'accept',
+                    name: 'cloneShallow'
+                },
+                {
+                    caption: 'Single branch',
+                    type: 'accept',
+                    name: 'singleBranch'
+                },
+                {
+                    type: "div",
+                    name: "singleBranchDiv",
+                    children: [{
+                        caption: 'Branch to clone',
+                        type: 'text',
+                        name: 'branchToClone'
+                    }]
+                }
+            ],
+            footers: ['Cancel', 'Clone'],
             dismissible: false
         }));
-        checkBox(el);
-        el.find("form").on("submit", function(e) {
+        el.find("#singleBranchDiv").hide();
+        el.find('#singleBranch').change(function() {
+            el.find("#singleBranchDiv").toggle(this.checked);
+        });
+        el.on("submit", function(e) {
             e.preventDefault();
-            var url = el.find("#inputName").val();
-            if (!testUrl(url)) {
+            var result = global.Form.parse(el[0]);
+            if (!testUrl(result.repoUrl)) {
                 return Notify.error("Invalid Url");
             }
             el.modal("close");
@@ -122,150 +172,23 @@ _Define(function(global) {
                         });
                     });
                 },
-                url: url,
-                singleBranch: el.find("#singleBranch")[0].checked,
-                depth: el.find("#cloneShallow")[0].checked ? 1 : undefined
+                url: result.repoUrl,
+                ref: result.singleBranch ? result.branchToClone : undefined,
+                onProgress: progress.update,
+                singleBranch: result.singleBranch,
+                depth: result.cloneShallow ? 1 : undefined
             }).then(function() {
+                progress.dismiss();
                 Notify.info("Clone complete");
                 ev.browser.reload();
             }, function(e) {
                 failure(e);
+                progress.dismiss();
                 ev.browser.reload();
             });
         });
     };
 }); /*_EndDefine*/
-//Git Commands Commit
-_Define(function(global) {
-    var Notify = global.Notify;
-    var appConfig = global.registerAll({}, "git");
-    var GitCommands = global.GitCommands;
-    var configure = global.configure;
-    var failure = GitCommands.failure;
-    var success = GitCommands.success;
-    var createProgress = GitCommands.createProgress;
-    var padStart = GitCommands.padStart;
-    GitCommands.doCommit = function(ev, prov) {
-        var commit = function(ans) {
-            if (ans == "") return false;
-            else if (!ans) return;
-            prov.commit({
-                author: {
-                    name: appConfig.gitName,
-                    email: appConfig.gitEmail,
-                },
-                message: ans
-            }).then(function() {
-                Notify.info("Commit Successful");
-            }, function(e) {
-                if ((e + "").indexOf("No name was provided") > -1) {
-                    Notify.prompt("Enter Author name", function(name) {
-                        if (name) {
-                            configure("gitName", name, "git");
-                            commit(ans);
-                        }
-                    });
-                } else failure(e);
-            });
-        };
-        Notify.prompt("Enter Commit Message", commit);
-    };
-    //force checkout
-    GitCommands.doRevert = function(ev, prov) {
-        var _prov = prov.cached();
-        var progress = createProgress('Analyzing directory');
-        var opts = {
-            onProgress: progress.update,
-            force: true,
-        };
-        prov.analyze(opts).then(function(ops) {
-            progress.dismiss();
-            if (ops.length == 0) {
-                return Notify.info('Workspace already checked out');
-            }
-            var safeString = padStart("" + Math.floor((Math.random() * 999999)) + "", 6, "0");
-            Notify.prompt("This will revert all changes in working directory to last commit.\n It will:\n" + ops.map(function(
-                e) {
-                return e[0] + " " + e[1] + "\n";
-            }).join("") + " To confirm operation, type '" + safeString + "'", function(ans) {
-                if (ans == safeString) {
-                    progress = createProgress('Reverting...');
-                    _prov.checkout({
-                        onProgress: progress.update,
-                        filepaths: ops.map(function(e) {
-                            return e[1];
-                        }),
-                        force: true,
-                    }).then(function() {
-                        progress.dismiss();
-                        success();
-                    }, progress.error);
-                } else if (ans) {
-                    return false;
-                }
-            });
-        }, progress.error);
-    };
-
-});
-//Git Commands Configuration
-_Define(function(global) {
-    var GitCommands = global.GitCommands;
-    var appConfig = global.registerAll(null,"git");
-    var configure = global.configure;
-    var Notify = global.Notify;
-    var checkBox = global.styleCheckbox;
-    function doConfig(ev, prov, done) {
-        var html = ["<form>", "<label>Author Name(used in commits)</label>",
-            "<input name=userName' id='userName' placeholder='Leave empty'></input>", "<label>Email</label>",
-            "<input name=userEmail' id='userEmail'></input>", "<label>Password</label>",
-            "<span class='material-icons'>visibility_on</span>", "<input name=userPass' id='userPass' type='text'/>",
-            "<input type='checkbox' name='saveToDisk' id='saveToDisk'/>",
-            "<span style='margin-right:30px'>Save To Disk</span></br>",
-            "<input style='margin:10px' class='git-warning btn modal-close' type='button' value='Cancel' />",
-            "<input style='margin:10px' class='btn right' name=doSubmit type='submit' value='Done'/>", "</form>",
-        ].join("");
-        var el = $(Notify.modal({
-            header: "Configure",
-            body: html,
-            dismissible: true
-        }, function() {
-            el.find('form').off('submit');
-        }));
-        checkBox(el);
-        el.find("#userPass").val(appConfig.gitPassword);
-        el.find("#userName").val(appConfig.gitName);
-        el.find("#userEmail").val(appConfig.gitEmail);
-        el.find('form').on('submit', function(e) {
-            e.preventDefault();
-            el.modal('close');
-            if (done && done({
-                    email: el.find("#userEmail").val(),
-                    username: el.find("#userName").val(),
-                    password: el.find("#userPass").val()
-                }) == false) {
-                return;
-            }
-            configure("gitEmail", el.find("#userEmail").val(), "git");
-            configure("gitPassword", el.find("#userPass").val(), "git");
-            configure("gitName", el.find("#userName").val(), "git");
-            if (el.find("#saveToDisk")[0].checked) {
-                var dict = {
-                    "user.email": "gitEmail",
-                    "user.password": "gitPassword",
-                    "user.name": "gitName"
-                };
-                for (var i in dict) {
-                    prov.setConfig({
-                        path: i,
-                        value: appConfig[dict[i]]
-                    });
-                }
-            }
-        });
-    }
-    GitCommands.doConfig = doConfig;
-});
 //Git command log
 _Define(function(global) {
     var Notify = global.Notify;
@@ -291,21 +214,25 @@ _Define(function(global) {
                     date = log.committer.timestamp;
                     if (date) {
                         if (!isNaN(log.committer.timezoneOffset)) {
-                            date += (new Date().getTimezoneOffset() - log.committer.timezoneOffset) * 60;
+                            date += (new Date().getTimezoneOffset() - log.committer
+                                .timezoneOffset) * 60;
                         }
                     }
-                    entry(a, "committer", (log.committer.name || "") + (" (" + (log.committer.email || "no-email") + ")"));
+                    entry(a, "committer", (log.committer.name || "") + (" (" + (log.committer
+                        .email || "no-email") + ")"));
                 }
                 if (log.author) {
                     if (!date) {
                         date = log.author.timestamp;
                         if (date) {
                             if (!isNaN(log.author.timezoneOffset)) {
-                                date += (new Date().getTimezoneOffset() - log.author.timezoneOffset) * 60;
+                                date += (new Date().getTimezoneOffset() - log.author
+                                    .timezoneOffset) * 60;
                             }
                         }
                     }
-                    entry(a, "author", (log.author.name || "") + (" (" + (log.author.email || "no-email") + ")"));
+                    entry(a, "author", (log.author.name || "") + (" (" + (log.author.email ||
+                        "no-email") + ")"));
                 }
                 if (date) {
                     entry(a, "date", new Date(date * 1000));
@@ -314,45 +241,60 @@ _Define(function(global) {
                 a.push("</table>");
                 return a.join("");
             }
-        },failure);
+        }, failure);
     };
 }); /*_EndDefine*/
 //Setup
 _Define(function(global) {
     "use strict";
-    var Overflow = global.Overflow;
+    var Dropdown = global.Dropdown;
     var FileUtils = global.FileUtils;
+    var Utils = global.Utils;
     var Imports = global.Imports;
     var Notify = global.Notify;
     var appConfig = global.registerAll({
         "gitdir": "***",
-        "gitName": "",
         "gitEmail": "",
+        "gitUsername": "",
         "gitPassword": "*******",
         "gitUseCachedStatus": true,
+        "enableMergeMode": true,
+        "formatConflict": "diff3",
         "gitCorsProxy": Env.isWebView ? undefined : Env._server + "/git",
         "gitSkipGitIgnore": true,
-        "gitIgnore": ["logs", "*.log", "npm-debug.log*", "yarn-debug.log*", "yarn-error.log*", "firebase-debug.log*",
-            "firebase-debug.*.log*", ".firebase/", "*.pid", "*.seed", "*.pid.lock", "lib-cov", "coverage", ".nyc_output",
-            ".grunt", "bower_components", ".lock-wscript", "build/Release", "node_modules/", ".npm", ".eslintcache",
-            ".node_repl_history", "*.tgz", ".yarn-integrity", ".env**/.*", ".git", ".*-git", ".git-status"
+        "gitIgnore": ["logs", "*.log", "npm-debug.log*", "yarn-debug.log*", "yarn-error.log*",
+            "firebase-debug.log*",
+            "firebase-debug.*.log*", ".firebase/", "*.pid", "*.seed", "*.pid.lock", "lib-cov",
+            "coverage", ".nyc_output",
+            ".grunt", "bower_components", ".lock-wscript", "build/Release", "node_modules/", ".npm",
+            ".eslintcache",
+            ".node_repl_history", "*.tgz", ".yarn-integrity", ".env**/.*", ".git", ".*-git",
+            ".git-status", "*~[123]",
         ],
         "defaultRemote": undefined,
         "defaultRemoteBranch": undefined,
-        "useDiskConfig": false,
         "forceShowStagedDeletes": true
     }, "git");
     var configure = global.configure;
     var join = FileUtils.join;
     var dirname = FileUtils.dirname;
     global.registerValues({
+        "formatConflict": {
+            values: ["diff3", "diff"]
+        },
+        "defaultRemote": {
+            type: "string|null"
+        },
+        "defaultRemoteBranch": {
+            type: "string|null"
+        },
+        "enableMergeMode": "Try to highlight open documents as merge conflicts",
         "gitCorsProxy": "Possible value: https://cors.isomorphic-git.org/ \nSee isomorphic-git.com/issues",
-        "gitName": "The name that will be used in commits",
+        "gitPassword": "It is advised you use an app password for this. Passwords are stored as plain text.",
         "gitdir": "The name of the git dir. Git support especially(merging/pulling) is still largely experimental.\n Using '.git' might corrupt your local repository.",
         "gitIgnore": "ignore",
         "gitSkipGitIgnore": "Ignore .gitignore files. Useful in speeding up status operation when there are a lot of untracked files by using 'appConfig.gitIgnore' instead",
         "gitUseCachedStatus": "Enables caching to speed up the status operation of large repositiories",
-        "useDiskConfig": "Load/Save email and password from/to hard drive",
         "forceShowStagedDeletes": "Set to 'false' if viewStage operation seems too slow"
     }, "git");
 
@@ -360,13 +302,16 @@ _Define(function(global) {
         return new Promise(function(resolve, reject) {
             var dir = appConfig.gitdir;
             if (dir == "***") {
-                return Notify.ask("Git support is still experimental. Use custom git directory?", function() {
-                    configure("gitdir", ".grit", "git");
-                    findRoot(rootDir, fs).then(resolve, reject);
-                }, function() {
-                    configure("gitdir", ".git", "git");
-                    findRoot(rootDir, fs).then(resolve, reject);
-                });
+                return Notify.ask(
+                    "Git support is still experimental. Use .grit instead of .git as git directory?",
+                    function() {
+                        configure("gitdir", ".grit", "git");
+                        findRoot(rootDir, fs).then(resolve, reject);
+                    },
+                    function() {
+                        configure("gitdir", ".git", "git");
+                        findRoot(rootDir, fs).then(resolve, reject);
+                    });
             }
             var check = function(root) {
                 fs.readdir(join(root, dir), function(e) {
@@ -391,21 +336,26 @@ _Define(function(global) {
     var lastEvent;
     var detectRepo = Imports.define([
         "./core/cachefileserver.js", "./tools/git/libs/isomorphic-http.js",
-        "./tools/git/libs/inhouse-git.js", "./tools/git/git_interface.js",
+        "./tools/git/libs/isomorphic-git-mod.js", "./tools/git/git_interface.js",
         "./tools/git/git_status.js", "./tools/git/git_branch.js",
-         "./tools/git/git_merge.js"
+        "./tools/git/git_commit.js", "./tools/git/git_config.js",
+        "./tools/git/git_merge.js", "./tools/git/git_remote.js",
+        "./tools/git/git_fs.js", "./tools/git/git_diff.js", "./tools/git/merge3highlight.js"
     ], function() {
         return (detectRepo = function(ev, btn, yes, no) {
+            if (!ev) return;
             var dir = ev.rootDir;
             lastEvent = ev;
             findRoot(dir, ev.browser.fileServer).then(function(path) {
                 var fs = lastEvent.browser.fileServer;
                 var GitImpl = fs.$gitImpl || global.Git;
-                prov = new GitImpl(path || dir, join(path || dir, appConfig.gitdir), fs);
+                prov = new GitImpl(path || dir, join(path || dir, appConfig.gitdir),
+                    fs);
                 if (path) {
                     yes.show(btn);
                     if (yes == GitOverflow) {
-                        prov.currentBranch().then(GitMenu.currentBranch.update, GitCommands.failure);
+                        prov.currentBranch().then(GitMenu.currentBranch.update,
+                            GitCommands.failure);
                     }
                 } else no.show(btn);
             }, GitCommands.failure);
@@ -438,7 +388,25 @@ _Define(function(global) {
         "delete-from-tree": {
             caption: "Delete and Stage",
             command: "delete"
-        }
+        },
+        "diff-index": {
+            caption: "Show diff",
+            command: "diff",
+            sortIndex: 500
+        },
+        "checkout-4": Dropdown.defaultLabel('Force Checkout'),
+        "do-revert-index-file": {
+            icon: 'warning',
+            caption: "Checkout file from index",
+            className: "git-warning-text",
+            command: "doRevertINDEX"
+        },
+        "do-revert-commit-file": {
+            icon: 'warning',
+            caption: "Checkout file from ref",
+            className: "git-warning-text",
+            command: "doRevertCommit"
+        },
     };
     var GitMenu = {
         "currentBranch": {
@@ -449,7 +417,8 @@ _Define(function(global) {
             update: function(branch) {
                 if (branch != GitMenu.currentBranch.currentBranch) {
                     GitMenu.currentBranch.currentBranch = branch;
-                    GitMenu.currentBranch.caption = "<span class='dot green'></span><i class='grey-text'>" + branch + "</i>";
+                    GitMenu.currentBranch.caption =
+                        "<span class='dot green'></span><i class='grey-text'>" + branch + "</i>";
                     GitOverflow.update(GitMenu);
                 }
             }
@@ -469,7 +438,7 @@ _Define(function(global) {
             caption: "Folder Status",
             command: "statusAll"
         },
-        "branches": Overflow.defaultLabel('Branches'),
+        "branches": Dropdown.defaultLabel('Branches'),
         "create-branch": {
             icon: "add",
             caption: "Create Branch",
@@ -485,12 +454,17 @@ _Define(function(global) {
             caption: "Set HEAD branch",
             command: "switchBranchNoCheckout"
         },
+        "do-merge": {
+            icon: 'swap_vert',
+            caption: "Merge Branches",
+            command: "doMerge"
+        },
         "close-branch": {
             icon: "delete",
             caption: "Delete Branch",
             command: "deleteBranch"
         },
-        "git-remotes": Overflow.defaultLabel('Remotes'),
+        "git-remotes": Dropdown.defaultLabel('Remotes'),
         "do-pull": {
             icon: 'vertical_align_bottom',
             caption: "Pull Changes",
@@ -501,37 +475,45 @@ _Define(function(global) {
             caption: "Push Changes",
             command: "doPush"
         },
-        "add-remote": {
-            icon: "add",
-            caption: "Add Remote",
-            command: "addRemote"
-        },
-        "delete-remote": "Remove Remote",
-        "configure-op": Overflow.defaultLabel('authentication'),
-        "configure": {
-            caption: "Add Authentication",
-            command: "doConfig"
+        "manage-remote": {
+            icon: "link",
+            caption: "Remotes",
+            command: "manageRemotes"
         },
         "repo-actions": {
             icon: "more_vert",
             caption: "More...",
             sortIndex: 100000,
-            childHier: {
-                "do-merge": {
-                    icon: 'swap_vert',
-                    caption: "Merge Branches",
-                    command: "doMerge"
-                },
-                "do-revert": {
-                    icon: 'warning',
-                    caption: "Revert to last commit",
-                    className: "git-warning-text",
-                    command: "doRevert"
-                },
+            subTree: {
+                "histpry": Dropdown.defaultLabel('History'),
                 "show-logs": {
                     icon: 'history',
                     caption: "History",
                     command: "log"
+                },
+                "browse-logs": {
+                    icon: 'history',
+                    caption: "Browse Ref/Commit",
+                    command: "browseCommit"
+                },
+                "configure-op": Dropdown.defaultLabel('authentication'),
+                "authentication": {
+                    icon: "account_circle",
+                    caption: "Add Authentication",
+                    command: "doConfig"
+                },
+                "checkout-5": Dropdown.defaultLabel('Force Checkout'),
+                "do-revert-index": {
+                    icon: 'warning',
+                    caption: "Checkout index",
+                    className: "git-warning-text",
+                    command: "doRevertINDEX"
+                },
+                "do-revert-commit": {
+                    icon: 'warning',
+                    caption: "Checkout ref",
+                    className: "git-warning-text",
+                    command: "doRevertCommit"
                 }
             }
         }
@@ -546,13 +528,14 @@ _Define(function(global) {
             command: "clone"
         }
     };
-    var GitFileOverflow = new Overflow();
-    var GitOverflow = new Overflow();
-    var NoGitOverflow = new Overflow();
-    GitFileOverflow.setHierarchy(GitFileMenu);
-    GitOverflow.setHierarchy(GitMenu);
-    NoGitOverflow.setHierarchy(NoGitMenu);
+    var GitFileOverflow = new Dropdown();
+    var GitOverflow = new Dropdown();
+    var NoGitOverflow = new Dropdown();
+    GitFileOverflow.setData(GitFileMenu);
+    GitOverflow.setData(GitMenu);
+    NoGitOverflow.setData(NoGitMenu);
     GitOverflow.onclick = GitFileOverflow.onclick = NoGitOverflow.onclick = function(e, id, span, data) {
+        prov = prov.cached(id);
         if (data.command) {
             GitCommands[data.command](lastEvent, prov);
         } else if (data.onclick) data.onclick(lastEvent, prov);
@@ -611,4 +594,15 @@ _Define(function(global) {
     FileUtils.registerOption("files", ["file", "folder"], "git-file-opts", GitFileOption);
     FileUtils.registerOption("project", ["project"], "git-opts", GitProjectOption);
     FileUtils.registerOption("project", ["project"], "git-file-opts", "");
+
+    //AutoLoad 
+    if (
+        FileUtils.channelHasPending("servers-!gitfs") ||
+        FileUtils.channelHasPending("diffs-git") ||
+        FileUtils.channelHasPending("docs-git-merge")) {
+        detectRepo();
+    } else if (appConfig.enableMergeMode) {
+        Imports.define(["./tools/git/merge3highlight.js"])(Utils.noop);
+    }
+
 }); /*_EndDefine*/

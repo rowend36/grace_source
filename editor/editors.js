@@ -43,6 +43,7 @@ _Define(function(global) {
         this.element.remove();
     };
     ScrollbarMarker.prototype.$padding = 0;
+    ScrollbarMarker.prototype.TIMEOUT = 100;
     ScrollbarMarker.prototype.gatherMarkers = function() {
         var markers = Object.assign({}, this.session.getMarkers(), this.session.getMarkers(true));
         markers.viewport = this.viewport;
@@ -70,8 +71,6 @@ _Define(function(global) {
             this.cursors[i].className = "marker_cursor";
         }, this);
     };
-    ScrollbarMarker.prototype.MAX_MARKERS = 150;
-    Marker.prototype.MAX_MARKERS = 500;
     ScrollbarMarker.prototype.render = function(changes) {
         var r = this.editor.renderer;
         this.setSession(this.editor.session);
@@ -137,45 +136,96 @@ _Define(function(global) {
             value: false
         }
     });
-
-    function autofadeScrollBars(editor) {
-        //everything here should be configurable
-        var fadeTimeout;
-
-        function doFade() {
-            editor.renderer.scrollBarV.element.style.zIndex = "";
-            editor.renderer.scrollBarV.setVisible(false);
-            fadeTimeout = null;
-        }
-        var fadeScroll = function(e) {
-            if (fadeTimeout) {
-                clearTimeout(fadeTimeout);
-            } else editor.renderer.scrollBarV.setVisible(true);
-            if (!editor.renderer.$vScrollBarAlwaysVisible) {
-                fadeTimeout = setTimeout(doFade, e ? 3000 : 1000);
-                editor.renderer.scrollBarV.element.style.zIndex = 10;
-            }
+    var dom = global.dom;
+    function setupMobileMenu(editor) {
+        var defaultCreate = editor.mobileMenu.create;
+        editor.mobileMenu.create = function(){
+            defaultCreate.call(this);
+            this.element.lastChild.style.display = 'none';
         };
-        var stop = function(e) {
-            e.stopPropagation();
+        editor.mobileMenu.update = function() {
+            //use material icons
+            var contextMenu = this.element;
+            var selected = editor.getCopyText();
+            var hasUndo = editor.session.getUndoManager().hasUndo();
+            this.isOpen = true;
+            contextMenu.replaceChild(
+                dom.buildDom(["span",
+                    !selected && ["span", {
+                        class: "ace_mobile-button material-icons",
+                        action: "selectall"
+                    }, "select_all"],
+                    selected && ["span", {
+                        class: "ace_mobile-button material-icons",
+                        action: "copy"
+                    }, "content_copy"],
+                    selected && ["span", {
+                        class: "ace_mobile-button material-icons",
+                        action: "cut"
+                    }, "content_cut"],
+                    ["span", {
+                        class: "ace_mobile-button material-icons",
+                        action: "paste"
+                    }, "content_paste"],
+                    hasUndo && ["span", {
+                        class: "ace_mobile-button material-icons",
+                        action: "undo"
+                    }, "undo"],
+                    ["span", {
+                        class: "ace_mobile-button material-icons",
+                        action: "find"
+                    }, "search"],
+                    ["span", {
+                        class: "ace_mobile-button material-icons",
+                        action: "openCommandPallete"
+                    }, "more_horiz"],
+                    ["span", {
+                        class: "ace_mobile-button material-icons",
+                        action: "beautify"
+                    }, "format_align_center"],
+                ]),
+                contextMenu.firstChild
+            );
         };
-        ['ontouchstart', 'ontouchmove', 'ontouchend', 'onmousemove'].forEach(function(f) {
-            editor.renderer.scrollBarV.element[f] = stop;
-        });
-        //no resizing viewport
-        editor.renderer.scrollBarV.$minWidth = VSCROLL_WIDTH;
-        editor.renderer.scrollBarV.width = VSCROLL_WIDTH;
-        editor.renderer.scrollBarV.element.style.width = VSCROLL_WIDTH + "px";
-        //editor.renderer.scrollBarV.inner.style.width = 30+"px";
-        editor.session.on("changeScrollTop", fadeScroll);
-        editor.on("changeSession", function(s) {
-            s.oldSession && s.oldSession.off('changeScrollTop', fadeScroll);
-            s.session && s.session.on('changeScrollTop', fadeScroll);
-            fadeScroll();
-        });
-        editor.renderer.scrollBarV.setVisible(true);
     }
-    global.autofadeScrollBars = autofadeScrollBars;
+
+function autofadeScrollBars(editor) {
+    //everything here should be configurable
+    var fadeTimeout;
+
+    function doFade() {
+        editor.renderer.scrollBarV.setVisible(false);
+        fadeTimeout = null;
+    }
+    var fadeScroll = function(e) {
+        if (fadeTimeout) {
+            clearTimeout(fadeTimeout);
+        } else editor.renderer.scrollBarV.setVisible(true);
+        if (!editor.renderer.$vScrollBarAlwaysVisible) {
+            fadeTimeout = setTimeout(doFade, e ? 3000 : 1000);
+        }
+    };
+    var stop = function(e) {
+        e.stopPropagation();
+    };
+    ['ontouchstart', 'ontouchmove', 'ontouchend', 'onmousemove'].forEach(function(f) {
+        editor.renderer.scrollBarV.element[f] = stop;
+    });
+    //no resizing viewport
+    editor.renderer.scrollBarV.$minWidth = VSCROLL_WIDTH;
+    editor.renderer.scrollBarV.width = VSCROLL_WIDTH;
+    editor.renderer.scrollBarV.element.style.width = VSCROLL_WIDTH + "px";
+    //editor.renderer.scrollBarV.inner.style.width = 30+"px";
+    editor.session.on("changeScrollTop", fadeScroll);
+    editor.on("changeSession", function(s) {
+        s.oldSession && s.oldSession.off('changeScrollTop', fadeScroll);
+        s.session && s.session.on('changeScrollTop', fadeScroll);
+        fadeScroll();
+    });
+    editor.renderer.scrollBarV.setVisible(true);
+}
+global.setupMobileMenu = setupMobileMenu;
+global.autofadeScrollBars = autofadeScrollBars;
 });
 _Define(function(global) {
     var appEvents = global.AppEvents;
@@ -184,6 +234,7 @@ _Define(function(global) {
     var EditorSettings = global.EditorSettings;
     var FocusManager = global.FocusManager;
     var autofadeScrollBars = global.autofadeScrollBars;
+    var setupMobileMenu = global.setupMobileMenu;
 
     function getSettingsEditor() {
         return settings;
@@ -194,6 +245,8 @@ _Define(function(global) {
     var editors = [];
     var settings = new EditorSettings(editors);
 
+    //The main editor is the one that is completely managed by
+    //the application, used for switching docs and the like
     var __editor;
 
     function getEditor(session) {
@@ -202,23 +255,6 @@ _Define(function(global) {
         })[0] : __editor;
     }
 
-    function focusEditor(mainEditor, element, tabId) {
-        //a hook used by viewpagers
-        //to changeEditor without messing
-        //up internal state
-        var e = mainEditor;
-        if (__editor == e) return;
-        Utils.assert(editors.indexOf(e) > -1, 'Please use set viewPager.getEditorWindow');
-        var oldEditor = __editor;
-        __editor = e;
-        var pluginEditor = element.env && element.env.editor;
-        settings.editor = pluginEditor || e;
-        appEvents.trigger('changeEditor', {
-            oldEditor: oldEditor,
-            editor: pluginEditor || e
-        });
-        Docs.swapDoc(tabId);
-    }
 
     function setEditor(e) {
         //e can be a container or
@@ -229,10 +265,6 @@ _Define(function(global) {
         var oldEditor = __editor;
         __editor = e;
         settings.editor = e;
-        var doc = Docs.forSession(e.session);
-        if (doc) {
-            Docs.swapDoc(doc.id);
-        }
         appEvents.trigger('changeEditor', {
             oldEditor: oldEditor,
             editor: e
@@ -243,15 +275,19 @@ _Define(function(global) {
         var editor = __editor;
         var session = doc.session;
         if (editors.length > 1) {
+            //deal with cloned sessions
             var oldDoc = Docs.forSession(editor.session);
-            //session is a clone, close
-            if (oldDoc && oldDoc.session !== editor.session) {
-                //unnecssary check
-                Docs.closeSession(editor.session);
-            }
-            if (getEditor(session)) {
-                //create clone
-                session = doc.cloneSession();
+            if (oldDoc === doc) {
+                session = editor.session;
+            } else {
+                if (oldDoc) {
+                    //Close any clones available
+                    Docs.closeSession(editor.session);
+                }
+                if (getEditor(session)) {
+                    //create clone
+                    session = doc.cloneSession();
+                }
             }
         }
         settings.session = doc.session;
@@ -312,6 +348,7 @@ _Define(function(global) {
         editor.renderer.setScrollMargin(5, 5, 0, 0);
         muddleTextInput(editor.textInput.getElement());
         autofadeScrollBars(editor);
+        setupMobileMenu(editor);
         editor.setAutoScrollEditorIntoView(false);
         editor.$blockScrolling = Infinity; //prevents ace from logging annoying warnings
         settings.add(editor);
@@ -363,7 +400,6 @@ _Define(function(global) {
     api.setSession = setSession;
     api.findEditor = getEditor;
     api.addCommands = addCommands;
-    api.$focusEditor = focusEditor;
     api.forEach = editors.forEach.bind(editors);
     api.setEditor = setEditor;
     api.getEditor = getEditor;

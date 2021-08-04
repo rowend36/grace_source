@@ -1,5 +1,5 @@
 (function(global) {
-    global.Snippets = {
+    window.Snippets = global.Snippets = {
         "listGlobals": {
             exec: function(window) {
                 var globals = Object.keys(window);
@@ -24,14 +24,14 @@
                 globals.forEach(function(a, i) {
                     if (window.hasOwnProperty(globals[i])) {
                         console.log(globals[i] + " already defined");
-                    }
-                    else {
+                    } else {
                         Object.defineProperty(window, globals[i], {
                             get: function() {
                                 return undefined;
                             },
                             set: function(val) {
-                                console.log(globals[i] + " set at file\n", new Error().stack.split("\n").slice(2).join("\n"));
+                                console.log(globals[i] + " set at file\n", new Error()
+                                    .stack.split("\n").slice(2).join("\n"));
                                 Object.defineProperty(window, globals[i], {
                                     value: val,
                                     configurable: true,
@@ -70,11 +70,9 @@
                                 condition: rules[i].conditionText,
                                 rules: parseRules(rules[i].cssRules)
                             };
-                        }
-                        else if (rules[i].cssRules) {
+                        } else if (rules[i].cssRules) {
                             a.rules = parseRules(rules[i].cssRules);
-                        }
-                        else a.style = parseStyle(rules[i].style, rules[i]);
+                        } else a.style = parseStyle(rules[i].style, rules[i]);
                         css.push(a);
                     }
                     return css;
@@ -91,21 +89,49 @@
                 return sheets;
             }
         },
+        logAllMethods: {
+            exec: function(window) {
+                var exclude = [console];
+                var DebugR = function(obj, key, method, d) {
+                    if (method instanceof Element) return;
+                    if (typeof method == "object") {
+                        for (var j in method) {
+                            DebugR(method, j, method[j], --d);
+
+                        }
+                        return;
+                    }
+                    if(exclude.indexOf(method)>-1)return;
+                    if (!d || typeof method != "function") return;
+                    if (method.wrapped) return;
+                    var a = obj[key] = function() {
+                        console.log(key);
+                        if (this && this.isNew)
+                            return new(method.bind.apply(method, [null].concat(arguments)))();
+                        return method.apply(this, arguments);
+                    };
+                    a.prototype.isNew = true;
+                    Object.assign(a, method);
+                    a.wrapped = true;
+                    DebugR(a, 'prototype', a.prototype);
+                };
+                DebugR(null, null, window, 4);
+
+            }
+        },
         getUnusedCss: {
             exec: function(window, name) {
                 var sheets = Snippets.listCssRules.exec(window, name);
                 var text = [];
-        
-                
-                var slimmed;
-                function slim(t,i) {
-                    if (!t.style) {
-                    }
-                    else {
-                        var filterStyle = t.style;
+
+
+                //var slimmed;
+                function slim(t /*,i*/ ) {
+                    if (!t.style) {} else {
+                        //var filterStyle = t.style;
                         var selector = t.selector;
                         var el = document.querySelector(selector);
-                        if(!el){
+                        if (!el) {
                             text.push(selector);
                         }
                     }
@@ -131,14 +157,12 @@
                     for (var c in t) {
                         if (result[t[c]]) {
                             result[t[c]]++;
-                        }
-                        else result[t[c]] = 1;
+                        } else result[t[c]] = 1;
                     }
                     var aggregate = "." + (t.sort().join("."));
                     if (m[aggregate]) {
                         m[aggregate]++;
-                    }
-                    else m[aggregate] = 1;
+                    } else m[aggregate] = 1;
                 }
                 return result;
             }

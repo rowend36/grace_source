@@ -1,8 +1,8 @@
-_Define(function (exports) {
+_Define(function(exports) {
     //todo
     var BaseServer = exports.BaseServer;
     var htmlEncode = exports.Functions.htmlEncode;
-    var TernServer = function (options) {
+    var TernServer = function(options) {
         BaseServer.call(this, options, cls);
         var self = this;
         var plugins = this.options.plugins || (this.options.plugins = {});
@@ -20,14 +20,14 @@ _Define(function (exports) {
                 };
         }
         if (!this.options.hasOwnProperty("defs"))
-            this.options.defs = [/*'jquery',*/ "browser", "ecmascript"];
+            this.options.defs = [ /*'jquery',*/ "browser", "ecmascript"];
         if (this.options.useWorker != false) this.options.useWorker = true;
         if (this.options.useWorker) {
             this.server = new WorkerServer(this, this.options.workerClass);
         } else {
             this.restart();
         }
-        this.trackChange = function (change, doc) {
+        this.trackChange = function(change, doc) {
             trackChange(self, doc, change);
         };
         this.cachedArgHints = null;
@@ -45,7 +45,7 @@ _Define(function (exports) {
     var docValue = S.docValue;
     var getFile = S.getFile;
     var Notify = exports.Notify;
-    var Pos = function (line, ch) {
+    var Pos = function(line, ch) {
         return {
             line: line,
             ch: ch,
@@ -56,22 +56,23 @@ _Define(function (exports) {
     var debugCompletions = false;
 
     TernServer.prototype = Object.assign(Object.create(BaseServer.prototype), {
-        normalizeName: function (name) {
+        name: 'ternServer',
+        normalizeName: function(name) {
             if (name[0] == "/") return name.substring(1);
             return name;
         },
-        getCompletions: function (editor, session, pos, prefix, callback) {
+        getCompletions: function(editor, session, pos, prefix, callback) {
             getCompletions(this, editor, session, pos, prefix, callback);
         },
-        getDocTooltip: function (item) {
+        getDocTooltip: function(item) {
             if (item.__type == "tern") item.docHTML = customDataTip(item);
         },
-        showType: function (editor, pos, calledFromCursorActivity) {
+        showType: function(editor, pos, calledFromCursorActivity) {
             showType(this, editor, pos, calledFromCursorActivity);
         },
-        rename: function (editor) {
+        rename: function(editor) {
             var ts = this;
-            ts.findRefs(editor, function (r) {
+            ts.findRefs(editor, function(r) {
                 if (!r || r.refs.length === 0) {
                     ts.ui.showError(
                         editor,
@@ -82,10 +83,10 @@ _Define(function (exports) {
                 ts.ui.renameDialog(ts, editor, r);
             });
         },
-        findRefs: function (editor, cb) {
+        findRefs: function(editor, cb) {
             findRefs(this, editor, cb);
         },
-        request: function (editor, query, c, pos, forcePushChangedfile) {
+        request: function(editor, query, c, pos, forcePushChangedfile) {
             var self = this;
             var doc = getDoc(this, editor.session);
             var request = buildRequest(
@@ -96,7 +97,7 @@ _Define(function (exports) {
                 forcePushChangedfile
             );
 
-            this.server.request(request, function (error, data) {
+            this.server.request(request, function(error, data) {
                 if (!error && self.options.responseFilter)
                     data = self.options.responseFilter(
                         doc,
@@ -108,27 +109,26 @@ _Define(function (exports) {
                 c(error, data);
             });
         },
-        requestArgHints: function (editor, start, cb) {
+        requestArgHints: function(editor, start, cb) {
             var ts = this;
             this.request(
-                editor,
-                {
+                editor, {
                     type: "type",
                     preferFunction: true,
                     end: toTernLoc(start),
                 },
-                function (error, data) {
+                function(error, data) {
                     if (debugCompletions) console.timeEnd("get definition");
                     if (error) {
                         if (
                             error
-                                .toString()
-                                .toLowerCase()
-                                .indexOf("no expression at") === -1 &&
+                            .toString()
+                            .toLowerCase()
+                            .indexOf("no expression at") === -1 &&
                             error
-                                .toString()
-                                .toLowerCase()
-                                .indexOf("no type found at") === -1
+                            .toString()
+                            .toLowerCase()
+                            .indexOf("no type found at") === -1
                         ) {
                             return ts.ui.showError(editor, error);
                         }
@@ -141,12 +141,13 @@ _Define(function (exports) {
                         type: parseFnType(data.type),
                         name: data.exprName || data.name || "fn",
                         guess: data.guess,
-                        comments: data.doc, //added by morgan- include comments with arg hints
+                        comments: data
+                        .doc, //added by morgan- include comments with arg hints
                     });
                 }
             );
         },
-        requestDefinition: function (editor, cb, varName) {
+        requestDefinition: function(editor, cb, varName) {
             var doc = getDoc(this, editor.session);
             var req = {
                 type: "definition",
@@ -155,11 +156,11 @@ _Define(function (exports) {
             var ts = this;
             this.server.request(
                 buildRequest(ts, doc, req, null, true),
-                function (error, data) {
+                function(error, data) {
                     if (error) return ts.ui.showError(editor, error);
                     if (!data.file && data.url) {
                         if (Env.newWindow)
-                            Notify.ask("Open " + data.url + "?", function () {
+                            Notify.ask("Open " + data.url + "?", function() {
                                 Env.newWindow(data.url);
                             });
                         return;
@@ -179,19 +180,18 @@ _Define(function (exports) {
                 }
             );
         },
-        requestRename: function (editor, newName, cb) {
+        requestRename: function(editor, newName, cb) {
             var ts = this;
             this.request(
-                editor,
-                {
+                editor, {
                     type: "rename",
                     newName: newName,
                     fullDocs: true,
                 },
-                function (error, data) {
+                function(error, data) {
                     var isAsync = false;
                     if (!error && data.changes) {
-                        data.changes.forEach(function (e) {
+                        data.changes.forEach(function(e) {
                             e.start = toAceLoc(e.start);
                             e.end = toAceLoc(e.end);
                             if (!ts.docs[e.file]) {
@@ -207,37 +207,34 @@ _Define(function (exports) {
                             );
                         }
                     }
-                    cb(error, data.changes);
+                    cb(error, data && data.changes);
                 }
             );
         },
-        sendDoc: function (doc, cb) {
-            this.server.request(
-                {
-                    files: [
-                        {
-                            type: "full",
-                            name: doc.name,
-                            text: docValue(this, doc),
-                        },
-                    ],
+        sendDoc: function(doc, cb) {
+            this.server.request({
+                    files: [{
+                        type: "full",
+                        name: doc.name,
+                        text: docValue(this, doc),
+                    }, ],
                 },
-                function (error) {
+                function(error) {
                     if (error) console.error(error);
                     else doc.changed = null;
                     if (cb) cb();
                 }
             );
         },
-        removeDoc: function (name) {
+        removeDoc: function(name) {
             this.server.delFile(name);
         },
-        enabledAtCurrentLocation: function (editor) {
+        enabledAtCurrentLocation: function(editor) {
             return /*inJavascriptMode(editor) && */ atInterestingExpression(
                 editor
             );
         },
-        restart: function (defs, plugins) {
+        restart: function(defs, plugins) {
             if (defs) this.options.defs = defs;
             if (plugins) this.options.plugins = plugins;
             if (this.options.useWorker) return this.server.restart(this);
@@ -255,7 +252,7 @@ _Define(function (exports) {
             }
             var self = this;
             this.server = new tern.Server({
-                getFile: function (name, c) {
+                getFile: function(name, c) {
                     return getFile(self, name, c);
                 },
                 async: true,
@@ -263,7 +260,7 @@ _Define(function (exports) {
                 plugins: this.options.plugins,
             });
         },
-        debug: function (message) {
+        debug: function(message) {
             if (!message) {
                 console.log("debug commands: files, filecontents");
                 return;
@@ -271,30 +268,30 @@ _Define(function (exports) {
             if (!this.options.useWorker) return;
             this.server.sendDebug(message);
         },
-        debugCompletions: function (value) {
+        debugCompletions: function(value) {
             if (value) debugCompletions = true;
             else debugCompletions = false;
         },
-        addDefs: function (defs, infront) {
+        addDefs: function(defs, infront) {
             var server = this.server;
             if (!this.options.useWorker && Array.isArray(defs)) {
-                defs.forEach(function (def) {
+                defs.forEach(function(def) {
                     server.addDefs(def, infront);
                 });
             } else server.addDefs(defs, infront);
         },
-        deleteDefs: function (defs) {
+        deleteDefs: function(defs) {
             var server = this.server;
             if (this.options.useWorker) {
                 return server.deleteDefs(name, module);
             }
             if (!this.options.useWorker && Array.isArray(defs)) {
-                defs.forEach(function (def) {
+                defs.forEach(function(def) {
                     server.deleteDefs(def);
                 });
             } else server.deleteDefs(defs);
         },
-        genArgHintHtml: function (cache, pos) {
+        genArgHintHtml: function(cache, pos) {
             var comments = cache.comments; //added by morgan to include document comments
             if (!cache.hasOwnProperty("params")) {
                 if (!comments) {
@@ -318,7 +315,7 @@ _Define(function (exports) {
             return customDataTip(data, pos);
         },
     });
-    createCommands(TernServer.prototype, "ternServer", "tern");
+    createCommands(TernServer.prototype, "tern");
 
     function toTernLoc(pos) {
         if (typeof pos.row !== "undefined") {
@@ -345,7 +342,8 @@ _Define(function (exports) {
         query.lineCharPositions = true;
         if (query.end == null) {
             //this is null for get completions
-            var currentSelection = doc.doc.getSelection().getRange(); //returns range: start{row,column}, end{row,column}
+            var currentSelection = doc.doc.getSelection()
+        .getRange(); //returns range: start{row,column}, end{row,column}
             query.end = toTernLoc(pos || currentSelection.end);
             if (currentSelection.start != currentSelection.end) {
                 query.start = toTernLoc(currentSelection.start);
@@ -356,12 +354,13 @@ _Define(function (exports) {
 
         if (doc.changed) {
             if (
+                doc.fragOnly || (
                 !forcePushChangedfile &&
                 doc.doc.getLength() > bigDoc &&
                 allowFragments !== false &&
                 doc.changed.to - doc.changed.from < 100 &&
                 doc.changed.from <= startPos.line &&
-                doc.changed.to > query.end.line
+                doc.changed.to > query.end.line)
             ) {
                 files.push(getFragmentAround(doc, startPos, query.end));
                 query.file = "#0";
@@ -473,8 +472,7 @@ _Define(function (exports) {
         }
         ts.ui.closeAllTips();
         ts.request(
-            editor,
-            {
+            editor, {
                 type: "completions",
                 types: true,
                 origins: true,
@@ -487,19 +485,19 @@ _Define(function (exports) {
                 expandWordForward: false,
             },
 
-            function (error, data) {
+            function(error, data) {
                 if (debugCompletions)
                     console.timeEnd("get completions from tern server");
                 if (error) {
                     return ts.ui.showError(editor, error);
                 }
-                var SCORE = data.isProperty ? 5000 : 400;
-                var ternCompletions = data.completions.map(function (item) {
+                var SCORE = data.isProperty ? BaseServer.PRIORITY_HIGH : BaseServer.PRIORITY_MEDIUM;
+                var ternCompletions = data.completions.map(function(item) {
                     return {
                         iconClass: ts.ui.iconClass(
-                            item.guess
-                                ? "guess"
-                                : typeToIcon(item.type, data.isProperty)
+                            item.guess ?
+                            "guess" :
+                            typeToIcon(item.type, data.isProperty)
                         ),
                         doc: item.doc,
                         type: item.type,
@@ -507,13 +505,12 @@ _Define(function (exports) {
                         value: item.displayName || item.name,
                         score: SCORE,
                         __type: "tern",
-                        message:
-                            item.type +
-                            (item.origin
-                                ? "  (" +
-                                  item.origin.replace(/^.*[\\\/]/, "") +
-                                  ")"
-                                : ""),
+                        message: item.type +
+                            (item.origin ?
+                                "  (" +
+                                item.origin.replace(/^.*[\\\/]/, "") +
+                                ")" :
+                                ""),
                         meta: "tern",
                     };
                 });
@@ -539,7 +536,7 @@ _Define(function (exports) {
           return;
       }*/
         }
-        var cb = function (error, data, typeData) {
+        var cb = function(error, data, typeData) {
             var tip = "";
             if (error) {
                 if (calledFromCursorActivity) {
@@ -602,14 +599,13 @@ _Define(function (exports) {
         return;
     }*/
         ts.request(
-            editor,
-            {
+            editor, {
                 type: "refs",
                 fullDocs: true,
             },
-            function (error, data) {
+            function(error, data) {
                 if (error) return ts.ui.showError(editor, error);
-                data.refs = data.refs.map(function (e) {
+                data.refs = data.refs.map(function(e) {
                     return {
                         file: e.file,
                         start: toAceLoc(e.start),
@@ -632,7 +628,8 @@ _Define(function (exports) {
         _change.text = change.lines;
 
         var data = getDoc(ts, doc);
-        var changed = data.changed; //data is the tern server doc, which keeps a changed property, which is null here
+        var changed = data
+        .changed; //data is the tern server doc, which keeps a changed property, which is null here
         if (changed === null) {
             data.changed = changed = {
                 from: _change.from.line,
@@ -651,7 +648,7 @@ _Define(function (exports) {
             changed.from = changed.from.line;
         }
         if (doc.getLength() > bigDoc && _change.to - changed.from > 100) {
-            setTimeout(function () {
+            setTimeout(function() {
                 if (data.changed && data.changed.to - data.changed.from > 100) {
                     ts.sendDoc(ts, data);
                 }
@@ -733,7 +730,8 @@ _Define(function (exports) {
         var params = [];
         while (str.indexOf("@param") !== -1) {
             str = str.substring(str.indexOf("@param") + 6); //starting after first param match
-            var nextTagStart = str.indexOf("@"); //split on next param (will break if @symbol inside of param, like a link... dont have to time fullproof right now)
+            var nextTagStart = str.indexOf(
+            "@"); //split on next param (will break if @symbol inside of param, like a link... dont have to time fullproof right now)
 
             var paramStr =
                 nextTagStart === -1 ? str : str.substr(0, nextTagStart);
@@ -759,7 +757,8 @@ _Define(function (exports) {
                     .replace(" ", "")
                     .trim(); //remove brackets and spaces
             }
-            paramStr = paramStr.trim(); //we now have a single param string starting after the type, next string should be the parameter name
+            paramStr = paramStr
+        .trim(); //we now have a single param string starting after the type, next string should be the parameter name
             if (paramStr.substr(0, 1) === "[") {
                 thisParam.optional = true;
                 var endBracketIdx = paramStr.indexOf("]");
@@ -804,7 +803,8 @@ _Define(function (exports) {
             }
             paramStr = paramStr.trim();
             if (paramStr.length > 0) {
-                thisParam.description = paramStr.replace("-", "").trim(); //optional hiphen specified before start of description
+                thisParam.description = paramStr.replace("-", "")
+            .trim(); //optional hiphen specified before start of description
             }
             thisParam.name = htmlEncode(thisParam.name);
             thisParam.parentName = htmlEncode(thisParam.parentName);
@@ -816,19 +816,19 @@ _Define(function (exports) {
         return params;
     }
 
-    var customDataTip = function (data, activeArg) {
+    var customDataTip = function(data, activeArg) {
         var html = [];
 
         var d = data.doc;
         var params = data.params || parseJsDocParams(d); //parse params
-        var fnArgs = data.fnArgs
-            ? data.fnArgs
-            : data.type
-            ? parseFnType(data.type)
-            : null; //will be null if parseFnType detects that this is not a function
+        var fnArgs = data.fnArgs ?
+            data.fnArgs :
+            data.type ?
+            parseFnType(data.type) :
+            null; //will be null if parseFnType detects that this is not a function
 
         if (fnArgs) {
-            var getParam = function (arg, getChildren) {
+            var getParam = function(arg, getChildren) {
                 if (params === null) return null;
                 if (!arg.name) return null;
                 var children = [];
@@ -852,7 +852,7 @@ _Define(function (exports) {
                 if (getChildren === true) return children;
                 return null;
             };
-            var getParamDetailedName = function (param) {
+            var getParamDetailedName = function(param) {
                 var name = param.name;
                 if (param.optional === true) {
                     if (param.defaultValue) {
@@ -873,9 +873,9 @@ _Define(function (exports) {
 
             for (var i = 0; i < fnArgs.args.length; i++) {
                 var paramStr = "";
-                var isCurrent = !isNaN(parseInt(activeArg))
-                    ? i === activeArg
-                    : false;
+                var isCurrent = !isNaN(parseInt(activeArg)) ?
+                    i === activeArg :
+                    false;
                 var arg = fnArgs.args[i]; //name,type
                 var name = arg.name || "?";
                 if (name.length > 1 && name.substr(name.length - 1) === "?") {
@@ -917,13 +917,13 @@ _Define(function (exports) {
                         }
                         type += "}";
                     }
-                    paramStr += type
-                        ? '<span class="' +
-                          cls +
-                          'type">' +
-                          htmlEncode(type) +
-                          "</span> "
-                        : "";
+                    paramStr += type ?
+                        '<span class="' +
+                        cls +
+                        'type">' +
+                        htmlEncode(type) +
+                        "</span> " :
+                        "";
                     paramStr +=
                         '<span class="' +
                         cls +
@@ -993,13 +993,13 @@ _Define(function (exports) {
                 }
                 if (activeParamChildren && activeParamChildren.length > 0) {
                     for (var i = 0; i < activeParamChildren.length; i++) {
-                        var t = activeParamChildren[i].type
-                            ? '<span class="' +
-                              cls +
-                              'type">{' +
-                              activeParamChildren[i].type +
-                              "} </span>"
-                            : "";
+                        var t = activeParamChildren[i].type ?
+                            '<span class="' +
+                            cls +
+                            'type">{' +
+                            activeParamChildren[i].type +
+                            "} </span>" :
+                            "";
                         typeStr +=
                             '<div class="' +
                             cls +
@@ -1022,19 +1022,21 @@ _Define(function (exports) {
         }
         if (isNaN(parseInt(activeArg))) {
             if (data.doc) {
-                var replaceParams = function (str, params) {
+                var replaceParams = function(str, params) {
                     if (params.length === 0) {
                         return str;
                     }
                     str = str.replace(/@param/gi, "@param"); //make sure all param tags are lowercase
                     var beforeParams = str.substr(0, str.indexOf("@param"));
                     while (str.indexOf("@param") !== -1) {
-                        str = str.substring(str.indexOf("@param") + 6); //starting after first param match
+                        str = str.substring(str.indexOf("@param") +
+                        6); //starting after first param match
                     }
                     if (str.indexOf("@") !== -1) {
                         str = str.substr(str.indexOf("@")); //start at next tag that is not a param
                     } else {
-                        str = ""; //@param was likely the last tag, trim remaining as its likely the end of a param description
+                        str =
+                        ""; //@param was likely the last tag, trim remaining as its likely the end of a param description
                     }
                     var paramStr = "";
                     for (var i = 0; i < params.length; i++) {
@@ -1051,13 +1053,13 @@ _Define(function (exports) {
                                 'jsdoc-tag-param-child">&nbsp;</span> '; //dont show param tag for child param
                         }
                         paramStr +=
-                            params[i].type.trim() === ""
-                                ? ""
-                                : '<span class="' +
-                                  cls +
-                                  'type">{' +
-                                  params[i].type +
-                                  "}</span> ";
+                            params[i].type.trim() === "" ?
+                            "" :
+                            '<span class="' +
+                            cls +
+                            'type">{' +
+                            params[i].type +
+                            "}</span> ";
 
                         if (params[i].name.trim() !== "") {
                             var name = params[i].name.trim();
@@ -1095,13 +1097,13 @@ _Define(function (exports) {
                             paramStr += pName;
                         }
                         paramStr +=
-                            params[i].description.trim() === ""
-                                ? ""
-                                : ' - <span class="' +
-                                  cls +
-                                  'jsdoc-param-description">' +
-                                  params[i].description +
-                                  "</span>";
+                            params[i].description.trim() === "" ?
+                            "" :
+                            ' - <span class="' +
+                            cls +
+                            'jsdoc-param-description">' +
+                            params[i].description +
+                            "</span>";
                         paramStr += "</div>";
                     }
                     if (paramStr !== "") {
@@ -1116,7 +1118,7 @@ _Define(function (exports) {
 
                     return beforeParams + str;
                 };
-                var highlighTags = function (str) {
+                var highlighTags = function(str) {
                     try {
                         str = " " + str + " "; //add white space for regex
                         var re = / ?@\w{1,50}\s ?/gi;
@@ -1128,10 +1130,10 @@ _Define(function (exports) {
                             str = str.replace(
                                 m[0],
                                 ' <span class="' +
-                                    cls +
-                                    'jsdoc-tag">' +
-                                    m[0].trim() +
-                                    "</span> "
+                                cls +
+                                'jsdoc-tag">' +
+                                m[0].trim() +
+                                "</span> "
                             );
                         }
                     } catch (ex) {
@@ -1139,7 +1141,7 @@ _Define(function (exports) {
                     }
                     return str.trim();
                 };
-                var highlightTypes = function (str) {
+                var highlightTypes = function(str) {
                     str = " " + str + " "; //add white space for regex
                     try {
                         var re = /\s{[^}]{1,50}}\s/g;
@@ -1151,10 +1153,10 @@ _Define(function (exports) {
                             str = str.replace(
                                 m[0],
                                 ' <span class="' +
-                                    cls +
-                                    'type">' +
-                                    m[0].trim() +
-                                    "</span> "
+                                cls +
+                                'type">' +
+                                m[0].trim() +
+                                "</span> "
                             );
                         }
                     } catch (ex) {
@@ -1162,7 +1164,7 @@ _Define(function (exports) {
                     }
                     return str.trim();
                 };
-                var createLinks = function (str) {
+                var createLinks = function(str) {
                     try {
                         var httpProto = "HTTP_PROTO_PLACEHOLDER";
                         var httpsProto = "HTTPS_PROTO_PLACEHOLDER";
@@ -1181,12 +1183,12 @@ _Define(function (exports) {
                             str = str.replace(
                                 m[0],
                                 '<a class="' +
-                                    cls +
-                                    'tooltip-link" href="' +
-                                    withoutProtocol +
-                                    '" target="_blank">' +
-                                    text +
-                                    " </a>"
+                                cls +
+                                'tooltip-link" href="' +
+                                withoutProtocol +
+                                '" target="_blank">' +
+                                text +
+                                " </a>"
                             );
                         }
                         str = str
@@ -1199,7 +1201,8 @@ _Define(function (exports) {
                 };
 
                 if (d.substr(0, 1) === "*") {
-                    d = d.substr(1); //tern leaves this for jsDoc as they start with /**, not exactly sure why...
+                    d = d.substr(
+                    1); //tern leaves this for jsDoc as they start with /**, not exactly sure why...
                 }
                 d = htmlEncode(d.trim());
                 d = replaceParams(d, params);
@@ -1225,10 +1228,10 @@ _Define(function (exports) {
     exports.TernServer = TernServer;
 
     function WorkerServer(ts, workerClass) {
-        var worker = workerClass
-            ? new workerClass()
-            : new Worker(ts.options.workerScript);
-        var startServer = function (ts) {
+        var worker = workerClass ?
+            new workerClass() :
+            new Worker(ts.options.workerScript);
+        var startServer = function(ts) {
             worker.postMessage({
                 type: "init",
                 defs: ts.options.defs,
@@ -1249,10 +1252,10 @@ _Define(function (exports) {
             }
             worker.postMessage(data);
         }
-        worker.onmessage = function (e) {
+        worker.onmessage = function(e) {
             var data = e.data;
             if (data.type == "getFile") {
-                getFile(ts, data.name, function (err, text) {
+                getFile(ts, data.name, function(err, text) {
                     send({
                         type: "getFile",
                         err: String(err),
@@ -1267,55 +1270,54 @@ _Define(function (exports) {
                 delete pending[data.id];
             }
         };
-        worker.onerror = function (e) {
+        worker.onerror = function(e) {
             for (var id in pending) pending[id](e);
             pending = {};
         };
 
-        this.addFile = function (name, text) {
+        this.addFile = function(name, text) {
             send({
                 type: "add",
                 name: name,
                 text: text,
             });
         };
-        this.delFile = function (name) {
+        this.delFile = function(name) {
             send({
                 type: "del",
                 name: name,
             });
         };
-        this.request = function (body, c) {
-            send(
-                {
+        this.request = function(body, c) {
+            send({
                     type: "req",
                     body: body,
                 },
                 c
             );
         };
-        this.restart = function (ts) {
+        this.restart = function(ts) {
             startServer(ts);
         };
-        this.sendDebug = function (message) {
+        this.sendDebug = function(message) {
             send({
                 type: "debug",
                 body: message,
             });
         };
-        this.addDefs = function (defs, infront) {
+        this.addDefs = function(defs, infront) {
             send({
                 type: "addDefs",
                 defs: defs,
             });
         };
-        this.deleteDefs = function (defs) {
+        this.deleteDefs = function(defs) {
             send({
                 type: "delDefs",
                 defs: defs,
             });
         };
-        this.terminate = function () {
+        this.terminate = function() {
             worker.terminate();
             pending = {};
         };

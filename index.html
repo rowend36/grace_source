@@ -57,7 +57,7 @@
             <div id="project_view">
                 <div class="project_view_panel border-inactive">
                     <h6 id="find_file-toggle" class="sub-header toggleBelow">Current Project<button class="btn-toggle" tabIndex=0><i class="material-icons">keyboard_arrow_up</i></button></h6>
-                    <div id='find_file' class='pt-10'>
+                    <div id='find_file' class='mt-5 pb-10'>
                         <label for="#search_text" class="pl-15">Find file</label>
                         <div class="mt-5 find_file edge_box-2 h-30">
                             <div class="fill_box pl-15"><input type="search" name="search_text" id="search_text" value="" /></div>
@@ -98,7 +98,7 @@
                 <button id="toggleWholeWord" class="right ace_button">[ab]</button>
             </div>
             <h6 id="searchInfo"></h6>
-            <div id="loading"><span>Searching...</span><span>Searching...</span><br />
+            <div id="searchStatus"><span id="searchStatusOp">Searching...</span><span id="searchStatusFile">Searching...</span><br />
                 <div class="align-right"><button id="searchStop" class='btn-flat '>Stop</button></div>
             </div>
             <div id="searchResults">
@@ -137,62 +137,62 @@
             <span id="status-filename" class="clipper">Open a file</span>
         </div>
     </div>
+    <!--Main dependencies -->
     <script type="text/javascript" src="./libs/js/jquery-2.2.0.min.js"></script>
-    <script type="text/javascript" src="./libs/js/materialize.js"></script>
-    <script type="text/javascript" src="./libs/js/base64.js"></script>
-
     <script type="text/javascript" src="./src-min-noconflict/ace.js"></script>
 
 
-    <!--TODO Dynamic-->
-    <script type="text/javascript" src="./libs/js/diff_match_patch.js"></script>
+    <!--Core modules -->
     <script type="text/javascript" src="./core/environment.js"></script>
     <script type="text/javascript" src="./core/recovery.js"></script>
     <script type="text/javascript" src="./core/utils.js"></script>
     <script type="text/javascript" src="./core/events.js"></script>
-    <!--TODO Dynamic-->
+    
+    <!-- Setup -->
     <script type="text/javascript" src="./core/statemanager.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./ui/notification.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./libs/js/materialize.js"></script>
+    <script type="text/javascript" src="./core/focusmanager.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./core/notification.js" charset="utf-8"></script>
     <script type="text/javascript" src="./core/fileutils.js"></script>
-    <script type="text/javascript" src="./core/requests.js"></script>
+    <script type="text/javascript" src="./libs/js/base64.js"></script>
+    <script type="text/javascript" src="./core/post_request.js"></script>
     <script type="text/javascript" src="./android/application.js"></script>
 
-    <!--TODO Dynamic-->
-    <script type="text/javascript" src="./tabbable.js"></script>
-    <!--TODO Dynamic-->
-    <script type="text/javascript" src="./core/focusmanager.js" charset="utf-8"></script>
-    <!--TODO Dynamic or rather move core functionality to files loaded with bootlist.define-->
+    <script type="text/javascript" src="./core/imports.js"></script>
     <script type="text/javascript" src="./core/navigation.js"></script>
     <script type="text/javascript" src="./core/fileservers.js"></script>
 
+    <script type="text/javascript" src="./libs/js/diff_match_patch.js"></script>
     <script type="text/javascript" src="./document/document.js"></script>
     <script type="text/javascript" src="./document/docs.js"></script>
     <script type="text/javascript" src="./document/checkpoints.js"></script>
 
     <script type="text/javascript" src="./ui/linearlayout.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./ui/overflow.js"></script>
+    <script type="text/javascript" src="./ui/dropdown.js"></script>
     <script type="text/javascript" src="./ui/form.js"></script>
     <script type="text/javascript" src="./ui/itemlist.js"></script>
-    <script type="text/javascript" src="./views/tabs.js"></script>
+    <script type="text/javascript" src="./ui/tabs.js"></script>
 
-    <!--todo load this views asynchronously since they are not immediately used!-->
+    <!--todo load this view asynchronously since it is not immediately used-->
     <script type="text/javascript" src="./ui/sidenav.js"></script>
-
+    
     <script type="text/javascript" src="./core/json_ext.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./core/bootlist.js"></script>
+    <script type="text/javascript" src="./core/schema.js" charset="utf-8"></script>
+    
+    <!--needed for getBeautifier('json')  && editor options -->
     <script type="text/javascript" src="./tools/format/format.js"></script>
-    <!--todo load documents after characterbar is set up?? Nah, it'an editor after all-->
-    <script type="text/javascript" src="./editor/editorSettings.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./editor/editor_settings.js" charset="utf-8"></script>
     <script type="text/javascript" src="./editor/editors.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./editor/viewPagers.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./editor/view_pagers.js" charset="utf-8"></script>
 
-    <!--TODO Dynamic-->
+    <script type="text/javascript" src="./prefs/config.js" charset="utf-8"></script>
     <script type="text/javascript" src="./prefs/key_binding.js" charset="utf-8"></script>
-    <script type="text/javascript" src="./prefs/load_settings.js" charset="utf-8"></script>
 
-    <script type="text/javascript" src="./document/activeDoc.js" charset="utf-8"></script>
-    <!--TODO Dynamic-->
-    <script type="text/javascript" src="./views/charbar.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./document/active_doc.js" charset="utf-8"></script>
+
+    <!--todo load characterbar after set up?? Nah, it'an editor after all-->
+    <script type="text/javascript" src="./ui/charbar.js" charset="utf-8"></script>
+    <script type="text/javascript" src="./themes/theme.js" charset="utf-8"></script>
     <script type="text/javascript" src="main.js" charset="utf-8"></script>
 
 </body>

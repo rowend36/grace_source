@@ -259,7 +259,7 @@ _Define(function(global) {
     UI.prototype.renameDialog = function(ts, editor, data) {
         this.closeAllTips();
         var div = elt("p", "", data.refs.length + " references found");
-        var newNameInput = elt('input');
+        var newNameInput = elt('input','');
         var newNameLabel = elt('label', '', 'Enter new name:');
         newNameInput.style.maxWidth = '200px';
         var tip = this.makeTooltip(null, null, elt('h6', 'tooltip-header', 'Rename ', elt('span', "tooltip-name", (data.name || ""))), editor, false);
@@ -276,8 +276,8 @@ _Define(function(global) {
             }, 100);
         } catch (ex) {}
 
-        var goBtn = elt('button', 'btn');
-        goBtn.style.margin = '10px';
+        var goBtn = elt('button', 'btn right');
+        newNameInput.style.marginTop = '3px';//bad
         goBtn.textContent = "Rename";
         goBtn.setAttribute("type", "button");
         goBtn.addEventListener('click', function() {
@@ -292,6 +292,7 @@ _Define(function(global) {
             ts.executeRename(editor, newName, data);
         });
         tip.appendChild(goBtn);
+        tip.appendChild(elt('div','clearfix mt-10'));
         tip.appendChild(document.createTextNode("\n(WARNING: Cannot replace refs in files that are not loaded!)"));
         this.moveTooltip(tip, null, null, editor);
     };
@@ -302,7 +303,7 @@ _Define(function(global) {
         function refocus() {
             lastFocus();
         }
-        var refs = new References(this.makeTooltip(null, null, "", null /*global tip*/ , false, -1, refocus), ts, editor, data);
+        var refs = new References(this.makeTooltip(null, null, "", null /*not bound to editor*/ , false, -1, refocus), ts, editor, data);
         refs.blur = refs.tip.$closeThisTip;
         refs.footer = ["Close"];
         refs.$close = refs.tip.$closeThisTip;

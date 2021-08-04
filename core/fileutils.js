@@ -25,9 +25,12 @@ _Define(function(global) {
         maxRecentFolders: 7,
         recentFolders: [],
         bookmarks: ["/sdcard/", "/data/data/io.tempage.dorynode/"],
-        codeFileExts: [".js", ".css", ".html", ".sass", ".less", ".json", ".py", ".ts", ".tsx", ".jsx", ],
+        codeFileExts: [".js", ".css", ".html", ".sass", ".less", ".json", ".py", ".ts", ".tsx",
+            ".jsx",
+        ],
         dotStar: false,
-        binaryFileExts: [".zip", ".mp4", ".mp3", ".rar", ".tar.gz", ".tgz", ".iso", ".bz2", ".3gp", ".avi", ".mkv", ".exe",
+        binaryFileExts: [".zip", ".mp4", ".mp3", ".rar", ".tar.gz", ".tgz", ".iso", ".bz2", ".3gp",
+            ".avi", ".mkv", ".exe",
             ".apk", ".tar", ".jar", ".png", ".jpg", ".jpeg", ".ttf", ".otf", ".woff", ".woff2"
         ],
     }, "files");
@@ -42,6 +45,9 @@ _Define(function(global) {
         }
     });
     global.registerValues({
+        recentFolders: {
+            type: "array<filename>"
+        },
         dotStar: "Enable dotStar matching for globs.eg main/* matches main/.tmp",
         binaryFiles: "A list of file extensions\n that should never be opened for editing",
         projectRoot: "This directory serves as the current directory for all file operations"
@@ -299,16 +305,13 @@ _Define(function(global) {
                 browserModal.find(".config").hide();
                 browserModal.find(".config-" + browserModal.find("select").val()).show();
             });
-            browserModal.find(".modal-cancel").click(function() {
-                browserModal.modal('close');
-            });
             browserModal.find(".modal-create").click(function() {
                 browserModal.modal('close');
                 var params = {};
                 params.type = browserModal.find("select").val();
                 var e = browserModal.find(".config-" + params.type)[0];
                 if (e) {
-                    Object.assign(params, global.Form.parse(serverFactories[params.type].config, e));
+                    Object.assign(params, global.Form.parse(e));
                 }
                 var browser = FileUtils.initBrowser(params);
                 if (!browser) {
@@ -324,7 +327,7 @@ _Define(function(global) {
                 config: config,
             };
             needsRecreate = true;
-            if (isDefault || !FileUtils.defaultServer) {
+            if (isDefault && !FileUtils.defaultServer) {
                 FileUtils.defaultServer = factory();
             }
         },
@@ -335,7 +338,7 @@ _Define(function(global) {
                 var select = browserModal.find("select")[0];
                 select.innerHTML = "";
                 for (var id in serverFactories) {
-                    if (id == "!extensions") continue;
+                    if (id[0] == "!") continue;
                     var factory = serverFactories[id];
                     var option = document.createElement("option");
                     option.setAttribute("name", id);
@@ -346,6 +349,7 @@ _Define(function(global) {
                         var form = global.Form.create(factory.config);
                         form.className = "config config-" + id;
                         e.appendChild(form);
+                        $(form).submit(false);
                     }
                 }
                 needsRecreate = false;
@@ -363,7 +367,8 @@ _Define(function(global) {
             _fileBrowsers[filebrowser.id] = filebrowser;
         },
         createBrowser: function(id, fileServer, rootDir, icon) {
-            var container = Tabs.add(id, icon || ((fileServer || FileUtils.defaultServer).icon) || "sd_storage", true);
+            var container = Tabs.add(id, icon || ((fileServer || FileUtils.defaultServer).icon) ||
+                "sd_storage", true);
             container.className = "fileview-container";
             return new global.FileBrowser(id, rootDir, fileServer);
         },
@@ -387,7 +392,8 @@ _Define(function(global) {
                     return;
                 }
             }
-            var browser = FileUtils.createBrowser(Utils.genID("f"), server, params.rootDir, server.getIcon &&
+            var browser = FileUtils.createBrowser(Utils.genID("f"), server, params.rootDir, server
+                .getIcon &&
                 server.getIcon());
             viewToServer[browser.id] = serverID || null;
             FileUtils.addBrowser(browser);
@@ -409,10 +415,22 @@ _Define(function(global) {
         replaceServer: function(stub, server) {
             if (stub.$isStub) {
                 loadedServers[stub.id] = server;
+                if (stub == FileUtils.defaultServer) {
+                    FileUtils.defaultServer = server;
+                }
                 for (var i in _fileBrowsers) {
                     if (_fileBrowsers[i].fileServer == stub) {
                         _fileBrowsers[i].fileServer = server;
+                        if (_fileBrowsers[i].tree) {
+                            _fileBrowsers[i].tree.fileServer = server;
+                            for (var c in _fileBrowsers[i].tree.childStubs) {
+                                _fileBrowsers[i].tree.childStubs[c].fileServer = server;
+                            }
+                        }
                     }
+                }
+                if (project.fileServer == stub) {
+                    FileUtils.openProject(project.rootDir, server, project.name);
                 }
             } else throw "Error: only stub servers can be replaced";
         },
@@ -473,9 +491,9 @@ _Define(function(global) {
                 delete viewToServer[browserID];
                 _fileBrowsers[browserID].destroy();
                 delete _fileBrowsers[browserID];
-                appStorage.removeItem("files.root:" + this.id);
-                appStorage.removeItem("files.tree:" + this.id);
-                appStorage.removeItem("files.info:" + this.id);
+                appStorage.removeItem("files.root:" + browserID);
+                appStorage.removeItem("files.tree:" + browserID);
+                appStorage.removeItem("files.info:" + browserID);
 
                 appConfig["root:" + browserID] = undefined;
                 appConfig["tree:" + browserID] = undefined;
@@ -601,23 +619,33 @@ _Define(function(global) {
             }
         },
         getConfig: function(name, cb, project) {
-            project = project || FileUtils.getProject();
-            if (!project.fileServer && !arguments[2]) {
+            var fs, rootDir;
+            if (project) {
+                fs = project.fileServer;
+                if (!fs) throw new Error('Missing parameter: fileServer');
+                rootDir = project.rootDir;
+            } else if (name[0] == FileUtils.sep) {
+                fs = FileUtils.defaultServer;
+            } else {
+                fs = FileUtils.getProject().fileServer;
+                rootDir = FileUtils.getProject().rootDir;
+            }
+            if (!fs) {
                 //app not yet loaded
                 return FileUtils.once('change-project', function() {
                     FileUtils.getConfig(name, cb);
                 });
             }
             if (name[0] !== FileUtils.sep) {
-                if (project.rootDir == FileUtils.NO_PROJECT) {
+                if (rootDir == FileUtils.NO_PROJECT) {
                     return cb(null, "");
-                } else name = FileUtils.resolve(project.rootDir, name);
+                } else name = FileUtils.resolve(rootDir, name);
             }
-            project.fileServer.readFile(name, "utf8", function(e, res) {
+            fs.readFile(name, "utf8", function(e, res) {
                 if (e && e.code == "ENOENT") {
                     cb(null, "");
                 } else if (res) cb(null, res);
-                else cb(e, null);
+                else cb(e, "");
             });
         },
         saveConfig: function(name, content, cb, project) {
@@ -631,10 +659,14 @@ _Define(function(global) {
             channels.handlers[channel] = owner;
             channels.triggerForever(channel + "-loaded");
         },
-        postChannel: function(channel,arg1,arg2,arg3,arg4) {
+        channelHasPending: function(id) {
+            return channels._eventRegistry[id + "-loaded"] && channels._eventRegistry[id +
+                "-loaded"] !== true;
+        },
+        postChannel: function(channel, arg1, arg2, arg3, arg4) {
             channels.once(channel + "-loaded", function() {
                 var handler = channels.handlers[channel];
-                handler.call(null, arg1,arg2,arg3,arg4);
+                handler.call(null, arg1, arg2, arg3, arg4);
             });
         },
         /*
@@ -651,7 +683,7 @@ _Define(function(global) {
         @param func?: callback to be called when clicked
         */
         registerOption: function(channel, types, id, data, func) {
-            FileUtils.postChannel(channel,types,id,data,func);
+            FileUtils.postChannel(channel, types, id, data, func);
         },
         freezeEvent: function(event) {
             var stub = event.browser;
@@ -670,6 +702,36 @@ _Define(function(global) {
             var browser = _fileBrowsers[event.browser] || _fileBrowsers.projectView;
             event.browser = browser;
             return event;
+        },
+        /**
+         * @param intent {{
+             name: [string],
+             path: string,
+             encoding: [string],
+             fileserver: [string]
+         }}
+        **/
+        openIntent: function(intent) {
+            var servers = [];
+            if (intent.fileserver) {
+                servers.push(intent.fileserver);
+            } else servers = Object.keys(loadedServers).concat([undefined]);
+            Utils.asyncForEach(servers, function(id, i, next, stop) {
+                var server = FileUtils.getFileServer(id, true);
+                server.readFile(intent.path, intent.encoding || 'utf8', function(e, res) {
+                    if (!e) {
+                        stop();
+                        global.addDoc(intent.name, res, intent.path, {
+                            data: {
+                                fileServer: id,
+                                encoding: intent.encoding
+                            }
+                        });
+                    } else next();
+                });
+            }, function() {
+                Notify.error("No such file " + intent.path);
+            }, 1, false, true);
         },
         getDoc: function(path, server, callback, justText, factory) {
             var Doc = factory || global.Doc;
@@ -735,9 +797,9 @@ _Define(function(global) {
             path = FileUtils.normalize(path + SEP);
             newpath = FileUtils.normalize(newpath + SEP);
             if (newpath == path || newpath.startsWith(path)) {
-                return cb({
+                return cb(global.createError({
                     code: "EUNSUPPORTED",
-                });
+                }));
             }
             var moveFile = isCopy ? FileUtils.copyFile : FileUtils.moveFile;
 
@@ -780,13 +842,14 @@ _Define(function(global) {
                         else if (dest) {
                             if (!onConflict) {
                                 stopped = true;
-                                cb({
+                                cb(global.createError({
                                     code: "EEXIST",
                                     path: newpath + file,
-                                });
+                                }));
                                 c();
                             } else if (onConflict !== true) {
-                                return onConflict(path + file, newpath + file, server, newServer,
+                                return onConflict(path + file, newpath + file, server,
+                                    newServer,
                                     n, isDir);
                             }
                         } else if (isDir) {
@@ -798,10 +861,11 @@ _Define(function(global) {
                             });
                             return;
                         }
-                        moveFile(path + file, newpath + file, server, newServer, function(e) {
-                            onEach && onEach(newpath + file, e);
-                            n(e);
-                        });
+                        moveFile(path + file, newpath + file, server, newServer,
+                            function(e) {
+                                onEach && onEach(newpath + file, e);
+                                n(e);
+                            });
                     },
                     reduce: function(file, errs, data, finish) {
                         var errors = errs.filter(Boolean);
@@ -842,13 +906,17 @@ _Define(function(global) {
             });
         },
         pickFile: function(info, end, allowNew) {
+            if(!SideNav) return;
             if (!SideNav.isOpen) {
                 FileUtils.once("sidenav-open", function() {
                     FileUtils.pickFile(info, end, allowNew);
                 });
                 return SideNav.open();
             }
-            if (info) Notify.info(info);
+            Notify.modal({
+                dismissible: false,
+                el: $("<div class='modal bottom-sheet'>"+info+'</div')[0]
+            });
             FileUtils.beforeClose("open-file", end);
             var tab = Tabs.getActiveTab().attr("href").substring(1);
             var browser = _fileBrowsers[tab];
@@ -883,9 +951,14 @@ _Define(function(global) {
             };
             FileUtils.pickFile("Select a file to overwrite or create a new file", onSave, true);
         },
+        inSaveMode: function() {
+            return saveMode;
+        },
         exitSaveMode: function() {
-            saveMode = false;
-            FileUtils.trigger("clear-temp");
+            if(saveMode){
+                saveMode = false;
+                FileUtils.trigger("clear-temp");
+            }
             //$("#save-text").css("display", "none");
         },
         /**
@@ -1086,7 +1159,8 @@ _Define(function(global) {
                     if (cancelled) {
                         _data.cancelled = cancelled;
                         parallel += running;
-                    } else if (running) throw new Error("Counter errror: Expected 0 got " + running);
+                    } else if (running) throw new Error("Counter errror: Expected 0 got " +
+                        running);
                     var res = opts.reduce(folder, returned, _data, finish);
                     if (res !== SYNC_WAIT) {
                         finish(res, res === SYNC_STOP);
@@ -1118,7 +1192,7 @@ _Define(function(global) {
                 canMatch: b,
                 matches: a.regex,
             };
-        },
+        }
     };
     var channels = new EventsEmitter();
     //Don't warn for unknown channels
@@ -1297,7 +1371,8 @@ _Define(function(global) {
                     //Unconverted, start convert
                     regex1 = func(prev.substring(newStart), SEGMENT_MODE).source;
                 } //convert next chunk
-                else regex1 = func(prev.substring(newStart, start), SEGMENT_MODE).source + prev.substring(start);
+                else regex1 = func(prev.substring(newStart, start), SEGMENT_MODE).source + prev.substring(
+                    start);
             } else {
                 //newStart = start, no need to update
                 regex1 = prev.substring(newStart);
@@ -1328,7 +1403,8 @@ _Define(function(global) {
             nextHead = i+1 instead of i-1
             reduce seems to handle better
         */
-        var chunks = g.split(",").map(FileUtils.normalize).sort().filter(isNotSpace).filter(function(e, i, arr) {
+        var chunks = g.split(",").map(FileUtils.normalize).sort().filter(isNotSpace).filter(function(e, i,
+            arr) {
             return e !== arr[i - 1];
         });
         var commonRoot = "";
@@ -1365,6 +1441,7 @@ _Define(function(global) {
         if (chunks.length > 1) commonRoot = "";
         else commonRoot = lastDir(commonRoot);
         //todo remove commonRoot from regex
+        //so we don't have to join it back in walk
         return {
             commonRoot: commonRoot,
             regex: new RegExp("^(?:\\./)?(?:" + chunks.join("|") + ")/?$"),

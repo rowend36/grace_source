@@ -60,13 +60,14 @@ _Define(function(global) {
     }
 
     function printArray(obj, step) {
-        var mid = Math.max(5, obj.length - 3);
-        var end = Math.min(5, obj.length);
+        var size = step > 1 ? 5 : 30;
+        var offsetStart = Math.min(size, obj.length);
+        var offsetEnd = Math.max(obj.length - size, offsetStart);
         var arr = {};
-        for (var i = 0; i < end; i++) {
+        for (var i = 0; i < offsetStart; i++) {
             arr[i] = print(obj[i], (step - 1) || 1);
         }
-        for (i = mid; i < obj.length; i++) {
+        for (i = offsetEnd; i < obj.length; i++) {
             arr[i] = print(obj[i], (step - 1) || 1);
         }
         return arr;
@@ -114,7 +115,8 @@ _Define(function(global) {
         log = log || window.console.debug;
         include = include || obj;
         for (var i in include) {
-            if (typeof obj[i] == "function" && (!exclude || exclude.indexOf(i) < 0)) obj[i] = wrapFunc(obj[i], i, log);
+            if (typeof obj[i] == "function" && (!exclude || exclude.indexOf(i) < 0)) obj[i] = wrapFunc(obj[i],
+                i, log);
         }
     }
     var trackFunc = function(start, end, name, func) {
@@ -136,7 +138,8 @@ _Define(function(global) {
     function track(obj, include, exclude, start, end) {
         include = include || obj;
         for (var i in include) {
-            if (typeof obj[i] == "function" && (!exclude || exclude.indexOf(i) < 0)) obj[i] = trackFunc(start, end, i,
+            if (typeof obj[i] == "function" && (!exclude || exclude.indexOf(i) < 0)) obj[i] = trackFunc(start,
+                end, i,
                 obj[i]);
         }
     }
@@ -151,20 +154,71 @@ _Define(function(global) {
         Object.assign(prop.prototype, a);
         prop.prototype.constructor = prop;
         prop.super = superClass.apply.bind(superClass);
+        prop.superProps = superClass.prototype;
     }
 
+    /*Fancy timeouts*/
+    //Simplest schedule something to be done if it's not already done
     function delay(func, wait) {
+        wait = wait || 30;
         //cancellable function
         var timeout, ctx, args;
         var later = function() {
             timeout = null;
-            func.apply(ctx, args);
+            var _ctx = ctx,
+                _args = args;
             ctx = args = null;
+            func.apply(_ctx, _args);
         };
         var call = function() {
             ctx = this, args = arguments;
             if (!timeout) {
                 timeout = setTimeout(later, wait);
+            }
+        };
+        call.now = function() {
+            call.cancel();
+            ctx = this;
+            args = arguments;
+            later();
+        };
+        call.later = function(wait) {
+            call.cancel();
+            timeout = setTimeout(later,wait);
+        };
+        call.cancel = function() {
+            if (timeout) {
+                clearTimeout(timeout);
+                timeout = ctx = args = null;
+            }
+        };
+        return call;
+    }
+    
+    //Schedule only if it's been a short time since last call
+    //Only really useful for ui eg button clicks, render updates
+    function throttle(func, wait) {
+        var last = 0,
+            timeout;
+        var ctx, args;
+        wait = wait || 30;
+        var later = function() {
+            last = new Date().getTime();
+            timeout = null;
+            var _ctx = ctx,
+                _args = args;
+            ctx = args = null;
+            func.apply(_ctx, _args);
+        };
+        var call = function() {
+            ctx = this;
+            args = arguments;
+            if (timeout) return;
+            var now = new Date().getTime();
+            if (now - last > wait) {
+                later();
+            } else {
+                timeout = setTimeout(later, wait - (now - last));
             }
         };
         call.now = function() {
@@ -176,54 +230,18 @@ _Define(function(global) {
         call.cancel = function() {
             if (timeout) {
                 clearTimeout(timeout);
-                ctx = args = null;
+                timeout = ctx = args = null;
             }
         };
         return call;
     }
-
-    function throttle(func, wait) {
-        //like delay but allows immediate execution
-        //if calls are infrequent, useful for buttons,etc
-        var last = 0,
-            timeout;
-        var context, args;
-        var later = function() {
-            last = new Date().getTime();
-            timeout = null;
-            func.apply(context, args);
-            context = args = null;
-        };
-        var call = function() {
-            context = this;
-            args = arguments;
-            if (timeout) return;
-            var now = new Date().getTime();
-            if (now - last > wait) {
-                later();
-            } else {
-                timeout = setTimeout(later, wait - (now - last));
-            }
-        };
-        call.now = function() {
-            context = this;
-            args = arguments;
-            call.cancel();
-            later();
-        };
-        call.cancel = function() {
-            if (timeout) {
-                clearTimeout(timeout);
-                context = args = null;
-            }
-        };
-        return call;
-    }
-
+    
+    //Cancel any previous posts and then post again, used for saving
     function debounce(func, wait) {
         //like delay except each call cancels the previous
-        //useful but op might be suspended indefinitely
+        //simple and useful but op might be suspended indefinitely
         var timeout;
+        wait = wait || 30;
         return function() {
             var context = this,
                 args = arguments;
@@ -237,11 +255,32 @@ _Define(function(global) {
             timeout = setTimeout(later, wait);
         };
     }
-    /*The most powerful async method ever built*/
-    /*Now spoilt by bad api, a method should have 2-3 arguments, anything longer is a scam*/
 
-    //unfinished can be called multiple times if you are generating results from within the loop, pass true so asyncEach will stop when the last next is called unless it will wait indefinitely for the result
-    var id_ = 6;
+    //Put on a queue and then call each one at a time
+    //Considering replacing this something from app_cycle
+    function spread(func, wait) {
+        var tasks = [];
+        var execute = throttle(function() {
+            var task = tasks.pop();
+            func.apply(task.ctx, task.args);
+            if (tasks.length) execute();
+        },wait);
+        var post = function(){
+            tasks.push({ctx:this,args:arguments});
+            execute();
+        };
+        post.cancel = execute.cancel;
+    }
+    /*The most powerful async method ever built*/
+    //call stack rearranging
+    //parallelization
+    //resume and cancel
+    /*But spoilt by bad api, a method should have 2-3 arguments, anything longer is a scam*/
+
+    //unfinished can be called multiple times
+    //To enable asyncEach to stop when the last next is called,
+    //call resume(true) immediately
+    //unless it will wait indefinitely for the result
 
     function asyncEach(list, each, finish, parallel, unfinished, cancellable) {
         var i = 0;
@@ -260,7 +299,6 @@ _Define(function(global) {
             };
             waiting = 0;
         }
-        var id = id_++;
         if (cancellable) {
             cancel = function(e) {
                 if (!cancelled) {
@@ -271,7 +309,17 @@ _Define(function(global) {
                 next();
             };
         }
+        var callState = -1;
+        //-1 - execute and handle posted calls
+        //0 - just execute
+        //1 - post
+        //2 - has posted
         var next = function() {
+            if (callState === 1) {
+                callState = 2;
+                return;
+            }
+            if (callState === 2) throw new Error('Next/cancel called more than once');
             if (i >= list.length) {
                 if ((--parallel) == 0 && !unfinished) {
                     if (finish) {
@@ -279,14 +327,28 @@ _Define(function(global) {
                         finish = null;
                     }
                 } else if (parallel < 0) {
-                    console.error('Counter error: you might be calling next twice or calling both next and cancel');
+                    console.error(
+                        'Counter error: you might be calling next twice or calling both next and cancel'
+                    );
                 } else {
                     waiting++;
                 }
-
             } else {
+                //rearrange calls as if we called setImmediate
+                //in order to avoid blowing call stack
                 var item = list[i];
+                callState++;
+                if (callState === 0) {
+                    next();
+                    for (; callState === 1;) {
+                        callState = 0;
+                        next();
+                    }
+                    callState = -1;
+                    return;
+                }
                 each(item, i++, next, cancel);
+                callState--;
             }
         };
         for (var j = parallel; j > 0; j--) {
@@ -294,72 +356,9 @@ _Define(function(global) {
         }
         return resume;
     }
-    //like throttle but ensures argumnts are not lost
-    function Batch(sleep, wake) {
-        this.tasks = new Array();
-        if (sleep) this.sleepTime = sleep;
-        if (wake) this.wakeTime = wake;
-        this.$execute = _batchExecute.bind(null, this);
-        this.waitUntil = 0;
-    }
-    Batch.prototype.allowSync = true;
-    Batch.prototype.wakeTime = 17;
-    Batch.prototype.sleepTime = 17;
-    Batch.prototype.batchSize = 1;
-    Batch.prototype.batch = function(func) {
-        var self = this;
-        return function() {
-            self.tasks.push({
-                f: func,
-                ctx: this,
-                args: arguments
-            });
-            if (self.timeout) return false;
-            var startT = self.allowSync ? new Date().getTime() : Infinity;
-            if (startT < self.waitUntil) {
-                self.timeout = setTimeout(self.$execute, self.waitUntil - startT);
-                return false;
-            }
-            _batchExecute(self);
-            return true;
-        };
-    };
-    var _batchExecute = function(ctx) {
-        //a simple strategy would be make getter that checks if timeout and difference between waitUntil and currentTIME and uses it to guess running load
-        ctx.timeout = null;
-        var deadline = ctx.wakeTime + new Date().getTime();
-        var batchSize = ctx.batchSize;
-        var i = 0,
-            tasks = ctx.tasks,
-            t = tasks.length;
-        try {
-            if (deadline > 0)
-                for (; i++ < t;) {
-                    var task = tasks.shift();
-                    //the first task can try to use batchSize to execute a batch of tasks at once
-                    //since ctx.tasks is a public property
-                    task.f.apply(task.ctx, task.args);
-                    if ((i % batchSize) == 0) {
-                        if (new Date().getTime() > deadline) break;
-                        else batchSize += (batchSize >> 1);
-                    }
-                }
-        } finally {
-            //calls this at 1 or two times more than necessary
-            var endT = new Date().getTime();
-            var sleep;
-            if (endT < deadline) {
-                sleep = ctx.sleepTime;
-            } else {
-                sleep = endT - deadline + ctx.sleepTime;
-                ctx.batchSize = (batchSize >> 1) || 1;
-            }
-            ctx.waitUntil = endT + sleep;
-            if (i < t) ctx.timeout = setTimeout(ctx.$execute, sleep);
-        }
-    };
     var toSizeString = function(size, nameType) {
-        var sizes = (nameType == "full" ? ["bytes", "kilobytes", "megabytes", "gigabytes", "terabytes"] : ["bytes",
+        var sizes = (nameType == "full" ? ["bytes", "kilobytes", "megabytes", "gigabytes", "terabytes"] : [
+            "bytes",
             "kb", "Mb", "Gb", "Tb"
         ]);
         var i = 0;
@@ -369,6 +368,10 @@ _Define(function(global) {
         }
         return (Math.round(size * 100) / 100.0) + " " + sizes[i];
     };
+
+    function plural(no, name) {
+        return no + " " + name + (no > 1 ? "s" : "");
+    }
     var createCounter = function(cb) {
         var counter = {};
         var count = 0;
@@ -382,7 +385,7 @@ _Define(function(global) {
             if (count === 0 && cb) {
                 if (errors.length < 1) cb();
                 else cb(errors);
-            } else if (counter.count < 0) {
+            } else if (count < 0) {
                 throw new Error("Counter error less than 0");
             }
         };
@@ -391,36 +394,59 @@ _Define(function(global) {
     var times = {
         "": 1
     };
-    times["milli"] = times["millisecond"] = times["ms"] = times["millisec"] = times[""];
-    times["sec"] = times["second"] = times["s"] = times[""] * 1000;
-    times["min"] = times["minute"] = times["m"] = times["s"] * 60;
-    times["hr"] = times["hour"] = times["h"] = times["min"] * 60;
-    times["day"] = times["d"] = times["hr"] * 24;
-    times["week"] = times["wk"] = times["w"] = times["d"] * 7;
-    times["b"] = times["byte"] = times[""];
-    times["kb"] = times["kilobyte"] = times["kib"] = times["k"] = times["b"] * 1024;
-    times["mb"] = times["megabyte"] = times["m"] = times["kb"] * 1024;
-    times["gb"] = times["gigabyte"] = times["g"] = times["mb"] * 1024;
+    times.milli = times.millisecond = times.ms = times.millisec = times[""];
+    times.sec = times.second = times.s = times[""] * 1000;
+    times.min = times.minute = times.m = times.s * 60;
+    times.hr = times.hour = times.h = times.min * 60;
+    times.day = times.d = times.hr * 24;
+    times.week = times.wk = times.w = times.d * 7;
+    times.b = times.byte = times[""];
+    times.kb = times.kilobyte = times.kib = times.k = times.b * 1024;
+    times.mb = times.megabyte = times.m = times.kb * 1024;
+    times.gb = times.gigabyte = times.g = times.mb * 1024;
 
-    function parseTime(text) {
+    /**
+     * @param [validate] {boolean}- return false if a value is wrong rather than ignore it
+        To allow array ops such as arr.map(parseTime), this value must be true to have effect.
+     */
+    function parseTime(text, validate) {
         var re = /\s*(\d+(?:\.\d+)?)\s*([A-Za-z]*),*/gi;
         var match = re.exec(text);
         var time = 0;
         while (match) {
-            var unit = times[match[2]];
-            if (!unit && match[2].endsWith('s')) {
-                unit = times[match[2].substring(0, match[2].length - 1)];
+            var unit = match[2];
+            var value = times[unit];
+            if (value === undefined && unit.endsWith('s')) {
+                value = times[unit.slice(0, -1)];
             }
-            time += (parseFloat(match[1]) * unit) || 0;
+            if (validate === true && value === undefined) return false;
+            time += (parseFloat(match[1]) * value) || 0;
             match = re.exec(text);
         }
         return time;
     }
+
+    function toTime(time) {
+        if (!time || typeof time !== 'object') time = new Date(parseInt(time));
+        var today = new Date();
+        var deltaMs = today.getTime() - time.getTime();
+        var currentDay = today.getHours() * times.hour + today.getMinutes() * times.minute;
+        if (deltaMs < times.minute) return plural(Math.floor(deltaMs / 1000), "second") + " ago";
+        else if (deltaMs < times.hour)
+            return plural(Math.floor(deltaMs / times.minute), "minute") + " ago";
+        else if (deltaMs < currentDay) {
+            return "Today, " + time.toLocaleTimeString();
+        } else if (deltaMs < currentDay + times.day) {
+            return "Yesterday, " + time.toLocaleTimeString();
+        } else if (deltaMs < currentDay + 2 * times.day) {
+            return "Two days ago, " + time.toLocaleTimeString();
+        } else return time.toLocaleString();
+    }
+
     /*Add all entries in update that are not in original to original*/
     function mergeList(original, update, copy, compare) {
         var list = copy ? original.slice(0) : original;
         var last = 0;
-        var changed;
         for (var i = 0; i < update.length; i++) {
             var pos = list.indexOf(update[i], last);
             if (pos < 0) {
@@ -507,13 +533,11 @@ _Define(function(global) {
         CBuffer: CircularBffer,
         AbortSignal: AbortSignal,
         repeat: genSpaces,
-        Batch: Batch,
-        batch: function(func) {
-            return new Batch().batch(func);
-        },
+        spread: spread,
         guardEntry: function(func, _throw, errorText) {
             var guard = false;
-            if (arguments.length < 3) errorText = 'Attempt to call' + func.name + ' while a call ongoing ignored';
+            if (arguments.length < 3) errorText = 'Attempt to call' + func.name +
+                ' while a call ongoing ignored';
             return function() {
                 if (guard) {
                     var error = new Error(errorText);
@@ -531,11 +555,11 @@ _Define(function(global) {
                 }
             };
         },
-        ifSet: function(obj, prop, value) {
+        setProp: function(obj, prop, value) {
             if (obj[prop] != value) {
                 obj[prop] = value;
+                return true;
             }
-            return true;
         },
         htmlEncode: htmlEncode,
         withTry: function(func, err) {
@@ -550,7 +574,7 @@ _Define(function(global) {
                 return err;
             };
         },
-        noop: function() {},
+        noop: $.noop,
         assert: function(cond, e) {
             if (!(cond)) throw new Error(e || 'AssertError');
             return true;
@@ -588,29 +612,30 @@ _Define(function(global) {
         genID: function(s) {
             return s + "" + ("" + new Date().getTime()).substring(2) + (((++id_count) % 90) + 10);
         },
-        getCreationDate: function(id, s) {
-            s = s || "m";
+        getCreationDate: function(id) {
             var today = new Date().getTime();
             var l = parseInt(("" + today).substring(0, 2));
-            var m = id.substr(s.length, 11);
+            var m = id.substr(id.length - 11, 11);
             var forwardDate = parseInt(l + m);
             return new Date((forwardDate > today) ? forwardDate - 100000000000 : forwardDate);
         },
         print: print,
         inspect: function() {
-            window.console.debug(print.apply(null, arguments.length == 1 || typeof arguments[1] == "number" ?
+            window.console.debug(print.apply(null, arguments.length == 1 || typeof arguments[1] ==
+                "number" ?
                 arguments : [arguments]));
         },
         mergeList: mergeList,
-        except: function(l) {
-            return function(e) {
-                return l !== e;
-            };
-        },
         setImmediate: setImmediate,
+        //Slow but easy to write arr manipulation
         not: function(func) {
             return function() {
                 return !func.apply(this, arguments);
+            };
+        },
+        except: function(l) {
+            return function(e) {
+                return l !== e;
             };
         },
         notIn: function(arr) {
@@ -618,10 +643,9 @@ _Define(function(global) {
                 return arr.indexOf(e) < 0;
             };
         },
-        plural: function(no, name) {
-            return no + " " + name + (no > 1 ? "s" : "");
-        },
+        plural: plural,
         inherits: extend,
+        //deprecated
         toChars: function(str) {
             return Array.prototype.map.call(str, function(e) {
                 return e.charCodeAt(0);
@@ -629,6 +653,7 @@ _Define(function(global) {
         },
         createCounter: createCounter,
         parseTime: parseTime,
+        toTime: toTime,
         toSize: toSizeString,
         asyncForEach: asyncEach,
         parseList: parseList,

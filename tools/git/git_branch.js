@@ -1,44 +1,24 @@
 //Git Commands Branching
 _Define(function(global) {
     var GitCommands = (global.GitCommands || (global.GitCommands = Object.create(null)));
-    var handleError = GitCommands.handleError;
     var createProgress = GitCommands.createProgress;
     var padStart = GitCommands.padStart;
     var success = GitCommands.success;
     var failure = GitCommands.failure;
-    var ItemList = global.ItemList;
-    var AutoCloseable = global.AutoCloseable;
-    var appConfig = global.allConfigs.git;
+    // var ItemList = global.ItemList;
+    // var appConfig = global.allConfigs.git;
     var checkBox = global.styleCheckbox;
     var testPlain = GitCommands.testPlain;
     var configure = global.configure;
     var Notify = global.Notify;
-    var branchList;
 
     function pickBranch(prov, onSelect) {
         var branches;
 
         function showModal(currentBranch) {
-            if (!branchList) {
-                branchList = new ItemList('git-branches', branches);
-                branchList.headerText = "Select Branch";
-                branchList.footer = ["Cancel"];
-                branchList.$cancel = function() {
-                    branchList.$el.modal('close');
-                };
-                branchList.createElement();
-                branchList.$el.modal(AutoCloseable);
-                branchList.on('select', function(ev) {
-                    branchList.sendResult(ev.item);
-                });
-            }
-            //
-            branchList.sendResult = onSelect;
-            branchList.current = currentBranch;
-            branchList.items = branches;
-            branchList.render();
-            $(branchList.getElementAtIndex(branches.indexOf(currentBranch))).removeClass('tabbable').addClass('marked-file');
-            $(branchList.$el).modal('open');
+            Notify.pick('Select Branch', branches, function(branch) {
+                return onSelect(branch, branch == currentBranch);
+            });
         }
         prov.listBranches().then(function(b) {
             branches = b;
@@ -46,9 +26,8 @@ _Define(function(global) {
         });
     }
 
-    function gotoRef(prov, ref, noCheckout) {
+    function gotoRef(prov, ref, noCheckout, cb) {
         var progress = createProgress("Checking out " + ref);
-        if (!noCheckout) prov = prov.cached();
         prov.checkout({
             ref: ref,
             onProgress: progress.update,
@@ -56,104 +35,133 @@ _Define(function(global) {
         }).then(function() {
             progress.dismiss();
             Notify.info((noCheckout ? 'Updated HEAD to point at ' : 'Checked out files from ') + ref);
+            cb && cb();
         }, function(e) {
             progress.dismiss();
-            if (!handleError(e)) {
-                Notify.error('Error while switching branch');
-            }
+            failure(e);
         });
     }
     GitCommands.switchBranch = function(ev, prov) {
-        pickBranch(prov, function(item) {
-            if (item == branchList.current) {
+        pickBranch(prov, function(item, isCurrent) {
+            if (isCurrent) {
                 return;
             }
-            gotoRef(prov, item, false);
-            branchList.$el.modal('close');
+            gotoRef(prov, item, false, function() {
+                ev.browser.reload();
+            });
+            return true;
         });
     };
     GitCommands.switchBranchNoCheckout = function(ev, prov) {
-        pickBranch(prov, function(item) {
-            if (item == branchList.current) {
+        pickBranch(prov, function(item, isCurrent) {
+            if (isCurrent) {
                 return;
             }
             gotoRef(prov, item, true);
-            branchList.$el.modal('close');
+            return true;
         });
     };
+
     GitCommands.deleteBranch = function(ev, prov) {
-        pickBranch(prov, function(item) {
-            if (item == branchList.current) {
+        pickBranch(prov, function(item, isCurrent) {
+            if (isCurrent) {
                 return;
             }
-            branchList.$el.modal('close');
             var key = padStart("" + Math.floor((Math.random() * 99999999)) + "", 8, "0");
-            Notify.prompt('Delete branch ' + item + '?. This operation is irreversible. To proceed, enter ' + key, function(
-                ans) {
-                if (ans == key) {
-                    prov.deleteBranch({
-                        ref: item,
-                    }).then(success, failure);
-                } else {
-                    return false;
-                }
-            });
+            Notify.prompt('Delete branch ' + item +
+                '?. This operation is irreversible. To proceed, enter ' + key,
+                function(
+                    ans) {
+                    if (ans == key) {
+                        prov.deleteBranch({
+                            ref: item,
+                        }).then(success, failure);
+                    } else {
+                        return false;
+                    }
+                });
+            return true;
         });
     };
     GitCommands.createBranch = function(ev, prov) {
-        var html = ["<form>", "<label>Select Remote</label>",
-            "<select id='selectRemote'><option value='$local'>No Remote</option></select></br>",
-            "<div id='pickRemoteBranchDiv' style='display:none'>", "<label>Select Remote Branch</label>",
-            "<input type='checkbox' name='cloneShallow' id='cloneShallow'/>",
-            "<span style='margin-right:30px'>Shallow fetch</span>",
-            "<select id='pickRemoteBranch'><option id='current' value='$input'>Enter Value</option></select>", "</div>",
-            "<label for='branchName'>Enter branch name</label>",
-            "<input name=branchName' id='branchName' placeholder='default'></input>",
-            "<input style='margin:10px' class='git-warning btn modal-close' type='button' value='Cancel' />",
-            "<input style='margin:10px' class='btn right' name=doSubmit type='submit' value='Create'/>", "</form>",
-        ].join("");
         var el = $(Notify.modal({
             header: "Create Branch",
-            body: html,
+            large: true,
+            form: [{
+                    caption: 'Select Remote',
+                    name: 'selectRemote',
+                    type: 'select'
+                },
+                {
+                    type: 'div',
+                    name: 'remoteOptions',
+                    children: [{
+                            caption: 'Shallow fetch',
+                            type: 'accept',
+                            name: 'cloneShallow',
+                        },
+                        {
+                            caption: 'Select remote branch',
+                            type: 'select',
+                            name: 'pickRemoteBranch'
+                        }
+                    ],
+                },
+                {
+                    caption: 'Branch name',
+                    type: 'text',
+                    name: 'branchName',
+                }
+            ],
+            footers: ['Cancel', 'Create'],
             dismissible: true
-        }, function() {
-            el.find('form').off();
-            el.find('select').off();
         }));
         var remoteSelect = el.find('#selectRemote');
         var branchSelect = el.find('#pickRemoteBranch');
-        var pickRemoteBranchDiv = el.find("#pickRemoteBranchDiv");
         var branchName = el.find("#branchName");
+        var remoteOptions = el.find("#remoteOptions");
+        remoteSelect.append("<option value='$local'>No Remote</option>");
+        branchSelect.append("<option value='$input' id='current'>Default</option>");
+        remoteOptions.hide();
+
+        //add remotes
         prov.listRemotes().then(function(b) {
             b.forEach(function(remote) {
-                remoteSelect.append("<option value='" + remote.remote + "'>" + remote.remote + ": " + remote.url.split("/")
+                remoteSelect.append("<option value='" + remote.remote + "'>" +
+                    remote
+                    .remote + ": " + remote.url.split("/")
                     .slice(-2).join("/") + "</option>");
             });
-            if (appConfig.defaultRemote) {
-                remoteSelect.val(appConfig.defaultRemote);
-            }
+            // if (appConfig.defaultRemote) {
+            //     remoteSelect.val(appConfig.defaultRemote);
+            // }
         });
+
         var lastRemote = null;
-        remoteSelect.change(function() {
+
+        function updateBranches() {
             if (this.value == "$local") {
-                pickRemoteBranchDiv.hide();
+                remoteOptions.hide();
             } else {
-                pickRemoteBranchDiv.show();
+                remoteOptions.show();
                 if (this.value != lastRemote) {
-                    branchSelect.children().not("#current").detach();
+                    branchSelect.children().not("#current").remove();
                     branchSelect.val("$input");
                     prov.listBranches({
                         remote: this.value
                     }).then(function(b) {
                         b.forEach(function(remote) {
-                            branchSelect.append("<option value='" + remote + "'>" + remote + "</option>");
+                            branchSelect.append("<option value='" + remote + "'>" +
+                                remote + "</option>");
                         });
                     });
                 }
             }
-        });
+        }
+        updateBranches.call(remoteSelect[0]);
+        remoteSelect.change(updateBranches);
         checkBox(el);
-        el.find("form").on("submit", function(e) {
+        el.on("submit", function(e) {
             e.preventDefault();
             var ref = branchName.val();
             if (!testPlain(ref)) {
@@ -175,15 +183,16 @@ _Define(function(global) {
                             ref: ref,
                         }).then(success, failure);
                     }, function() {
-                        failure("Cannot create branch on empty repository");
+                        failure(
+                            "Failed to resolve HEAD. Note: You cannot create a branch on an empty repository"
+                            );
                     });
                 }
                 var remoteRef = branchSelect.val();
                 if (!remoteRef || remoteRef == "$input") {
-                    remoteRef = remote + "/" + ref;
-                } else {
-                    remoteRef = remote + "/" + remoteRef;
+                    remoteRef = ref;
                 }
+                remoteRef.replace('refs/heads/', '');
 
                 function retry(retried) {
                     prov.resolveRef({
@@ -191,11 +200,12 @@ _Define(function(global) {
                     }).then(function(oid) {
                         // Create a new branch that points at that same commit
                         prov.writeRef({
-                            ref: "refs/heads/" + ref,
+                            ref: "refs/heads/" + remote + '/' + remoteRef,
                             value: oid,
                         }).then(function() {
                             el.modal('close');
-                            configure("defaultRemoteBranch", remoteRef, "git");
+                            configure("defaultRemoteBranch", remoteRef,
+                                "git");
                             // Set up remote tracking branch
                             prov.setConfig({
                                 path: "branch." + ref + ".remote",
@@ -203,18 +213,20 @@ _Define(function(global) {
                             });
                             prov.setConfig({
                                 path: "branch." + ref + ".merge",
-                                value: "refs/heads/" + ref
+                                value: "refs/heads/" + remoteRef
                             });
                             success();
                         }, failure);
                     }, function(e) {
                         if (!retried) {
-                            var progress = createProgress('Fetching remote branch......');
+                            var progress = createProgress(
+                                'Fetching remote branch......');
                             prov.fetch({
                                 remote: remote,
                                 singleBranch: true,
                                 ref: ref,
-                                depth: el.find("#cloneShallow").val() ? 2 : undefined,
+                                depth: el.find("#cloneShallow").val() ? 2 :
+                                    undefined,
                             }).then(function() {
                                 progress.dismiss();
                                 retry();

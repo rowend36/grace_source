@@ -1,4 +1,14 @@
 _Define(function(global){
+    /** 
+     * Inspired by codemirror. If only that library had supported
+     * mobile better.
+     * Overlays a one highlight rule eg diff highlight, text selection etc
+     * over another one. 
+     * Subclasses can override mergeType method for different behaviour,
+     * The optional ranges argument allows selecting ranges to overlay
+     * Currently, two ranges cannot share a row
+     * The mainTokenizer argument allows using it as a mode
+     **/
     function OverlayTokenizer(tokenizer, ranges, mainTokenizer) {
         //the only necessary argument
         this.tokenizer = tokenizer;
@@ -54,7 +64,6 @@ _Define(function(global){
             var chars = 0;
             if (intersect.start.row == row) {
                 chars = tokens1[l1++].value.length;
-                var chars2 = 0;
                 while (chars <= intersect.start.column) {
                     if (l1 >= tokens1.length) {
                         return tokens1;

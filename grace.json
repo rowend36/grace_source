@@ -1,14 +1,20 @@
 {
     "autocompletion.preloadFiles": "grace-load.json",
     "linting.jshint.jquery": true,
-    "linting.jshint.unused": "vars",
+    "linting.jshint.unused": true,
+    "formatting.js_beautify.wrap_line_length": 120,
     "autocompletion.tern.ternDefsInbuilt": "ecmascript,browser,jquery",
     "files.binaryFileExts+":[".txt"],
     "linting.jshint.globals": {
         "_Define": true,
         "Env": true,
-        "ace": true
+        "ace": true,
+        "Sidenav": true,
+        "Hammer": true,
+        "MobileDragAndDrop": true
     },
+    "git.gitdir": ".grit",
+    "search.searchTabExclude": "**/.*git/,**/src-min*,**/node_modules,**/.git*,libs*,.grit",
     "files": {
         "projectName": "GRACE"
     }

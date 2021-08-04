@@ -97,7 +97,7 @@ _Define(function(global) {
                 //ranges are split into line chunks of maxHeight for renderering
                 maxHeight: 5,
                 start: 0,
-                hidden: ranges.length > 100,
+                hidden: ranges.length > ctx.appConfig.resultsAutoShowLines,
                 views: []
             }, holder_props);
             holder.session.setUseWorker(false);
@@ -119,7 +119,7 @@ _Define(function(global) {
         };
         //recycler.viewport = recycler.INFINITE_VIEWPORT;
         //load everything at once?
-        var doScroll = function(e) {
+        var doScroll = function() {
             var y = ScrollSaver.getScroll(scrollers);
             recycler.scrollTo(y);
         };
@@ -163,7 +163,7 @@ _Define(function(global) {
             var body = renderer.render(ranges, doc.session);
             bindClickListeners(body.children, ranges, doc.getPath());
             header[0].searchData = $(body);
-            if (ranges.length > 100) {
+            if (ranges.length > this.appConfig.resultsAutoShowLines) {
                 body.style.display = 'none';
                 header.find('.foldResult').addClass('btn-toggle__activated');
             }

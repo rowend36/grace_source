@@ -121,6 +121,7 @@ _Define(function(global) {
         var self = this;
         var tag = this.tag;
         var a = function(err, res) {
+            if(!nextLoop)setImmediate(a.bind(null,err,res));
             if (tag != self.tag) {
                 return;
             }
@@ -152,7 +153,9 @@ _Define(function(global) {
             callback(files);
             //}
         };
+        var nextLoop = false;
         self._fileServer.getFiles(folder, a);
+        nextLoop = true;
     };
     global.SearchList = SearchList;
 })/*_EndDefine*/;

@@ -49,7 +49,7 @@ _Define(function(global) {
                 if (state) {
                     this.itemList.push(id);
                     var data = this.itemAdapter.parse(state);
-                    this.setItem(id, data);
+                    this.$setItem(id, data);
                     onLoadItem && onLoadItem(id, data);
                 } else {
                     onLostItem && onLostItem(id);
@@ -74,7 +74,7 @@ _Define(function(global) {
         try {
             func.apply(ctx);
         } catch (Exception) {
-          //cancel??
+            //cancel??
         }
         this._inTransaction = before;
         if (before) return;
@@ -115,8 +115,17 @@ _Define(function(global) {
     Storage.prototype.getItem = function(id) {
         return this.items[id];
     };
-    Storage.prototype.setItem = function(id, data) {
+    Storage.prototype.$setItem = function(id, data) {
         this.items[id] = data;
+    };
+    Storage.prototype.setItem = function(id, data,noNew) {
+        if (this.itemList.indexOf(id) > -1) {
+            this.$setItem(id, data);
+            this.saveItem(id);
+        } else if(noNew){
+            throw new Error('Item does not exist');
+        }
+        else this.createItem(id, data);
     };
     Storage.prototype.removeItem = function(id) {
         Utils.assert(this.itemList.indexOf(id) > -1,
@@ -138,8 +147,8 @@ _Define(function(global) {
         if (this._inTransaction) {
             this.needsPersist = true;
         } else this.persist();
-        if (data) {
-            this.setItem(id, data);
+        if (data != undefined) {
+            this.$setItem(id, data);
             this.saveItem(id);
         }
     };

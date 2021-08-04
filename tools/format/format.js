@@ -51,7 +51,7 @@ _Define(function(global) {
     "vueIndentScriptAndStyle": false
   };
   var appConfig = global.registerAll({
-    "js_beautify_modes": "json,javascript,jsoniq",
+    "js_beautify_modes": "json,javascript,jsoniq,json5",
     "css_beautify_modes": "css",
     "html_beautify_modes": "html,xml,elixir,handlebars,django",
     "prettier_js_modes": "jsx,typescript,tsx,jssm,jsp",
@@ -71,8 +71,18 @@ _Define(function(global) {
     "indent_scripts": "Sets indent level inside script tags keep|separate|normal (default:normal)",
     "wrap_line_length": " Maximum characters per line (0 disables) [250]",
     "wrap_attributes": "Wrap attributes to new lines [auto|force|force_aligned|force_expand_multiline|aligned_multiple|preserve|preserve_aligned] (default:auto)",
-    "wrap_attributes_indent_size": "Indent wrapped attributes to after N characters (default:[indent_size]) (ignored if wrap_attributes is \"aligned\")",
-    "inline": "List of tags to be considered inline tags",
+    "wrap_attributes_indent_size": {
+      values: [
+        [null, "indent_size"], "<number>"
+      ],
+      doc: "Indent wrapped attributes to after N characters (default:[indent_size]) (ignored if wrap_attributes is \"aligned\")"
+    },
+    "inline": {
+      values: [
+        [null, "An exhaustive default list of html inline elements"], "<array<string>>"
+      ],
+      doc: "List of tags to be considered inline tags"
+    },
     "unformatted": "List of tags (defaults to inline) that should not be reformatted",
     "content_unformatted": "List of tags (defaults to pre) whose content should not be reformatted",
     "extra_liners": "List of tags (defaults to [head,body,/html] that should have an extra newline before them.",
@@ -114,11 +124,11 @@ _Define(function(global) {
       endOfLine: opts.eol,
       tabWidth: opts.indent_size,
       useTabs: opts.indent_char == '\t',
-      plugins: prettierPlugins,
+      plugins: window.prettierPlugins,
     }, config, opts.options);
     var err = null;
     try {
-      val = prettier.format(val, pOpts);
+      val = window.prettier.format(val, pOpts);
     } catch (e) {
       err = e;
       console.error(e);
@@ -218,9 +228,11 @@ _Define(function(global) {
       if (typeof value == 'object') {
         if (!value[0] || value[0].start) {
           deltas = value;
-        } else deltas = Docs.diffToAceDeltas(value, formatAll ? 0 : originalRangeStart.row, formatAll ? 0 : originalRangeStart
+        } else deltas = Docs.diffToAceDeltas(value, formatAll ? 0 : originalRangeStart.row, formatAll ? 0 :
+          originalRangeStart
           .column);
-      } else deltas = Docs.generateDiff(formatAll ? session.getValue() : session.getTextRange(range), value, formatAll ? 0 :
+      } else deltas = Docs.generateDiff(formatAll ? session.getValue() : session.getTextRange(range), value,
+        formatAll ? 0 :
         originalRangeStart.row, formatAll ? 0 : originalRangeStart.column);
       var end = range.start;
       session.markUndoGroup();
@@ -303,9 +315,9 @@ _Define(function(global) {
       return true;
     }
     //#region execute beautify
-    var standardNewLineChar = '\n',
-      editorNewLineChar = session.doc.getNewLineCharacter(),
-      needToNormalize = standardNewLineChar != editorNewLineChar;
+    // var standardNewLineChar = '\n',
+    var editorNewLineChar = session.doc.getNewLineCharacter();
+    // needToNormalize = standardNewLineChar != editorNewLineChar;
     var detectedMode = getCurrentMode(editor, false);
     //for html, allow using a nested formatter if the entire range is nested (css and javascript only)
     if (detectedMode == "html" || detectedMode == "php" || detectedMode == "svg") {
@@ -432,4 +444,4 @@ _Define(function(global) {
   global.beautifiers = beautifiers;
   global.Beautify = beautify;
   global.getBeautifier = getBeautifier;
-}) /*_EndDefine*/
+}); /*_EndDefine*/

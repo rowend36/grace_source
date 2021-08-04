@@ -31,23 +31,22 @@
             mode: 'ace/mode/javascript',
             lockScrolling: true,
             showConnectors: true,
-            showCopyArrows: true,
+            showCopyArrows: false,
             alignLines: false,
             // threeWay: false,
-            center: {
+            right: {
                 content: document.body.innerHTML
             },
-            right: {
-                content: document.body.innerHTML.replace(/a(\w+)/g, "$1b")
-            },
+            // right: {
+            //     content: document.body.innerHTML.replace(/a(\w+)/g, "$1b")
+            // },
             left: {
                 content: document.body.innerHTML.replace(/b(\w+)/g, "$1a")
             }
         });
-        differ.diff();
         /*setTimeout(function(){
             differ.destroy();
-        },5000)*/
+        },60000)*/
 
         //differ.render();
     </script>

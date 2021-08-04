@@ -5,7 +5,10 @@ _Define(
 
         var EventsEmitter = global.EventsEmitter;
         var Utils = global.Utils;
-        //Largely inspired by and inspired global Navigation plugin which is still a work in progress
+        /*
+          Events: moveSelect - called on keyboard focus,
+                  select, clear and dismiss
+        */
         function ItemList(id, items, container) {
             ItemList.super(this);
             this.container = container || document.body;
@@ -28,14 +31,14 @@ _Define(
                 this.trigger('moveSelect', this.getItem(index), true);
             }
         };
-        ItemList.prototype.selectAll = function(newEl, oldEl) {
+        ItemList.prototype.selectAll = function() {
 
         };
         ItemList.prototype.shiftTo = ItemList.prototype.moveTo;
-        ItemList.prototype.getNext = function(current, root, direction) {
+        ItemList.prototype.getNext = function(current, root) {
             var elements = this.getElements(root);
-            var lastIndex = indexOf(elements,current);
-            return elements[lastIndex+1] ||current;
+            var lastIndex = indexOf(elements, current);
+            return elements[lastIndex + 1] || current;
         };
         ItemList.prototype.getElements = function(root) {
             return root.getElementsByClassName('tabbable');
@@ -46,10 +49,10 @@ _Define(
             }
             return root;
         };
-        ItemList.prototype.getPrev = function(current, root, direction) {
+        ItemList.prototype.getPrev = function(current, root) {
             var elements = this.getElements(root);
-            var lastIndex = indexOf(elements,current);
-            return elements[lastIndex-1] || elements[0];
+            var lastIndex = indexOf(elements, current);
+            return elements[lastIndex - 1] || elements[0];
         };
         ItemList.prototype.select = function(index) {
             var current = this.selected;
@@ -84,26 +87,31 @@ _Define(
         ItemList.prototype.getElementAtIndex = function(index) {
             return this.listEl.getElementsByClassName(this.itemClass)[index];
         };
-        ItemList.prototype.createElement = function(opts) {
+        ItemList.prototype.createElement = function() {
             var root = this.el = document.createElement('div');
+
             root.setAttribute('id', this.id);
+            var toId = function(name) {
+                return name.toLowerCase().replace(/\s/g, "_");
+            };
             this.container.appendChild(root);
             root.className = this.containerClass;
-            root.innerHTML = "<div class='list-content'>" +
-                "<h6 class='item-list-header'></h6>" +
+            KeyListener.attach(this.el, this);
+            $(root).append("<h6 class='modal-header'></h6>" +
+                "<div class='modal-content'>" +
                 "<ul class='item-list-items'>" +
                 "</ul>" +
                 "</div>" +
-                "<div class='modal-footer align-right'>" +
-                (this.footer ? this.footer.map(function(name, i,arr) {
-                    return '<a id="item-list-' + name.toLowerCase() + '" href="#!" class="tabbable waves-effect btn-flat">' +
-                        name + '</a>';
-                }).join("") : "") +
-                '</div>';
+                (this.footer ?
+                    "<div class='modal-footer align-right'>" + this.footer.map(function(name) {
+                        return '<a id="item-list-' + toId(name) +
+                            '" href="#!" class="tabbable waves-effect btn-flat">' +
+                            name + '</a>';
+                    }).join("") + '</div>' : ""));
             this.listEl = root.getElementsByClassName('item-list-items')[0];
             var self = this;
             this.$el = $(this.el);
-            this.$el.on('click', '.' + this.itemClass, function(e) {
+            this.$el.on('click', '.list-item', function(e) {
                     FocusManager.focusIfKeyboard(self.$receiver);
                     e.stopPropagation();
                     var index = $(this).attr('item-list-index');
@@ -115,25 +123,24 @@ _Define(
                 });
             if (this.footer)
                 this.footer.forEach(function(name) {
-                    this.$el.on('click', '#item-list-' + name.toLowerCase(), this["$" + name.toLowerCase()]);
+                    this.$el.on('click', '#item-list-' + toId(name), self["$" + toId(name)] || false);
                 }, this);
-            KeyListener.attach(this.el, this);
         };
-        ItemList.prototype.onenter = function(e){
+        ItemList.prototype.onenter = function(e) {
             e.click();
         };
-        ItemList.prototype.getRoot = function(e){
-            return this.container;  
+        ItemList.prototype.getRoot = function() {
+            return this.container;
         };
         ItemList.prototype.containerClass = 'modal modal-container';
-        ItemList.prototype.itemClass = "item-list-item";
+        ItemList.prototype.itemClass = "item-list-item border-inactive";
         ItemList.prototype.headerText = "";
         ItemList.prototype.emptyText = "No items";
         ItemList.prototype.render = function() {
             if (!this.el) {
                 this.createElement();
             }
-            var header = this.$el.find('.item-list-header')[0];
+            var header = this.$el.find('.modal-header')[0];
             header.innerHTML = this.headerText;
             var content = this.listEl;
             var item;
@@ -144,6 +151,7 @@ _Define(
             if (this.getLength() > 0) {
                 for (var i = 0; i < this.getLength(); i++) {
                     item = this.createItem(i);
+                    item.className += " list-item";
                     item.setAttribute('item-list-index', i);
                     content.appendChild(item);
                 }
@@ -155,7 +163,7 @@ _Define(
             }
         };
 
-        function QuickList(id, items, container) {
+        function QuickList( /*id, items, container*/ ) {
             QuickList.super(this, arguments);
             this.$clear = (function(e) {
                 this.items.length = 0;
@@ -165,7 +173,8 @@ _Define(
             this.$close = this.hide.bind(this);
         }
         QuickList.prototype.getHtml = function(index) {
-            return Utils.htmlEncode(String(this.items[index]).substring(0,10000)).replace(/(?:\r\n|\r|\n)+/g,"<br/>");
+            return Utils.htmlEncode(String(this.items[index]).substring(0, 10000)).replace(/(?:\r\n|\r|\n)+/g,
+                "<br/>");
         };
         QuickList.prototype.containerClass = "modal bottom-list";
         QuickList.prototype.itemClass = "bottom-list-item";
@@ -182,7 +191,7 @@ _Define(
         QuickList.prototype.blur = function() {
             this.hide();
         };
-        QuickList.prototype.show = function(forElement) {
+        QuickList.prototype.show = function() {
             if (this.shown) return;
             this.shown = true;
             this.render();
@@ -192,9 +201,32 @@ _Define(
             this.lastFocus = FocusManager.visit(this.$receiver);
         };
         Utils.inherits(QuickList, ItemList);
-        
-        var indexOf = Array.prototype.indexOf.call.bind(Array.prototype.indexOf);
 
+        var indexOf = Array.prototype.indexOf.call.bind(Array.prototype.indexOf);
+        var Notify = global.Notify;
+        Notify.pick = function(name, items, cb, ondismiss,footers) {
+            var list = new ItemList('picker', items);
+            list.containerClass = 'modal';
+            list.headerText = name;
+            list.footer = footers;
+            list.createElement();
+            list.$el.modal(global.AutoCloseable);
+            list.render();
+            list.on('select', function(e) {
+                console.log(e);
+                if (cb(e.item, e.index) !== false) {
+                    list.$el.modal('close');
+                    FocusManager.hintChangeFocus();
+                    finish();
+                }
+            });
+            list.current = null;
+            var finish = FocusManager.visit(list.$receiver);
+            return Notify.modal({
+                listEl: list.el,
+                dismissible: ondismiss !== false,
+            }, ondismiss);
+        };
         global.BottomList = QuickList;
         global.ItemList = ItemList;
     }); /*_EndDefine*/

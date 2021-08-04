@@ -10,6 +10,7 @@
     }
 })(this, function(root) {
     'use strict';
+
     /*region Common Code*/
     var Range = ace.require('ace/range').Range;
     var LineWidgets = ace.require("ace/line_widgets").LineWidgets;
@@ -20,8 +21,8 @@
         DIFF_INSERT: 1,
         WIDGET_INLINE: 'diff-inline',
         WIDGET_OFFSET: 'diff-offset',
-        EDITOR_RIGHT: 'right',
-        EDITOR_LEFT: 'left',
+        EDITOR_RIGHT: 'right',//added
+        EDITOR_LEFT: 'left',//removed
         EDITOR_CENTER: 'center',
         RTL: 'rtl',
         LTR: 'ltr',
@@ -30,11 +31,11 @@
         DIFF_GRANULARITY_BROAD: 'broad'
     };
 
-    function inlineMarker(acediff, side, line, from, toLine, to, fade) {
+    function inlineMarker(acediff, side, line, from, toLine, to, fade,removed) {
         var editor = acediff.editors[side];
         var session = (editor && editor.ace.getSession());
         if (!session) return false;
-        acediff.editors[side].markers.push(session.addMarker(new Range(line, from, toLine, to), acediff.options.classes.inline + (fade ? " fading" : ""), 'text', false));
+        acediff.editors[side].markers.push(session.addMarker(new Range(line, from, toLine, to), acediff.options.classes[removed === acediff.swapped?"inlineAdded":"inlineRemoved"] + (fade ? " fading" : ""), 'text', false));
         return true;
     }
 
@@ -42,10 +43,14 @@
         var pos = {};
         pos[left] = new Pos(0, 0);
         pos[right] = new Pos(0, 0);
+        //
         var CLEAN = 1,
+            //too long on one side
             PENDING = 8,
-            FAILED = 128;
-        var FAILING = PENDING | FAILED;
+            //the inline marker is too long
+            FAILED = 128,
+            MAX_LENGTH = 10;
+        // var FAILING = PENDING | FAILED;
         var state = CLEAN;
         var marker, hasFullLine, start, startCh, offLeft, offRight;
         for (var i = 0, len = diffs.length; i < len; i++) {
@@ -76,14 +81,14 @@
             offRight = (endOfLineClean(diffs, i) ? 1 : 0);
             hasFullLine = (pos[side].line - start + offLeft + offRight) > 1;
 
-            if (!hasFullLine || text.length < 10) {
+            if (!hasFullLine || text.length < MAX_LENGTH) {
                 if (state & PENDING) {
                     inlineMarker.apply(null, marker);
                     state ^= PENDING;
-                    inlineMarker(acediff, side, start, startCh, pos[side].line, pos[side].ch);
+                    inlineMarker(acediff, side, start, startCh, pos[side].line, pos[side].ch,false,type == C.DIFF_DELETE);
                 } else if (state & CLEAN) {
                     state |= PENDING;
-                    marker = [acediff, side, start, startCh, pos[side].line, pos[side].ch];
+                    marker = [acediff, side, start, startCh, pos[side].line, pos[side].ch,false,type == C.DIFF_DELETE];
                 }
             } else {
                 state = FAILED;
@@ -116,11 +121,10 @@
         var lineText1 = a.chars1;
         var lineText2 = a.chars2;
         var lineArray = a.lineArray;
-        var diff;
         var diff = dmp.diff_main(lineText1, lineText2, false);
         dmp.diff_charsToLines_(diff, lineArray);
         if (swap) {
-            for (i = 0; i < diff.length; ++i) {
+            for (var i = 0; i < diff.length; ++i) {
                 diff[i][0] = -diff[i][0];
             }
         }
@@ -160,7 +164,7 @@
     }
 
     function getDiffs(text1, text2, options, ctx, allowLine) {
-        var tag = ctx.savedDiffs ? "cached " : "clean ";
+        // var tag = ctx.savedDiffs ? "cached " : "clean ";
         if (allowLine && !options.showInlineDiffs) {
             if (options.ignoreWhitespace) {
                 text1 = text1.replace(/^( |\t)*|( |\t)*$/gm, "");
@@ -348,7 +352,7 @@
         };
     }
     //Find a equal row that starts length chars away from end
-    function walkBack(diffs,length,data){
+    function walkBack(diffs, length, data) {
         var len = diffs.length - 1;
         for (var i = len; i >= 0; i--) {
             var type = diffs[i][0];
@@ -367,92 +371,81 @@
                 data[1] -= textL;
             }
         }
-        diffs.splice(i+1);
+        diffs.splice(i + 1);
         data[0] = i;
     }
     //Find an equal row that starts length chars away from start
-    function walkForward(diffs,length,data){
-        var len = diffs.length-1;
-        for(var i=0;i<=len && (length>0 || diffs[i][0]);i++){
+    function walkForward(diffs, length, data) {
+        var len = diffs.length - 1;
+        for (var i = 0; i <= len && (length > 0 || diffs[i][0]); i++) {
             var type = diffs[i][0];
             var textL = diffs[i][1].length;
-            if(type==0){
-                length-=textL;
-                if(length<0){
+            if (type == 0) {
+                length -= textL;
+                if (length < 0) {
                     // i--;
                     break;
                 }
             }
-            if(type>=0){
-                data[2]+=textL;
+            if (type >= 0) {
+                data[2] += textL;
             }
-            if(type<=0){
-                data[1]+=textL;
+            if (type <= 0) {
+                data[1] += textL;
             }
         }
-        diffs.splice(0,i);
+        diffs.splice(0, i);
         data[0] = i;
     }
+    var UNCHANGED = 3;
+
     function updateDiff(a, b, swapped, diffs, func) {
         if (swapped) {
             var t = a;
             a = b, b = t;
         }
         var len = diffs.length;
+        //Find the extent of the change
         var headT = _unChangedHead(a, b, diffs, len);
-        if (headT[3]) return diffs;
+        if (headT[UNCHANGED]) return diffs;
         var start = headT[0];
         var tailT = _unChangedTail(a, b, diffs, start);
         var end = tailT[0];
-        var lenChange = (tailT[1] - headT[1]) + (tailT[2] - headT[2]);
+
         var head = diffs.slice(0, start + 1);
         var tail = diffs.slice(end);
+
+        //Add some context for the change to get best results for diffing
+        //Find nearby equal rows that are small enough to be affected by the change
+        var lenChange = Math.max(100, (tailT[1] - headT[1]) + (tailT[2] - headT[2]));
         walkBack(head, lenChange, headT);
         walkForward(tail, lenChange, tailT);
         start = headT[0];
         end += tailT[0];
-        var mid;
-        if (start > -1 && end < len && end - start == 2) {
-            //single bounded insert/delete
-            var dif = diffs[start + 1][0];
-            var i = dif < 0 ? 1 : 2;
-            if (headT[i] == tailT[i]) {
-                //delete
-                tail[0][1]= head.pop()[1]+tail[0][1];
-                mid = [];
-            }
-            else{
-                var text = dif < 0 ? a : b;
-                //insert
-                mid = [{
-                    0: dif,
-                    1: text.substring(headT[i], tailT[i])
-                }];
-            }
-        } else {
-            a = a.substring(headT[1], tailT[1]);
-            b = b.substring(headT[2], tailT[2]);
-            
-            if (swapped) {
-                var t2 = b;
-                b = a,
-                    a = t2;
-            }
-            mid = func(a, b, false, swapped);
-            //merge adjacent equal chunks
-            if (head.length) {
-                if (mid.length && mid[0][0] == C.DIFF_EQUAL) {
-                    head[head.length - 1][1] += mid.shift()[1];
-                }
-            }
-            if (tail.length) {
-                if (mid.length && mid[mid.length - 1][0] == C.DIFF_EQUAL) {
-                    tail[0][1] = mid.pop()[1] + tail[0][1];
-                }
+
+        //rediff changed section
+        a = a.substring(headT[1], tailT[1]);
+        b = b.substring(headT[2], tailT[2]);
+        if (swapped) {
+            var t2 = b;
+            b = a,
+                a = t2;
+        }
+        var mid = func(a, b, false, swapped);
+
+        //merge adjacent equal chunks
+        if (head.length) {
+            if (mid.length && mid[0][0] == C.DIFF_EQUAL) {
+                head[head.length - 1][1] += mid.shift()[1];
             }
         }
-        var m = head.concat(mid).concat(tail);
-        return m;
+        if (tail.length) {
+            if (mid.length && mid[mid.length - 1][0] == C.DIFF_EQUAL) {
+                tail[0][1] = mid.pop()[1] + tail[0][1];
+            }
+        }
+
+        return head.concat(mid).concat(tail);
     }
 
     function getCharDiff(a, b, ignoreWhitespace, swap, rawDiffs) {
@@ -491,7 +484,7 @@
         for (var i = 0, p = diff.length; i < p; ++i) {
             var part = diff[i],
                 tp = part[0];
-            if (tp == DIFF_EQUAL) {
+            if (tp == C.DIFF_EQUAL) {
                 var startOff = (left.ch || right.ch) ? 1 : 0;
                 var cleanFromRight = right.line + startOff,
                     cleanFromLeft = left.line + startOff;
@@ -510,7 +503,7 @@
                     startLeft = cleanToLeft;
                 }
             } else {
-                moveOver(tp == DIFF_INSERT ? right : left, part[1]);
+                moveOver(tp == C.DIFF_INSERT ? right : left, part[1]);
             }
         }
         if (startRight <= right.line || startLeft <= left.line)
@@ -630,7 +623,14 @@
         }
         return opt;
     }
-
+    /*
+    deep? - boolean whether recurse
+    target? - object
+    src... - objects to extend from
+     If you provide only src, then target is this
+     ie a.extend = extend
+     a.extend(deep,src)
+    */
     function extend() {
         var options, name, src, copy, copyIsArray, clone, target = arguments[0] || {},
             i = 1,
@@ -743,7 +743,6 @@
     var EditSession = ace.require('ace/edit_session').EditSession;
     var Text = ace.require('ace/layer/text').Text;
     var Gutter = ace.require('ace/layer/gutter').Gutter;
-    var oop = ace.require("ace/lib/oop");
     var dom = ace.require("ace/lib/dom");
     var FoldLine = ace.require('ace/edit_session/fold_line').FoldLine;
     var Marker = ace.require('ace/layer/marker').Marker;
@@ -791,21 +790,13 @@
                     },
                     readOnly: true,
                     bindKey: "Ctrl-Shift-P"
-                }, //Makes the origin the edit
-                swapDiffs: {
+                },
+                swapDiffOrigin: {
                     name: "Swap diff origin",
-                    readOnly: true,
-                    exec: function(editor) {
-                        var right = acediff.sessions.right;
-                        var left = acediff.sessions.left;
-                        acediff.clear();
-                        if (right.lineWidgets && right.lineWidgets.some(Boolean)) throw 'Error';
-                        if (left.lineWidgets && left.lineWidgets.some(Boolean)) throw 'Error';
-                        acediff.setSession(null, true);
-                        acediff.setSession(null, false);
-                        acediff.setSession(left, true);
-                        acediff.setSession(right, false);
+                    exec: function(){
+                        acediff.swap();
                     },
+                    readOnly: true
                 }
             };
         var commands = acediff.$commands;
@@ -974,50 +965,6 @@
         delete virus["$hostHas" + attr];
     }
 
-    //Testing tools
-    //python assert
-    function test(cond, result) {
-        if (!cond) throw new Error(result);
-    }
-
-    function noop() {}
-
-    function time(func, name) {
-        return function() {
-            console.log(name);
-            console.time(name);
-            var res = func.apply(this, arguments);
-            console.timeEnd(name);
-            return res;
-        };
-    }
-    //python-like @decorate
-    function dec(func, after) {
-        return function() {
-            var result = func.apply(this, arguments);
-            var error = after.apply(this, spread(arguments, result));
-            return (error !== undefined) ? error : result;
-        };
-    }
-
-    //used to check if elements in an array are unique
-    function uniq(arr, map) {
-        for (var i = 0; i < arr.length; i++) {
-            for (var j = i + 1; j < arr.length; j++) {
-                if (map(arr[i]) == map(arr[j])) return false;
-            }
-        }
-        return true;
-    }
-
-    //python func(*a,b)
-    function spread(args, arg) {
-        var arg2 = [];
-        arg2.push.apply(arg2, args);
-        arg2.push(arg);
-        return arg2;
-    }
-
     function WIDGET(invert, type) {
         return (invert ? C.EDITOR_LEFT : C.EDITOR_RIGHT) + (type || "");
     }
@@ -1047,7 +994,7 @@
         }
     }
 
-    function DiffFoldMode(before, after) {
+    function InlineDiffFolding(before, after) {
         this.diffs = null;
         this.getFoldWidget = function(session, style, row) {
             var i = binarySearch(this.diffs, row, HOST);
@@ -1074,10 +1021,10 @@
             }
         };
         this.ctxBefore = before === 0 ? 0 : before || 1;
-        this.ctxAfter = before === 0 ? 0 : before || 1;
+        this.ctxAfter = after === 0 ? 0 : after || 1;
         this.getFoldWidgetRange = function(session, style, row) {
             var i = binarySearch(this.diffs, row, HOST);
-            var start, end;
+            var start, end,range;
             if (i < 0) {
                 var diff = this.diffs[ABOVE(i)];
                 start = (diff ? diff.leftEndLine : 0) + this.ctxAfter;
@@ -1085,7 +1032,13 @@
                 end = (diff ? diff.leftStartLine - 1 : session.getLength()) - this.ctxBefore;
                 if (end > start) {
                     if (row == start || style == "markbeginend" && row == end) {
-                        return new Range(start, 0, end, 0);
+                        range = new Range(start, 0, end, Infinity);
+                        range.placeholder = {
+                            type: 'comment',
+                            text: '  @@@ ' + (end - start + 1) + ' more line' + (end > start ? 's' : '') + " @@@"
+                        };
+                        range.placeholder.length = range.placeholder.text.length;
+                        return range;
                     }
                 }
                 end += this.ctxBefore;
@@ -1094,7 +1047,7 @@
                 end = this.diffs[i].leftEndLine - 1;
             }
             if (this.sub) {
-                var range = this.sub.getFoldWidgetRange(session, style, row);
+                range = this.sub.getFoldWidgetRange(session, style, row);
                 if (range) {
                     if (range.end.row >= end) {
                         range.end.row = end - 1;
@@ -1571,7 +1524,6 @@
             var _this = this.layer;
             _this.config = config;
             var session = _this.session;
-            var firstRow = config.firstRow;
             var lastRow = Math.min(config.lastRow + config.gutterOffset, // needed to compensate for hor scollbar
                 session.getLength() - 1);
             _this.oldLastRow = lastRow;
@@ -1721,9 +1673,9 @@
         ///////////
 
         this.foldModes = {
-            left: new DiffFoldMode(0, 0),
+            left: new InlineDiffFolding(2, 1),
             //not used by virus unless swapped
-            right: new DiffFoldMode(0, 0)
+            right: new InlineDiffFolding(2, 1)
         };
         if (this.options.left.session) {
             this.editor.setSession(this.options.left.session);
@@ -2014,7 +1966,6 @@
             var putFragmentsAbove = (this.swapped == this.options.removedFragmentsBelow);
             var currentClass = this.swapped ? this.options.classes.removed : this.options.classes.added;
             var otherClass = this.swapped ? this.options.classes.added : this.options.classes.removed;
-            var editor = this.editor;
 
             diffs.forEach(function(item) {
                 if (item.rightEndLine > item.rightStartLine) addLineWidget(this, this.current, putFragmentsAbove ? item.leftStartLine : item.leftEndLine, item.rightStartLine, item.rightEndLine, this.other);
@@ -2029,8 +1980,9 @@
                 this.scrollMargin.top = 0;
                 this.editor.renderer.updateScrollMargins();
             }
-            if (this.rawDiffs)
+            if (this.rawDiffs){
                 showInlineDiffs(this, C.EDITOR_LEFT, "other", this.rawDiffs);
+            }
         },
         goNextDiff: function(editor) {
             return goNearbyDiff(this, editor, 1);
@@ -2088,7 +2040,7 @@
         }
     };
     AceInlineDiff.diff = function(editor, value_or_session, value_or_options) {
-        var prop, isSession;
+        var isSession;
         value_or_session = value_or_session || "";
         var options;
         if (typeof value_or_session !== "string") {
@@ -2142,7 +2094,8 @@
             contentAdded: "acediff-content-added",
             added: "acediff-added",
             removed: "acediff-removed",
-            inline: "acediff-inline"
+            inlineAdded: "acediff-inline-added",
+            inlineRemoved: "acediff-inline-removed"
         }
     };
     return AceInlineDiff;

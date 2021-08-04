@@ -264,12 +264,12 @@ textarea {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif
 }
 
-ul:not(.browser-default) {
+ul{
     padding-left: 0;
     list-style-type: none
 }
 
-ul:not(.browser-default)>li {
+li {
     list-style-type: none
 }
 
@@ -692,10 +692,9 @@ small {
         bottom: 10px;
     }
     .virtual-keyboard-visible #toast-container{
-        top: 56px;
         right: 0;
         left: auto;
-        bottom: auto;
+        bottom: 60px;
     }
 }
 
@@ -750,6 +749,7 @@ small {
     margin-left: 3rem
 }
 
+.theme-dark .btn,
 .btn,
 .btn-large,
 .btn-small,
@@ -849,6 +849,7 @@ small {
 }
 
 .btn,
+.theme-dark .btn,
 .btn-large,
 .btn-small {
     text-decoration: none;
@@ -867,7 +868,7 @@ small {
     background-color: #2bbbad
 }
 
-.btn-floating {
+.theme-dark .btn-floating,.btn-floating {
     display: inline-block;
     color: #fff;
     position: relative;
@@ -933,7 +934,7 @@ button.btn-floating {
     border: none
 }
 
-.btn-flat {
+.theme-dark .btn-flat, .btn-flat {
     -webkit-box-shadow: none;
     box-shadow: none;
     background-color: transparent;
@@ -1279,22 +1280,20 @@ textarea.materialize-textarea {
     pointer-events: none
 }
 
-[type="checkbox"]+span:not(.lever) {
+.checkbox-filled-in {
     position: relative;
     padding-left: 35px;
     cursor: pointer;
     display: inline-block;
     height: 25px;
     line-height: 25px;
-    font-size: 1rem;
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
     user-select: none
 }
 
-[type="checkbox"]+span:not(.lever):before,
-[type="checkbox"]:not(.filled-in)+span:not(.lever):after {
+.checkbox-filled-in:before{
     content: '';
     position: absolute;
     top: 0;
@@ -1309,18 +1308,12 @@ textarea.materialize-textarea {
     transition: .2s
 }
 
-[type="checkbox"]:not(.filled-in)+span:not(.lever):after {
-    border: 0;
-    -webkit-transform: scale(0);
-    transform: scale(0)
-}
-
-[type="checkbox"]:not(:checked):disabled+span:not(.lever):before {
+:not(:checked):disabled+.checkbox-filled-in:before {
     border: none;
     background-color: rgba(0, 0, 0, 0.42)
 }
 
-[type="checkbox"].tabbed:focus+span:not(.lever):after {
+.tabbed:focus+.checkbox-filled-in:after {
     -webkit-transform: scale(1);
     transform: scale(1);
     border: 0;
@@ -1330,7 +1323,7 @@ textarea.materialize-textarea {
     background-color: rgba(0, 0, 0, 0.1)
 }
 
-[type="checkbox"]:checked+span:not(.lever):before {
+:checked+.checkbox-filled-in:before {
     top: -4px;
     left: -5px;
     width: 12px;
@@ -1347,12 +1340,12 @@ textarea.materialize-textarea {
     transform-origin: 100% 100%
 }
 
-[type="checkbox"]:checked:disabled+span:before {
+:checked:disabled+.checkbox-filled-in:before {
     border-right: 2px solid rgba(0, 0, 0, 0.42);
     border-bottom: 2px solid rgba(0, 0, 0, 0.42)
 }
 
-[type="checkbox"]:indeterminate+span:not(.lever):before {
+:indeterminate+.checkbox-filled-in:before {
     top: -11px;
     left: -12px;
     width: 10px;
@@ -1369,17 +1362,17 @@ textarea.materialize-textarea {
     transform-origin: 100% 100%
 }
 
-[type="checkbox"]:indeterminate:disabled+span:not(.lever):before {
+:indeterminate:disabled+.checkbox-filled-in:before {
     border-right: 2px solid rgba(0, 0, 0, 0.42);
     background-color: transparent
 }
 
-[type="checkbox"].filled-in+span:not(.lever):after {
+.checkbox-filled-in:after {
     border-radius: 2px
 }
 
-[type="checkbox"].filled-in+span:not(.lever):before,
-[type="checkbox"].filled-in+span:not(.lever):after {
+.checkbox-filled-in:before,
+.checkbox-filled-in:after {
     content: '';
     left: 0;
     position: absolute;
@@ -1388,7 +1381,7 @@ textarea.materialize-textarea {
     z-index: 1
 }
 
-[type="checkbox"].filled-in:not(:checked)+span:not(.lever):before {
+:not(:checked)+.checkbox-filled-in:before {
     width: 0;
     height: 0;
     border: 3px solid transparent;
@@ -1400,7 +1393,7 @@ textarea.materialize-textarea {
     transform-origin: 100% 100%
 }
 
-[type="checkbox"].filled-in:not(:checked)+span:not(.lever):after {
+:not(:checked)+.checkbox-filled-in:after {
     height: 20px;
     width: 20px;
     background-color: transparent;
@@ -1409,7 +1402,7 @@ textarea.materialize-textarea {
     z-index: 0
 }
 
-[type="checkbox"].filled-in:checked+span:not(.lever):before {
+:checked+.checkbox-filled-in:before {
     top: 2px;
     left: 1px;
     width: 8px;
@@ -1424,7 +1417,7 @@ textarea.materialize-textarea {
     transform-origin: 100% 100%
 }
 
-[type="checkbox"].filled-in:checked+span:not(.lever):after {
+:checked+.checkbox-filled-in:after {
     top: 2px;
     width: 20px;
     height: 20px;
@@ -1433,33 +1426,33 @@ textarea.materialize-textarea {
     z-index: 0
 }
 
-[type="checkbox"].filled-in.tabbed:focus+span:not(.lever):after {
+.tabbed:focus+.checkbox-filled-in:after {
     border-radius: 2px;
     border-color: #5a5a5a;
     background-color: rgba(0, 0, 0, 0.1)
 }
 
-[type="checkbox"].filled-in.tabbed:checked:focus+span:not(.lever):after {
+.tabbed:checked:focus+.checkbox-filled-in:after {
     border-radius: 2px;
     background-color: #2196f3;
     border-color: #2196f3
 }
 
-[type="checkbox"].filled-in:disabled:not(:checked)+span:not(.lever):before {
+:disabled:not(:checked)+.checkbox-filled-in:before {
     background-color: transparent;
     border: 2px solid transparent
 }
 
-[type="checkbox"].filled-in:disabled:not(:checked)+span:not(.lever):after {
+:disabled:not(:checked)+.checkbox-filled-in:after {
     border-color: transparent;
     background-color: #949494
 }
 
-[type="checkbox"].filled-in:disabled:checked+span:not(.lever):before {
+:disabled:checked+.checkbox-filled-in:before {
     background-color: transparent
 }
 
-[type="checkbox"].filled-in:disabled:checked+span:not(.lever):after {
+:disabled:checked+.checkbox-filled-in:after {
     background-color: #949494;
     border-color: #949494
 }

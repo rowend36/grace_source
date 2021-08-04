@@ -1,6 +1,542 @@
-ace.define("ace/ext/menu_tools/overlay_page",[],function(e,t,n){"use strict";var r=e("../../lib/dom"),i="#ace_settingsmenu, #kbshortcutmenu {background-color: #F7F7F7;color: black;box-shadow: -5px 4px 5px rgba(126, 126, 126, 0.55);padding: 1em 0.5em 2em 1em;overflow: auto;position: absolute;margin: 0;bottom: 0;right: 0;top: 0;z-index: 9991;cursor: default;}.ace_dark #ace_settingsmenu, .ace_dark #kbshortcutmenu {box-shadow: -20px 10px 25px rgba(126, 126, 126, 0.25);background-color: rgba(255, 255, 255, 0.6);color: black;}.ace_optionsMenuEntry:hover {background-color: rgba(100, 100, 100, 0.1);transition: all 0.3s}.ace_closeButton {background: rgba(245, 146, 146, 0.5);border: 1px solid #F48A8A;border-radius: 50%;padding: 7px;position: absolute;right: -8px;top: -8px;z-index: 100000;}.ace_closeButton{background: rgba(245, 146, 146, 0.9);}.ace_optionsMenuKey {color: darkslateblue;font-weight: bold;}.ace_optionsMenuCommand {color: darkcyan;font-weight: normal;}.ace_optionsMenuEntry input, .ace_optionsMenuEntry button {vertical-align: middle;}.ace_optionsMenuEntry button[ace_selected_button=true] {background: #e7e7e7;box-shadow: 1px 0px 2px 0px #adadad inset;border-color: #adadad;}.ace_optionsMenuEntry button {background: white;border: 1px solid lightgray;margin: 0px;}.ace_optionsMenuEntry button:hover{background: #f0f0f0;}";r.importCssString(i),n.exports.overlayPage=function(t,n,r){function o(e){e.keyCode===27&&u()}function u(){if(!i)return;document.removeEventListener("keydown",o),i.parentNode.removeChild(i),t&&t.focus(),i=null,r&&r()}function a(e){s=e,e&&(i.style.pointerEvents="none",n.style.pointerEvents="auto")}var i=document.createElement("div"),s=!1;return i.style.cssText="margin: 0; padding: 0; position: fixed; top:0; bottom:0; left:0; right:0;z-index: 300; "+(t?"background-color: rgba(0, 0, 0, 0.3);":""),i.addEventListener("click",function(e){s||u()}),document.addEventListener("keydown",o),n.addEventListener("click",function(e){e.stopPropagation()}),i.appendChild(n),document.body.appendChild(i),t&&t.blur(),{close:u,setIgnoreFocusOut:a}}}),ace.define("ace/ext/options",[],function(e,t,n){"use strict";var r=e("./menu_tools/overlay_page").overlayPage,i=e("../lib/dom"),s=e("../lib/oop"),o=e("../config"),u=e("../lib/event_emitter").EventEmitter,a=i.buildDom,f=e("./modelist"),l=e("./themelist"),c={Bright:[],Dark:[]};l.themes.forEach(function(e){c[e.isDark?"Dark":"Bright"].push({caption:e.caption,value:e.theme})});var h=f.modes.map(function(e){return{caption:e.caption,value:e.mode}}),p={Session:{Mode:{path:"mode",type:"select",items:h}},General:{Keybinding:{type:"buttonBar",path:"keyboardHandler",items:[{caption:"Ace",value:null},{caption:"Vim",value:"ace/keyboard/vim"},{caption:"Emacs",value:"ace/keyboard/emacs"},{caption:"Sublime",value:"ace/keyboard/sublime"},{caption:"VSCode",value:"ace/keyboard/vscode"}]},"Soft Wrap":{type:"buttonBar",path:"wrap",items:[{caption:"Off",value:"off"},{caption:"View",value:"free"},{caption:"margin",value:"printMargin"},{caption:"40",value:"40"}]},Folding:{path:"foldStyle",items:[{caption:"Manual",value:"manual"},{caption:"Mark begin",value:"markbegin"},{caption:"Mark begin and end",value:"markbeginend"}]},"Soft Tabs":[{path:"useSoftTabs"},{ariaLabel:"Tab Size",path:"tabSize",type:"number",values:[2,3,4,8,16]}],Overscroll:{type:"buttonBar",path:"scrollPastEnd",items:[{caption:"None",value:0},{caption:"Half",value:.5},{caption:"Full",value:1}]}},Interaction:{"Atomic soft tabs":{path:"navigateWithinSoftTabs"},"Live Autocompletion":{path:"enableLiveAutocompletion"},"Enable Behaviours":{path:"behavioursEnabled"},"Wrap with Quotes":{path:"wrapBehaviousEnabled"},"Full Line Selection":{type:"checkbox",values:"text|line",path:"selectionStyle"},"Indented Soft Wrap":{path:"indentedSoftWrap"},"Elastic Tabstops":{path:"useElasticTabstops"},"Incremental Search":{path:"useIncrementalSearch"},"Copy without selection":{path:"copyWithEmptySelection"}},Appearance:{Theme:{path:"theme",type:"select",items:c},"Font Size":{path:"fontSize",type:"number",defaultValue:12,defaults:[{caption:"12px",value:12},{caption:"18px",value:18},{caption:"24px",value:24}]},"Cursor Style":{path:"cursorStyle",items:[{caption:"Ace",value:"ace"},{caption:"Slim",value:"slim"},{caption:"Smooth",value:"smooth"},{caption:"Smooth And Slim",value:"smooth slim"},{caption:"Wide",value:"wide"}]},"Highlight Active Line":{path:"highlightActiveLine"},"Highlight selected word":{path:"highlightSelectedWord"},"Show Invisibles":{path:"showInvisibles"},"Show Indent Guides":{path:"displayIndentGuides"},"Persistent HScrollbar":{path:"hScrollBarAlwaysVisible"},"Persistent VScrollbar":{path:"vScrollBarAlwaysVisible"},"Animate scrolling":{path:"animatedScroll"},"Show Gutter":{path:"showGutter"},"Show Line Numbers":{path:"showLineNumbers"},"Relative Line Numbers":{path:"relativeLineNumbers"},"Fixed Gutter Width":{path:"fixedWidthGutter"},"Show Print Margin":[{path:"showPrintMargin"},{ariaLabel:"Print Margin",type:"number",path:"printMarginColumn"}],"Fade Fold Widgets":{path:"fadeFoldWidgets"}},Advanced:{"Use textarea for IME":{path:"useTextareaForIME"},"Merge Undo Deltas":{path:"mergeUndoDeltas",items:[{caption:"Always",value:"always"},{caption:"Never",value:"false"},{caption:"Timed",value:"true"}]}}},d=function(e,t){this.container=t||document.createElement("div"),this.groups=[],this.options={},this.selected="Session",e&&this.setEditor(e)};(function(){s.implement(this,u),this.setEditor=function(e){this.editor=e},this.add=function(e){for(var t in e)p[t]||(p[t]={}),s.mixin(p[t],e[t])},this.render=function(){if(!this.editor)return!1;this.container.innerHTML="",a(["ul",{id:"controls",role:"presentation"},Object.keys(p).map(function(e){return this.renderOptionGroup(p[e],e)},this),["li",{style:"padding:10px;text-align:right"},"version "+o.version]],this.container);var e=this.container.getElementsByTagName("li").namedItem(this.selected);return e&&e.classList.remove("closed"),!0},this.renderOptionGroupHeader=function(e){return["h6",{"class":"header",id:e,onclick:this.unfoldGroup()},e]},this.unfoldGroup=function(){var e=this.container.getElementsByTagName("li"),t=this.container,n=this;return function(r){var i=r.target.parentElement;i.classList.contains("closed")?(i.classList.remove("closed"),n.selected=i.getAttribute("id")):(n.selected=null,i.classList.add("closed"));for(var s=0;s<e.length;s++)e[s]!=i&&e[s].classList.add("closed");t.scrollTop=Math.min(i.offsetTop-e[0].offsetTop,t.scrollTop)}},this.renderOptionGroup=function(e,t){var n=Object.keys(e).map(function(t,n){var r=e[t];return r.position||(r.position=n/1e4),r.label||(r.label=t),r}).sort(function(e,t){return e.position-t.position}).map(function(e){return this.renderOption(e.label,e)},this);return["li",{id:t,role:"presentation","class":"closed"},[this.renderOptionGroupHeader(t),["table",null,n]]]},this.renderOptionControl=function(e,t){var n=this;if(Array.isArray(t))return t.map(function(t){return n.renderOptionControl(e,t)});var r,i=n.getOption(t);t.values&&t.type!="checkbox"&&(typeof t.values=="string"&&(t.values=t.values.split("|")),t.items=t.values.map(function(e){return{value:e,name:e}}));if(t.type=="buttonBar")r=["div",{"class":"buttonBar"},t.items.map(function(e){return["span",{value:e.value,ace_selected_button:i==e.value,"aria-pressed":i==e.value,onclick:function(){n.setOption(t,e.value);var r=this.parentNode.querySelectorAll("[ace_selected_button]");for(var i=0;i<r.length;i++)r[i].removeAttribute("ace_selected_button"),r[i].setAttribute("aria-pressed",!1);this.setAttribute("ace_selected_button",!0),this.setAttribute("aria-pressed",!0)}},e.desc||e.caption||e.name]})];else if(t.type=="number")r=["input",{type:"number",value:i||t.defaultValue,style:"width:3em",oninput:function(){n.setOption(t,parseInt(this.value))}}],t.ariaLabel&&(r[1]["aria-label"]=t.ariaLabel),t.defaults&&(r=[r,[["select",{"class":"ace_optionNumber",value:i||t.defaultValue,onchange:function(){var e=this.parentNode.firstChild;e.value=this.value,e.oninput()}},t.defaults.map(function(e){return["option",{value:e.value},e.caption]})]]]);else if(t.items){var s=function(e){return e.map(function(e){return["option",{value:e.value||e.name},e.desc||e.caption||e.name]})},o=Array.isArray(t.items)?s(t.items):Object.keys(t.items).map(function(e){return["optgroup",{label:e},s(t.items[e])]});r=["select",{id:e,value:i,onchange:function(){n.setOption(t,this.value)}},o]}else typeof t.values=="string"&&(t.values=t.values.split("|")),t.values&&(i=i==t.values[1]),r=["input",{type:"checkbox",id:e,checked:i||null,onchange:function(){var e=this.checked;t.values&&(e=t.values[e?1:0]),n.setOption(t,e)}}],t.type=="checkedNumber"&&(r=[r,[]]);return r},this.renderOption=function(e,t){if(t.path&&!this.editor.$options[t.path]&&!t.onchange)return;this.options[t.path]=t;var n="-"+t.path,r=this.renderOptionControl(n,t);return["tr",{"class":"ace_optionsMenuEntry"},["td",["span",{"for":n},e]],["td",r]]},this.setOption=function(e,t){typeof e=="string"&&(e=this.options[e]),t=="false"&&(t=!1),t=="true"&&(t=!0),t=="null"&&(t=null),t=="undefined"&&(t=undefined),typeof t=="string"&&parseFloat(t).toString()==t&&(t=parseFloat(t)),e.onchange?e.onchange(t,this.editor):e.path&&this.editor.setOption(e.path,t),this._signal("setOption",{name:e.path,value:t})},this.getOption=function(e){return e.getValue?e.getValue(this.editor):this.editor.getOption(e.path)}}).call(d.prototype),t.OptionPanel=d}),ace.define("ace/ext/settings_menu",[],function(e,t,n){"use strict";function s(e){if(!document.getElementById("ace_settingsmenu")){var t=new r(e);t.render(),t.container.id="ace_settingsmenu",i(e,t.container),t.container.querySelector("select,input,button,checkbox").focus()}}var r=e("./options").OptionPanel,i=e("./menu_tools/overlay_page").overlayPage;n.exports.init=function(){var t=e("../editor").Editor;t.prototype.showSettingsMenu=function(){s(this)}}});
+define("ace/ext/menu_tools/overlay_page",["require","exports","module","ace/lib/dom"], function(require, exports, module) {
+'use strict';
+var dom = require("../../lib/dom");
+var cssText = "#ace_settingsmenu, #kbshortcutmenu {\
+background-color: #F7F7F7;\
+color: black;\
+box-shadow: -5px 4px 5px rgba(126, 126, 126, 0.55);\
+padding: 1em 0.5em 2em 1em;\
+overflow: auto;\
+position: absolute;\
+margin: 0;\
+bottom: 0;\
+right: 0;\
+top: 0;\
+z-index: 9991;\
+cursor: default;\
+}\
+.ace_dark #ace_settingsmenu, .ace_dark #kbshortcutmenu {\
+box-shadow: -20px 10px 25px rgba(126, 126, 126, 0.25);\
+background-color: rgba(255, 255, 255, 0.6);\
+color: black;\
+}\
+.ace_optionsMenuEntry:hover {\
+background-color: rgba(100, 100, 100, 0.1);\
+transition: all 0.3s\
+}\
+.ace_closeButton {\
+background: rgba(245, 146, 146, 0.5);\
+border: 1px solid #F48A8A;\
+border-radius: 50%;\
+padding: 7px;\
+position: absolute;\
+right: -8px;\
+top: -8px;\
+z-index: 100000;\
+}\
+.ace_closeButton{\
+background: rgba(245, 146, 146, 0.9);\
+}\
+.ace_optionsMenuKey {\
+color: darkslateblue;\
+font-weight: bold;\
+}\
+.ace_optionsMenuCommand {\
+color: darkcyan;\
+font-weight: normal;\
+}\
+.ace_optionsMenuEntry input, .ace_optionsMenuEntry button {\
+vertical-align: middle;\
+}\
+.ace_optionsMenuEntry button[ace_selected_button=true] {\
+background: #e7e7e7;\
+box-shadow: 1px 0px 2px 0px #adadad inset;\
+border-color: #adadad;\
+}\
+.ace_optionsMenuEntry button {\
+background: white;\
+border: 1px solid lightgray;\
+margin: 0px;\
+}\
+.ace_optionsMenuEntry button:hover{\
+background: #f0f0f0;\
+}";
+dom.importCssString(cssText);
+
+module.exports.overlayPage = function overlayPage(editor, contentElement, callback) {
+    var closer = document.createElement('div');
+    var ignoreFocusOut = false;
+
+    function documentEscListener(e) {
+        if (e.keyCode === 27) {
+            close();
+        }
+    }
+
+    function close() {
+        if (!closer) return;
+        document.removeEventListener('keydown', documentEscListener);
+        closer.parentNode.removeChild(closer);
+        if (editor) {
+            editor.focus();
+        }
+        closer = null;
+        callback && callback();
+    }
+    function setIgnoreFocusOut(ignore) {
+        ignoreFocusOut = ignore;
+        if (ignore) {
+            closer.style.pointerEvents = "none";
+            contentElement.style.pointerEvents = "auto";
+        }
+    }
+
+    closer.style.cssText = 'margin: 0; padding: 0; ' +
+        'position: fixed; top:0; bottom:0; left:0; right:0;' +
+        'z-index: 300; ' +
+        (editor ? 'background-color: rgba(0, 0, 0, 0.3);' : '');
+    closer.addEventListener('click', function(e) {
+        if (!ignoreFocusOut) {
+            close();
+        }
+    });
+    document.addEventListener('keydown', documentEscListener);
+
+    contentElement.addEventListener('click', function (e) {
+        e.stopPropagation();
+    });
+
+    closer.appendChild(contentElement);
+    document.body.appendChild(closer);
+    if (editor) {
+        editor.blur();
+    }
+    return {
+        close: close,
+        setIgnoreFocusOut: setIgnoreFocusOut
+    };
+};
+
+});
+
+define("ace/ext/options",["require","exports","module","ace/ext/menu_tools/overlay_page","ace/lib/dom","ace/lib/oop","ace/config","ace/lib/event_emitter","ace/ext/modelist","ace/ext/themelist"], function(require, exports, module) {
+"use strict";
+var overlayPage = require('./menu_tools/overlay_page').overlayPage;
+
+ 
+var dom = require("../lib/dom");
+var oop = require("../lib/oop");
+var config = require("../config");
+var EventEmitter = require("../lib/event_emitter").EventEmitter;
+var buildDom = dom.buildDom;
+
+var modelist = require("./modelist");
+var themelist = require("./themelist");
+
+var themes = { Bright: [], Dark: [] };
+themelist.themes.forEach(function(x) {
+    themes[x.isDark ? "Dark" : "Bright"].push({ caption: x.caption, value: x.theme });
+});
+
+var modes = modelist.modes.map(function(x){ 
+    return { caption: x.caption, value: x.mode }; 
+});
+
+
+var optionGroups = {
+    "Session":{
+        Mode: {
+            path: "mode",
+            type: "select",
+            items: modes
+        }
+    },
+    General: {
+        "Keybinding": {
+            type: "buttonBar",
+            path: "keyboardHandler",
+            items: [
+                { caption : "Ace", value : null },
+                { caption : "Vim", value : "ace/keyboard/vim" },
+                { caption : "Emacs", value : "ace/keyboard/emacs" },
+                { caption : "Sublime", value : "ace/keyboard/sublime" },
+                { caption : "VSCode", value : "ace/keyboard/vscode" }
+            ]
+        },
+        "Soft Wrap": {
+            type: "buttonBar",
+            path: "wrap",
+            items: [
+               { caption : "Off",  value : "off" },
+               { caption : "View", value : "free" },
+               { caption : "margin", value : "printMargin" },
+               { caption : "40",   value : "40" }
+            ]
+        },
+        "Folding": {
+            path: "foldStyle",
+            items: [
+                { caption : "Manual", value : "manual" },
+                { caption : "Mark begin", value : "markbegin" },
+                { caption : "Mark begin and end", value : "markbeginend" }
+            ]
+        },
+        "Soft Tabs": [{
+            path: "useSoftTabs"
+        }, {
+            ariaLabel: "Tab Size",
+            path: "tabSize",
+            type: "number",
+            values: [2, 3, 4, 8, 16]
+        }],
+        "Overscroll": {
+            type: "buttonBar",
+            path: "scrollPastEnd",
+            items: [
+               { caption : "None",  value : 0 },
+               { caption : "Half",   value : 0.5 },
+               { caption : "Full",   value : 1 }
+            ]
+        }
+    },
+    Interaction: {
+        "Atomic soft tabs": {
+            path: "navigateWithinSoftTabs"
+        },
+        "Live Autocompletion": {
+            path: "enableLiveAutocompletion"
+        },
+        "Enable Behaviours": {
+            path: "behavioursEnabled"
+        },
+        "Wrap with Quotes": {
+            path: "wrapBehaviousEnabled"
+        },
+        "Full Line Selection": {
+            type: "checkbox",
+            values: "text|line",
+            path: "selectionStyle"
+        },
+        "Indented Soft Wrap": {
+            path: "indentedSoftWrap"
+        },
+        "Elastic Tabstops": {
+            path: "useElasticTabstops"
+        },
+        "Incremental Search": {
+            path: "useIncrementalSearch"
+        },
+        "Copy without selection": {
+            path: "copyWithEmptySelection"
+        }
+    },
+    Appearance:{
+        "Theme": {
+            path: "theme",
+            type: "select",
+            items: themes
+        },
+        "Font Size": {
+            path: "fontSize",
+            type: "number",
+            defaultValue: 12,
+            defaults: [
+                {caption: "12px", value: 12},
+                {caption: "18px", value: 18},
+                {caption: "24px", value: 24}
+            ]
+        },
+        "Cursor Style": {
+            path: "cursorStyle",
+            items: [
+               { caption : "Ace",    value : "ace" },
+               { caption : "Slim",   value : "slim" },
+               { caption : "Smooth", value : "smooth" },
+               { caption : "Smooth And Slim", value : "smooth slim" },
+               { caption : "Wide",   value : "wide" }
+            ]
+        },
+        "Highlight Active Line": {
+            path: "highlightActiveLine"
+        },
+        
+        "Highlight selected word": {
+            path: "highlightSelectedWord"
+        },
+        "Show Invisibles": {
+            path: "showInvisibles"
+        },
+        "Show Indent Guides": {
+            path: "displayIndentGuides"
+        },
+        "Persistent HScrollbar": {
+            path: "hScrollBarAlwaysVisible"
+        },
+        "Persistent VScrollbar": {
+            path: "vScrollBarAlwaysVisible"
+        },
+        "Animate scrolling": {
+            path: "animatedScroll"
+        },
+        "Show Gutter": {
+            path: "showGutter"
+        },
+        "Show Line Numbers": {
+            path: "showLineNumbers"
+        },
+        "Relative Line Numbers": {
+            path: "relativeLineNumbers"
+        },
+        "Fixed Gutter Width": {
+            path: "fixedWidthGutter"
+        },
+        "Show Print Margin": [{
+            path: "showPrintMargin"
+        }, {
+            ariaLabel: "Print Margin",
+            type: "number",
+            path: "printMarginColumn"
+        }],
+        "Fade Fold Widgets": {
+            path: "fadeFoldWidgets"
+        }
+    },
+    Advanced:{
+        "Use textarea for IME": {
+            path: "useTextareaForIME"
+        },
+        "Merge Undo Deltas": {
+            path: "mergeUndoDeltas",
+            items: [
+               { caption : "Always",  value : "always" },
+               { caption : "Never",   value : "false" },
+               { caption : "Timed",   value : "true" }
+            ]
+        }
+    }
+};
+
+
+var OptionPanel = function(editor,element) {
+    this.container = element || document.createElement("div");
+    this.groups = [];
+    this.options = {};
+    this.selected = "Session";
+    editor && this.setEditor(editor);
+};
+
+(function() {
+    this.optionGroups = optionGroups;
+    oop.implement(this, EventEmitter);
+    this.setEditor = function(editor) {
+        this.editor = editor;
+    };
+    this.add = function(config) {
+        for(var i in config){
+            if (!optionGroups[i]) 
+                optionGroups[i] = {};
+            oop.mixin(optionGroups[i], config[i]);
+        }
+    };
+    
+    this.render = function() {
+        if(!this.editor)return false;
+        this.container.innerHTML = "";
+        buildDom(["ul", {id: "controls",role:"presentation"}, Object.keys(optionGroups).map(function(key){
+            return this.renderOptionGroup(optionGroups[key],key);
+        },this),  ["li",{ style: "padding:10px;text-align:right" }, "version " + config.version]
+        ], this.container);
+        var selected = this.container.getElementsByTagName("li").namedItem(this.selected);
+        if(selected)selected.classList.remove("closed");
+        return true;
+    };
+    this.renderOptionGroupHeader = function(name){
+        return ["h6",{class:"header","id":name ,"tabindex":0,role:"toggle",onclick:this.unfoldGroup()},name];
+    };
+    this.unfoldGroup = function(){
+        var c = this.container.getElementsByTagName("li");
+        var f = this.container;
+        var g = this;
+        return function(e){
+            var d = e.target.parentElement;
+            if(d.classList.contains("closed")){
+                d.classList.remove("closed");
+                g.selected = d.getAttribute("id");
+            }
+            else{
+                g.selected = null;
+                d.classList.add("closed");
+            }
+            for (var i=0;i< c.length;i++)
+                if(c[i]!=d)c[i].classList.add("closed");
+            f.scrollTop = Math.min(d.offsetTop-c[0].offsetTop,f.scrollTop);
+        };
+    };
+    this.renderOptionGroup = function(group,name) {
+        var entries = Object.keys(group).map(function(key, i) {
+            var item = group[key];
+            if (!item.position)
+                item.position = i / 10000;
+            if (!item.label)
+                item.label = key;
+            return item;
+        }).sort(function(a, b) {
+            return a.position - b.position;
+        }).map(function(item) {
+            return this.renderOption(item.label, item);
+        }, this);
+        return ["li",{id: name,role:"presentation",class:"closed"},[this.renderOptionGroupHeader(name),["table",null,entries]]];
+    };
+    
+    this.renderOptionControl = function(key, option) {
+        var self = this;
+        if (Array.isArray(option)) {
+            return option.map(function(x) {
+                return self.renderOptionControl(key, x);
+            });
+        }
+        var control;
+        
+        var value = self.getOption(option);
+        
+        if (option.values && option.type != "checkbox") {
+            if (typeof option.values == "string")
+                option.values = option.values.split("|");
+            option.items = option.values.map(function(v) {
+                return { value: v, name: v };
+            });
+        }
+        
+        if (option.type == "buttonBar") {
+            control = ["div",{ class: "buttonBar" }, option.items.map(function(item) {
+                return ["span", { 
+                    value: item.value, 
+                    ace_selected_button: value == item.value,
+                    "aria-pressed": value == item.value,
+                    "tabindex": 0,
+                    "role": "control",
+                    onclick: function() {
+                        self.setOption(option, item.value);
+                        var nodes = this.parentNode.querySelectorAll("[ace_selected_button]");
+                        for (var i = 0; i < nodes.length; i++) {
+                            nodes[i].removeAttribute("ace_selected_button");
+                            nodes[i].setAttribute("aria-pressed",false);
+                        }
+                        this.setAttribute("ace_selected_button", true);
+                        this.setAttribute("aria-pressed", true);
+                    } 
+                }, item.desc || item.caption || item.name];
+            })];
+        } else if (option.type == "number") {
+            control = ["input", {type: "number", value: value || option.defaultValue, style:"width:3em", oninput: function() {
+                self.setOption(option, parseInt(this.value));
+            }}];
+            if(option.ariaLabel){
+                control[1]["aria-label"]=option.ariaLabel;
+            }
+            if (option.defaults) {
+                control = [control,[
+                    ["select", { class:"ace_optionNumber",value: value || option.defaultValue,onchange: function() {
+                        var input = this.parentNode.firstChild;
+                        input.value = this.value;
+                        input.oninput();
+                    }
+            }, option.defaults.map(function(item) {
+                    return ["option",{ value: item.value }, item.caption];
+                })]]];
+            }
+        } else if (option.items) {
+            var buildItems = function(items) {
+                return items.map(function(item) {
+                    return ["option", { value: item.value || item.name }, item.desc || item.caption || item.name];
+                });
+            };
+            
+            var items = Array.isArray(option.items) 
+                ? buildItems(option.items)
+                : Object.keys(option.items).map(function(key) {
+                    return ["optgroup", {"label": key}, buildItems(option.items[key])];
+                });
+            control = ["select", { id: key, value: value, onchange: function() {
+                self.setOption(option, this.value);
+            } }, items];
+        } else {
+            if (typeof option.values == "string")
+                option.values = option.values.split("|");
+            if (option.values) value = value == option.values[1];
+            control = ["input", { type: "checkbox", id: key, checked: value || null, onchange: function() {
+                var value = this.checked;
+                if (option.values) value = option.values[value ? 1 : 0];
+                self.setOption(option, value);
+            }}];
+            if (option.type == "checkedNumber") {
+                control = [control, []];
+            }
+        }
+        return control;
+    };
+    
+    this.renderOption = function(key, option) {
+        if (option.path && !this.editor.$options[option.path] && !option.onchange)
+            return;
+        this.options[option.path] = option;
+        var safeKey = "-" + option.path;
+        var control = this.renderOptionControl(safeKey, option);
+        return ["tr", {class: "ace_optionsMenuEntry"}, ["td",
+            ["span", {for: safeKey}, key]
+        ], ["td", control]];
+    };
+    
+    this.setOption = function(option, value) {
+        if (typeof option == "string")
+            option = this.options[option];
+        if (value == "false") value = false;
+        if (value == "true") value = true;
+        if (value == "null") value = null;
+        if (value == "undefined") value = undefined;
+        if (typeof value == "string" && parseFloat(value).toString() == value)
+            value = parseFloat(value);
+        if (option.onchange)
+            option.onchange(value,this.editor);
+        else if (option.path)
+            this.editor.setOption(option.path, value);
+        this._signal("setOption", {name: option.path, value: value});
+    };
+    
+    this.getOption = function(option) {
+        if (option.getValue)
+            return option.getValue(this.editor);
+        return this.editor.getOption(option.path);
+    };
+    
+}).call(OptionPanel.prototype);
+
+exports.OptionPanel = OptionPanel;
+
+});
+
+define("ace/ext/settings_menu",["require","exports","module","ace/ext/options","ace/ext/menu_tools/overlay_page","ace/editor"], function(require, exports, module) {
+"use strict";
+var OptionPanel = require("./options").OptionPanel;
+var overlayPage = require('./menu_tools/overlay_page').overlayPage;
+function showSettingsMenu(editor) {
+    if (!document.getElementById('ace_settingsmenu')) {
+        var options = new OptionPanel(editor);
+        options.render();
+        options.container.id = "ace_settingsmenu";
+        overlayPage(editor, options.container);
+        options.container.querySelector("select,input,button,checkbox").focus();
+    }
+}
+module.exports.init = function() {
+    var Editor = require("../editor").Editor;
+    Editor.prototype.showSettingsMenu = function() {
+        showSettingsMenu(this);
+    };
+};
+});
                 (function() {
-                    ace.require(["ace/ext/settings_menu"], function(m) {
+                    window.require(["ace/ext/settings_menu"], function(m) {
                         if (typeof module == "object" && typeof exports == "object" && module) {
                             module.exports = m;
                         }

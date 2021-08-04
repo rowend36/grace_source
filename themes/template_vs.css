@@ -1,76 +1,126 @@
-.theme-vs {
-    color: $foreground|#ffffff;
+.theme-vs .sidenav {
+    color: $++++foreground|++sideBar.foreground;
 }
-
+.theme-dark.theme-vs .sidenav{
+    color: $foreground|sideBar.foreground;
+}
+.theme-vs .modal,
+.theme-vs .ace_search {
+    background: $dialog.background|sideBar.background;
+    color: $dialog.foreground|foreground;
+}
+.theme-vs input:not(:focus):not([type]),
+.theme-vs input[type='search']:not(:focus),
+.theme-vs input[type='text']:not(:focus),
+.theme-vs select:not(:focus),
+.theme-vs input[type='number']:not(:focus),
+.theme-vs input[type='password']:not(:focus),
+.theme-vs input[type='url']:not(:focus) {
+    border: 1px solid $input.border;
+}
+.theme-vs .part{
+    background: $panel.background;
+    color: $panel.foreground;
+}
 .theme-vs .toolbar,
 .theme-vs .toolbar button {
-    background: $ACTIVITYBAR.BACKGROUND;
-    color: $ACTIVITYBAR.FOREGROUND;
-}
-
-.theme-vs .btn,
-.theme-vs .buttonBar span[ace_selected_button="true"] {
-    background: $button.background;
-    color: $button.foreground|#ffffff;
-}
-
-.theme-vs .btn:hover {
-    background: $button.hoverBackground|#777777;
-}
-
-.theme-vs .header {
-    background: $--panel.background|--sideBar.background;
-    border-bottom: 1px solid $panel.border|sideBar.foreground;
-}
-
-.theme-vs .modal,
-.theme-vs .dropdown-content,
-.theme-vs .ace_search {
-    background: $menu.background|activityBar.background;
-    color: $foreground;
-}
-
-.theme-vs .dropdown-content .material-icons {
-    color: $menu.foreground|activityBar.foreground;
-
-}
-
-.theme-vs .dropdown-content>li:hover {
-    background: $menu.selectionBackground;
-    color: $menu.selectionForeground;
-
+    background: $activityBar.background;
+    color: $activityBar.foreground;
 }
 
 .theme-vs .sidenav {
     background: $sideBar.background;
     border-color: $sideBar.border;
+    color: $++++foreground|++sideBar.foreground;
+}
+.theme-dark.theme-vs .sidenav{
     color: $foreground|sideBar.foreground;
 }
-
-.theme-vs label,
-.theme-vs .buttonBar span,
-.theme-vs .material-icons {
-    color: $sideBar.foreground|inherit;
-}
-
-.theme-vs .color-inactive,
-.theme-vs .ace_button{
-    opacity: 0.7;
-    color: $foreground|sideBar.foreground;
-}
-
 .theme-vs .header,
 .theme-vs .nav-main {
     background: $activityBar.background;
     color: $activityBar.foreground;
     border-color: $activityBar.foreground;
 }
-
-.theme-vs .sub-header {
-    background: $sideBarSectionHeader.background;
+.theme-vs .header{
+    background: $activityBar.background;
+    color: $activityBar.foreground;
+    border-bottom: 1px solid $activityBar.border;
+}
+.theme-vs .modal-header{
     color: $sideBarSectionHeader.foreground;
 }
+.theme-vs .ace_indent-guide {
+  border-right: 1px dashed $editorIndentGuide.background;
+}
 
+.theme-vs .project_view_panel,
+.theme-vs .sub-header{
+    color: $sideBarSectionHeader.foreground;
+    background: $sideBarSectionHeader.background;
+}
+.theme-vs .buttonBar span,
+.theme-vs .nav-breadcrumb{
+    background: $++activityBar.background;
+    color: $button.background;
+}
+.theme-vs.theme-dark .nav-breadcrumb{
+    background: $--activityBar.background;
+}
+.theme-vs .dropdown-content {
+    background: $menu.background|activityBar.background;
+}
+
+.theme-vs .dropdown-content>li a {
+    color: $foreground;
+}
+
+.theme-vs .dropdown-content .material-icons {
+    color: $menu.foreground;
+
+}
+.theme-vs .dropdown-content>li:hover {
+    background: $menu.selectionBackground;
+    color: $menu.selectionForeground;
+
+}
+
+.theme-vs .material-icons{
+    color: $icons.color|button.background;
+}
+.theme-vs .btn,
+.theme-vs .buttonBar span[ace_selected_button="true"] {
+    background: $button.background;
+    color: $button.foreground|#ffffff;
+}
+.theme-vs .ace_button:active,
+.theme-vs .ace_searchbtn:active,
+.theme-vs button:active {
+    background-color: $button.activeBackground;
+}
+
+.theme-vs .btn:hover {
+    background: $button.hoverBackground|#777777;
+}
+
+.theme-vs label,
+.theme-vs .buttonBar span {
+    color: $sideBar.foreground|inherit;
+}
+
+.theme-vs .color-inactive,
+.theme-vs .ace_button {
+    opacity: 0.75;
+    color: $foreground|sideBar.foreground;
+}
+
+/*.theme-vs .fileview{*/
+/*    color: $panel.foreground;*/
+/*    background: $panel.background|--sideBar.background;*/
+/*    border-bottom: 1px solid $panel.border|sideBar.foreground;*/
+/*}*/
+
+x
 .theme-vs .fileview-container>.fileview::-webkit-scrollbar,
 .theme-vs .editor>.ace_scrollbar::-webkit-scrollbar {
     background: $scrollbarSlider.background;
@@ -97,6 +147,7 @@
 
 .theme-vs #selector>.tab>.active {
     background: $tab.activeBackground;
+    color: $tab.activeForeground|tab.activeBorderTop;
 }
 
 .theme-vs .tab>a {
@@ -116,6 +167,7 @@
 }
 
 .theme-vs .border-inactive {
+    border-color: rgba(0,0,0,0.1);
     border-color: $contrastBorder;
 }
 
@@ -135,14 +187,20 @@
     background: $dropdownOverlay.background|tab.inactiveBackground;
 }
 
-.theme-vs #opendocs,
-.theme-vs #opendocs .file-item:not(.activeTab)>.material-icons {
+.theme-vs #opendocs {
+    border:none;
+    margin-bottom: 0;
+}
+
+.theme-vs #opendocs .file-item {
     background: $list.inactiveSelectionBackground;
     color: $list.inactiveSelectionForeground;
 }
 
-.theme-vs #opendocs>.activeTab,
-.theme-vs #opendocs>.activeTab .material-icons {
+.theme-vs #opendocs .file-item:not(.activeTab) .material-icons{
+    color: inherit;
+}
+.theme-vs #opendocs>.activeTab{
     background: $list.activeSelectionBackground;
     color: $list.activeSelectionForeground|foreground;
 }
@@ -172,7 +230,8 @@
     color: $input.placeholderForeground|#777777;
 }
 
-.theme-vs btn-flat {
+.theme-vs .btn-flat {
+    background: none;
     color: $textLink.foreground;
 }
 
@@ -181,21 +240,18 @@
 }
 
 .theme-vs input:not([type]),
-.theme-vs input[type="text"],
+.theme-vs input,
 .theme-vs select,
 .theme-vs .buttonBar,
-.theme-vs input[type="search"],
-.theme-vs input[type="number"] {
+.theme-vs input {
     background: $input.background;
     color: $input.foreground|++++foreground;
 }
 
 .theme-vs.theme-dark input:not([type]),
-.theme-vs.theme-dark input[type="text"],
 .theme-vs.theme-dark select,
 .theme-vs.theme-dark .buttonBar,
-.theme-vs.theme-dark input[type="search"],
-.theme-vs.theme-dark input[type="number"] {
+.theme-vs.theme-dark input {
     background: $input.background;
     color: $input.foreground|--foreground;
 }
@@ -204,27 +260,31 @@
 .theme-vs select,
 .theme-vs .ace_prompt_container .ace_focus:first-child,
 .theme-vs input:not([type]):focus:not([readonly]),
-.theme-vs input[type="text"]:focus:not([readonly]),
-.theme-vs input[type="search"]:focus:not([readonly]),
-.theme-vs input[type="number"]:focus:not([readonly]) {
-    border-color: $button.background;
+.theme-vs input:focus:not([readonly]) {
+    border-color: $input.activeBorder|button.background;
 }
 
-.theme-vs [type="checkbox"]:checked+span:not(.lever):before {
+.theme-vs :checked+.checkbox-filled-in:before {
     border-right-color: $button.foreground|#ffffff;
     border-bottom-color: $button.foreground|#ffffff;
 }
 
-.theme-vs [type="checkbox"]:checked+span:not(.lever):after {
+
+.theme-vs :not(:checked)+.checkbox-track:after,
+.theme-vs :not(:checked)+.checkbox-track:before{
+    background: $foreground|sideBar.foreground;
+}
+.theme-vs :checked+.checkbox-track:after,
+.theme-vs :checked+.checkbox-track:before,
+.theme-vs :checked+.checkbox-filled-in:after {
     background: $button.background;
     border-color: $button.background;
 }
-
-.theme-vs [type="checkbox"]:not(:checked)+span:not(.lever):after {
+.theme-vs :not(:checked)+.checkbox-filled-in:after {
     border-color: $-button.background;
 }
 
-.theme-vs.theme-dark [type="checkbox"]:not(:checked)+span:not(.lever):after {
+.theme-vs.theme-dark :not(:checked)+.checkbox-filled-in:after {
     border-color: $+button.background;
 }
 
@@ -261,6 +321,7 @@
 
 .theme-vs .ace_gutter {
     background: $editorGutter.background;
+    color: $editorGutter.foreground|foreground;
 }
 
 .theme-vs .error-text {
@@ -277,33 +338,29 @@
 .theme-vs .ace_marker-layer .ace_bracket {
     background: $editorBracketMatch.background;
 }
-.theme-vs .ace_marker-layer .ace_selection{
+
+.theme-vs .ace_marker-layer .ace_selection {
     background: $editor.selectionBackground|editor.selectionHighlightBackground;
 }
-.theme-vs .ace_marker-layer .ace_selected-word{
+
+.theme-vs .ace_marker-layer .ace_selected-word {
     background: $editor.wordHighlightBackground|editor.inactiveSelectionBackground;
 }
+
 .theme-vs .ace_bad_regex .ace_search_field:active,
 .theme-vs .ace_bad_regex input:not([type]):focus,
-.theme-vs .ace_bad_regex input[type="text"]:focus,
-.theme-vs .ace_bad_regex input[type="search"]:focus {
+.theme-vs .ace_bad_regex input:focus {
     border-color: $inputValidation.errorBorder;
     background: $inputValidation.errorBackground;
     color: $inputValidation.errorForeground;
 }
-/* unneeded 
-    "statusBar.debuggingBackground": "#b15a91",
-    "statusBar.noFolderBackground": "#011627",
-    "statusBarItem.activeBackground": "#03648a",
-    "statusBarItem.hoverBackground": "#03648a",
-    "inputValidation.infoBackground": "#219fd5",
-    "inputValidation.infoBorder": "#219fd5",
-    "inputValidation.warningBackground": "#f7ecb5",
-    "inputValidation.warningBorder": "#f7ecb5",
-    "inputValidation.warningForeground": "#000000",
-*/
-/*
-ugly
-#status-filename{
-    background:$statusBarItem.prominentBackground;
-} */
+
+.theme-vs .acediff-added {
+    background: $diffEditor.insertedTextBackground;
+    border: 1px solid $diffEditor.insertedTextBorder|transparent;
+}
+
+.theme-vs .acediff-removed {
+    background: $diffEditor.removedTextBackground;
+    border: 1px solid $diffEditor.removedTextBorder|transparent;
+}

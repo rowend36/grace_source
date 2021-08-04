@@ -121,7 +121,6 @@ _Define(function(global) {
                 this.deleteCheckpoint(toRemove[0].name);
             }
         }
-        this.checkpoints.push(checkpoint);
         this.stateID = checkpoint.name;
         this.session.once("change", function() {
             if (this.stateID == checkpoint.name) {
@@ -136,6 +135,9 @@ _Define(function(global) {
         var key = Docs.saveBlob(this.id, "cp-" + name, data,
         priority, { dataType: "checkpoint" });
         checkpoint.key = key;
+        if(key===false)return false;
+        
+        this.checkpoints.push(checkpoint);
         Docs.saveBlob(this.id, "checkpoints", this.checkpoints,
             USER_CHECKPOINT_PRIORITY);
         return checkpoint;

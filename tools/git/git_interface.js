@@ -2,17 +2,39 @@ _Define(function(global) {
   var args = {
     /*The ones we're still falling back to isogit for*/
     analyze: ["?force", "?onProgress"],
-    completeMerge: ["?href", "baseOid", "?base", "?message", "ourOid", "theirOid", "ours", "theirs", "author", "committer", "?signingKey", "tree"],
-    merge: ["theirs", "author", "name", "email", "dryRun", "fastForwardOnly", "onProgress"],
+    completeMerge: ["?href", "baseOid", "?base", "?message", "ourOid", "theirOid", "ours", "theirs", "author",
+      "committer", "?signingKey", "tree"
+    ],
+    merge: ["theirs", "?ours", "author", "?committer", "?name", "?email", "?dryRun", "?fastForwardOnly",
+      "onProgress"
+    ],
     setDir: ["dir", "gitdir"],
     init: [],
+    pull: ["remote", "branch",
+      "author",
+      "?fastForwardOnly",
+      "onAuth",
+      "onAuthSuccess",
+      "onProgress",
+      "onAuthFailure"
+    ],
+    push: ["remote", "branch",
+      "author",
+      "?fastForwardOnly",
+      "onAuth",
+      "onAuthSuccess",
+      "onProgress",
+      "onAuthFailure"
+    ],
+    ensureIndex: [],
     clone: ["singleBranch", "url", "onAuth", "?onProgress"],
     fetch: ["singleBranch", "url", "onAuth", "?onProgress"],
-    checkout: ["?filepaths", "ref", "?force", "onProgress", "?noCheckout"],
+    checkout: ["?filepaths", "ref", "?force", "onProgress", "?noCheckout", "?noUpdateHead"],
     commit: ["message", "author"],
     setConfig: ["path", "value"],
     getConfig: ["path"],
     addRemote: ["remote", "url"],
+    deleteRemote: ["remote", "url"],
     listRemotes: [],
     currentBranch: [],
     resolveRef: ["ref"],
@@ -40,7 +62,8 @@ _Define(function(global) {
       var args = this.args;
       for (var i in opts) {
         if (args[name].indexOf(i) < 0 && args[name].indexOf('?' + i) < 0) {
-          if (!/\b(dir|gitdir|corsProxy|cache|http|fs)\b/.test(i)) throw new Error(i + " not part of git interface for " +
+          if (!/\b(dir|gitdir|corsProxy|cache|http|fs)\b/.test(i)) throw new Error(i +
+            " not part of git interface for " +
             name);
         }
       }
@@ -57,7 +80,7 @@ _Define(function(global) {
   var pleaseCache = global.createCacheFs;
   //The wacky nature of Imports.define is seeping through
   var Imports = global.Imports;
-  var mergeHelper = Imports.promise.bind(null,[
+  var mergeHelper = Imports.promise.bind(null, [
     "./tools/git/libs/diff3/diff3.js", {
       script: "./tools/git/interactive_merge.js",
       returns: "InteractiveMerge"
@@ -89,13 +112,11 @@ _Define(function(global) {
 
   function isoGitCall(name) {
     return function(opts) {
-      console.log(name, opts);
       // igit.assert(name, opts);
       return window.git[name](this.getOpts(opts)).then(function(res) {
-        console.log(res);
+        // console.log(res);
         return res;
       }, function(err) {
-        console.log(err);
         throw err;
       });
     };
@@ -122,6 +143,11 @@ _Define(function(global) {
       0: "absent", //might be ignored
       //002 invalid since 2 implies same with workdir
       3: "*deleted",
+      4: "*conflict",
+      24: "*conflict",
+      104: "*conflict",
+      114: "*conflict",
+      124: "*conflict",
       //001,010,011,012,013,021'invalid since 1 implies head exists',
       20: "*added",
       22: "added",
@@ -146,6 +172,7 @@ _Define(function(global) {
     var index = item[3];
     return status[head + dir + index] || "*unknown";
   }
+  Git.prototype.batchSize = 100;
   Git.prototype.statusAll = function(opts) {
     igit.assert('statusAll', opts);
     return window.git.statusMatrix(this.getOpts(opts)).then(function(e) {
@@ -154,17 +181,7 @@ _Define(function(global) {
       });
     });
   };
-  Git.prototype.analyze = function(opts){
-    igit.assert('analyze', opts);
-    opts = this.getOpts(opts);
-    return Imports.promise([{
-      script: "./tools/git/analyze_helper.js",
-      returns: "gitAnalyze"
-    }]).then(function(analyze){
-      console.log(opts);
-      return analyze(opts);
-    });
-  };
+  Git.prototype.analyze = isoGitCall('showCheckout');
   Git.prototype.merge = function(opts) {
     igit.assert('merge', opts);
     opts = this.getOpts(opts);
@@ -182,11 +199,18 @@ _Define(function(global) {
   Git.prototype.setDir = Git;
   Git.prototype.cached = function() {
     var fs = pleaseCache(this.fs);
+    fs.postDiscard && fs.postDiscard();
     if (fs !== this.fs) {
       var a = new Git(this.dir, this.gitdir, fs);
       return a;
     }
     return this;
+  };
+  Git.prototype.clearCache = function() {
+    clear();
+    if (this.fs.synchronize) {
+      this.fs.synchronize();
+    }
   };
   global.Git = Git;
 }); /*_EndDefine*/
@@ -206,10 +230,13 @@ _Define(function(global) {
   Utils.inherits(JGit, Git);
 
   function wrap(f) {
-    var temp = {
-      func: f
+    return function(phase, loaded, total) {
+      return f({
+        phase: phase,
+        loaded: loaded,
+        total: total
+      });
     };
-    return Utils.wrap(temp), temp.f;
   }
 
   function array(t) {
@@ -227,6 +254,8 @@ _Define(function(global) {
   function bool(t) {
     return !!t;
   }
+  //Allows asynchronous calls between javascript
+  //and java
   var createCb = app.createCallback;
 
   function clearCb(o) {
@@ -238,27 +267,36 @@ _Define(function(global) {
   function person(t) {
     return JSON.stringify(t);
   }
+  var appConfig = global.registerAll({}, "git");
   var jsonParse = JSON.parse.bind(JSON);
   var currentOp = null;
-  var apply = Utils.batch(function(methodName, args, cb, parse) {
-    var result, error;
-    try {
-      args = args ? args.$getter ? args.$getter() : args : [];
-      console.log(methodName, args);
-      result = jgit[methodName].apply(jgit, args);
-      if (parse) {
-        result = parse(result);
+  var apply = Utils.spread(
+    function apply(methodName, args, cb, parse) {
+      var result, error;
+      try {
+        args = args ? args.$getter ? args.$getter() : args : [];
+        console.log(args);
+        result = jgit[methodName].apply(jgit, args);
+        if (parse) {
+          result = parse(result);
+        }
+      } catch (e) {
+        console.log(methodName, args, e);
+        error = jgit.getError();
+        if (error) {
+          error = JSON.parse(error);
+          var el = new Error(error[0]);
+          el.stack = error.slice(1).join("\n");
+          el.cause = e;
+          error = el;
+        } else error = e;
+        console.error(error);
       }
-      console.log(result);
-    } catch (e) {
-      console.error(jgit.getError());
-      console.log(e);
-      error = e;
+      cb(error, result);
     }
-    cb(error, result);
-  });
+  );
 
-  function batchCall(methodName, arr) {
+  function batchCall(methodName, arr, parse) {
     if (currentOp && currentOp.type == methodName) {
       currentOp.list.push(arr[0]);
       return currentOp.promise;
@@ -273,7 +311,7 @@ _Define(function(global) {
           if (i == currentOp) currentOp = null;
           return [array(arr)];
         }
-      });
+      }, parse);
       return promise;
     }
   }
@@ -287,60 +325,85 @@ _Define(function(global) {
     });
   }
   JGit.prototype.init = function() {
+    modified = true;
     return call("init");
   };
   JGit.prototype.batchSize = 1000;
-  JGit.prototype.clone = function(opts) {
-    var onProgress = opts.onProgress && createCb(wrap(opts.onProgress));
+  JGit.prototype.clone = function(opts, u1, u2, isFetch) {
+    if (opts.depth) {
+      return Git.prototype[isFetch ? "fetch" : "clone"].call(this, opts);
+    }
+    modified = true;
     return new Promise(function(resolve, reject) {
       opts.onAuth().then(function(data) {
-        apply("clone", [opts.singleBranch ? "HEAD" : null, opts.url, data.username, data.password, onProgress],
-          function(e, r) {
-            clearCb(onProgress);
-            if (e) reject(e);
-            else resolve(r);
-          });
+        var onProgress = createCb(opts.onProgress && wrap(opts.onProgress));
+
+        function done(e, r) {
+          clearCb(onProgress);
+          clearCb(onComplete);
+          if (e) reject(e);
+          else resolve(r);
+        }
+        var onComplete = createCb(done);
+        try {
+          apply(isFetch == true ? "fetch" : "clone", [opts.singleBranch ? appConfig.defaultBranch : null,
+            string(opts.url),
+            string(data.username),
+            string(data.password),
+            onProgress,
+            onComplete
+          ], Utils.noop);
+        } catch (e) {
+          done(e);
+        }
       });
     });
   };
   JGit.prototype.fetch = function(opts) {
-    var onProgress = opts.onProgress && createCb(wrap(opts.onProgress));
-    return new Promise(function(resolve, reject) {
-      opts.onAuth().then(function(data) {
-        apply("fetch", [opts.singleBranch ? "HEAD" : null, opts.url, data.username, data.password, onProgress],
-          function(e, r) {
-            clearCb(onProgress);
-            if (e) reject(e);
-            else resolve(r);
-          });
-      });
-    });
+    return this.clone(opts, null, null, true);
   };
+
   JGit.prototype.checkout = function(opts) {
-    if (opts.noCheckout) return Git.prototype.checkout.apply(this, arguments);
+    //Unsupported options
+    if (
+      //force checkout only works from index
+      (opts.ref !== null && opts.force) ||
+      (opts.ref && opts.noUpdateHead &&
+        (opts.ref.length !== 40 ||
+          opts.ref.startsWith('refs/'))) || //always updates head when given a name
+      opts.noCheckout //no equivalent option
+    ) {
+      return safeCall('checkout').apply(this, arguments);
+    }
+    modified = true;
+    if (opts.ref === undefined) opts.ref = 'HEAD';
+    if (opts.noUpdateHead && !opts.filepaths)
+      opts.filepaths = ['.'];
     var onProgress = opts.onProgress && createCb(wrap(opts.onProgress));
     return call("checkout", [array(opts.filepaths),
-      opts.ref, bool(opts.force), onProgress
+      opts.ref, bool(!opts.noUpdateHead), onProgress
     ]).finally(clearCb(onProgress));
   };
-  JGit.prototype.cached = function(willMerge) {
-    if (willMerge) {
+  JGit.prototype.cached = function(op) {
+    if (op === 'doMerge') {
       return Git.prototype.cached.call(this);
     }
     return this;
   };
   JGit.prototype.commit = function(opts) {
+    modified = true;
     return call("commit", [string(opts.message), person(opts.author)]);
   };
   JGit.prototype.setConfig = function(opts) {
+    modified = true;
     return call("setConfig", [opts.path, opts.value]);
   };
   JGit.prototype.getConfig = function(opts) {
     return call("getConfig", [opts.path]);
   };
-  JGit.prototype.addRemote = function(opts) {
-    return call("addRemote", [opts.remote, opts.url]);
-  };
+  // JGit.prototype.addRemote = function(opts) {
+  //   return call("addRemote", [opts.remote, opts.url, bool(opts.force)]);
+  // };
   JGit.prototype.listRemotes = function() {
     return call("listRemotes", null, jsonParse);
   };
@@ -353,6 +416,7 @@ _Define(function(global) {
     });
   };
   JGit.prototype.writeRef = function(opts) {
+    modified = true;
     return call("writeRef", [opts.ref, opts.oid]);
   };
 
@@ -364,6 +428,7 @@ _Define(function(global) {
         paths[file] = paths[file] ? paths[file] + name : name;
       };
     }
+    //add unmodified files
     list && list.map(put(''));
     all.added.length && all.added.map(put("Ad"));
     all.changed.length && all.changed.map(put("Ch"));
@@ -371,7 +436,7 @@ _Define(function(global) {
     all.modified.length && all.modified.map(put("Mod"));
     all.missing.length && all.missing.map(put("Mi"));
     all.untracked.length && all.untracked.map(put("Un"));
-    all.conflicting.length && all.conflicting.map(put("Con")); //not used
+    all.conflicting.length && all.conflicting.map(put("Con"));
     all.ignored.length && all.ignored.map(put("Ign")); //not used
     for (var i in paths) {
       paths[i] = transform(paths[i]);
@@ -403,6 +468,9 @@ _Define(function(global) {
         case 'Ign':
           return 'ignored';
         default:
+          if (status.indexOf('Con') > -1) {
+            return '*conflict';
+          }
           console.log(status);
           return '*unknown';
       }
@@ -410,22 +478,26 @@ _Define(function(global) {
     return paths;
   }
   JGit.prototype.status = function(opts) {
-    return call("status", [opts.filepath], jsonParse).then(function(status) {
-      return parseStatus([opts.filepath], status)[opts.filepath];
+    return batchCall("statusAll", [opts.filepath], function(strList) {
+      return parseStatus([opts.filepath], jsonParse(strList));
+    }).then(function(map) {
+      return map[opts.filepath] || 'unmodified';
     });
   };
   JGit.prototype.statusAll = function(opts) {
-    return call("statusAll", [array(opts.filepaths)], jsonParse).then(function(all) {
-      all = parseStatus(opts.filepaths, all);
-      for (var i in all) {
-        opts.onEach(i, all[i]);
+    return call("statusAll", [array(opts.filepaths)], jsonParse).then(function(list) {
+      list = parseStatus(opts.filepaths, list);
+      for (var i in list) {
+        opts.onEach(i, list[i]);
       }
     });
   };
   JGit.prototype.add = function(opts) {
+    modified = true;
     return batchCall("add", [opts.filepath]);
   };
   JGit.prototype.remove = function(opts) {
+    modified = true;
     return batchCall("remove", [opts.filepath]);
   };
   JGit.prototype.resetIndex = function(opts) {
@@ -438,9 +510,11 @@ _Define(function(global) {
     return call("log", null, jsonParse);
   };
   JGit.prototype.branch = function(opts) {
+    modified = true;
     return call("branch", [opts.ref]);
   };
   JGit.prototype.deleteBranch = function(opts) {
+    modified = true;
     return call("deleteBranch", [opts.ref]);
   };
   JGit.prototype.listBranches = function(opts) {
@@ -452,19 +526,31 @@ _Define(function(global) {
   JGit.prototype.currentBranch = function() {
     return call("currentBranch");
   };
-  // function isoGitCall(name) {
-  //     var t = JGit.prototype[name];
-  //     return function(opts) {
-  //         igit.assert(name, opts);
-  //         return t.call(this, opts);
-  //     };
-  // }
-  // for (var i in igit.args) {
-  //     if (JGit.prototype.hasOwnProperty(i)) {
-  //         JGit.prototype[i] = isoGitCall(i);
-  //     } else JGit.prototype[i] = function(){
-  //         if[this.cached]
-  //             throw 'Error: Unsupported operation'
-  //     };
+
+  var modified = true;
+
+  function safeCall(i) {
+    return function() {
+      //Make sure Git uses updated information
+      //but we really want to call when we switch
+      //b/w Git and JGit, Git can detect cache changes
+      //but not filesystem changes
+      //regardless switching b/w two impl regularly will
+      //lead to some race situations when it comes to saves
+      //particularly the index, hopefully the user isn't faster
+      //than the 1 second save buster
+      if (this.fs.synchronize && modified) {
+        this.fs.synchronize();
+        modified = false;
+      }
+      return Git.prototype[i].apply(this, arguments);
+    };
+  }
+  var igit = global.IGitProvider;
+  for (var i in igit.args) {
+    if (!JGit.prototype.hasOwnProperty(i)) {
+      JGit.prototype[i] = safeCall(i);
+    }
+  }
   // }
 }); /*_EndDefine*/

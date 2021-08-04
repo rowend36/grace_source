@@ -21,8 +21,8 @@
         DIFF_INSERT: 1,
         WIDGET_INLINE: 'diff-inline',
         WIDGET_OFFSET: 'diff-offset',
-        EDITOR_RIGHT: 'right',
-        EDITOR_LEFT: 'left',
+        EDITOR_RIGHT: 'right',//added
+        EDITOR_LEFT: 'left',//removed
         EDITOR_CENTER: 'center',
         RTL: 'rtl',
         LTR: 'ltr',
@@ -31,12 +31,11 @@
         DIFF_GRANULARITY_BROAD: 'broad'
     };
 
-    function inlineMarker(acediff, side, line, from, toLine, to, fade) {
+    function inlineMarker(acediff, side, line, from, toLine, to, fade,removed) {
         var editor = acediff.editors[side];
         var session = (editor && editor.ace.getSession());
         if (!session) return false;
-        acediff.editors[side].markers.push(session.addMarker(new Range(line, from, toLine, to),
-            acediff.options.classes.inline + (fade ? " fading" : ""), 'text', false));
+        acediff.editors[side].markers.push(session.addMarker(new Range(line, from, toLine, to), acediff.options.classes[removed?"inlineRemoved":"inlineAdded"] + (fade ? " fading" : ""), 'text', false));
         return true;
     }
 
@@ -44,10 +43,14 @@
         var pos = {};
         pos[left] = new Pos(0, 0);
         pos[right] = new Pos(0, 0);
+        //
         var CLEAN = 1,
+            //too long on one side
             PENDING = 8,
-            FAILED = 128;
-        var FAILING = PENDING | FAILED;
+            //the inline marker is too long
+            FAILED = 128,
+            MAX_LENGTH = 10;
+        // var FAILING = PENDING | FAILED;
         var state = CLEAN;
         var marker, hasFullLine, start, startCh, offLeft, offRight;
         for (var i = 0, len = diffs.length; i < len; i++) {
@@ -78,14 +81,14 @@
             offRight = (endOfLineClean(diffs, i) ? 1 : 0);
             hasFullLine = (pos[side].line - start + offLeft + offRight) > 1;
 
-            if (!hasFullLine || text.length < 10) {
+            if (!hasFullLine || text.length < MAX_LENGTH) {
                 if (state & PENDING) {
                     inlineMarker.apply(null, marker);
                     state ^= PENDING;
-                    inlineMarker(acediff, side, start, startCh, pos[side].line, pos[side].ch);
+                    inlineMarker(acediff, side, start, startCh, pos[side].line, pos[side].ch,false,type == C.DIFF_DELETE);
                 } else if (state & CLEAN) {
                     state |= PENDING;
-                    marker = [acediff, side, start, startCh, pos[side].line, pos[side].ch];
+                    marker = [acediff, side, start, startCh, pos[side].line, pos[side].ch,false,type == C.DIFF_DELETE];
                 }
             } else {
                 state = FAILED;
@@ -105,19 +108,7 @@
         }
     }
 
-    function getLineChunks(text1, text2, ignoreWhitespace, swap) {
-        /*
-        returns output of the form
-        [{
-            leftStartLine: offset
-            leftEndLine: offset
-            rightStartLine: offset
-            rightEndLine: offset
-            chunks: text
-        }]
-        */
-        if (!dmp)
-            dmp = new diff_match_patch();
+    function getLineDiff(text1, text2, ignoreWhitespace, swap) {
         // if (!/\n$/.test(text1)) 
         text1 += "\n";
         // if (!/\n$/.test(text2)) 
@@ -132,7 +123,25 @@
         var lineArray = a.lineArray;
         var diff = dmp.diff_main(lineText1, lineText2, false);
         dmp.diff_charsToLines_(diff, lineArray);
+        if (swap) {
+            for (var i = 0; i < diff.length; ++i) {
+                diff[i][0] = -diff[i][0];
+            }
+        }
+        return diff;
+    }
 
+    function getLineChunks(diff) {
+        /*
+        returns output of the form
+        [{
+            leftStartLine: offset
+            leftEndLine: offset
+            rightStartLine: offset
+            rightEndLine: offset
+            chunks: text
+        }]
+        */
         var diffs = [];
         var offset = {
             left: 0,
@@ -140,11 +149,6 @@
             trailinglines: null
         };
         var last = null;
-        if (swap) {
-            for (i = 0; i < diff.length; ++i) {
-                diff[i][0] = -diff[i][0];
-            }
-        }
         diff.forEach(function(chunk, i) {
             var obj = transformDiff(chunk, offset, last);
             if (obj) {
@@ -157,6 +161,30 @@
             last = obj;
         });
         return diffs;
+    }
+
+    function getDiffs(text1, text2, options, ctx, allowLine) {
+        // var tag = ctx.savedDiffs ? "cached " : "clean ";
+        if (allowLine && !options.showInlineDiffs) {
+            if (options.ignoreWhitespace) {
+                text1 = text1.replace(/^( |\t)*|( |\t)*$/gm, "");
+                text2 = text2.replace(/^( |\t)*|( |\t)*$/gm, "");
+            }
+            ctx.savedDiffs = (ctx.savedDiffs) ? updateDiff(text1, text2, ctx.swapped, ctx.savedDiffs, getLineDiff) : getLineDiff(text1, text2, false, ctx.swapped);
+            return getLineChunks(ctx.savedDiffs);
+        } else {
+            if (ctx.savedDiffs) {
+                var updated = updateDiff(text1, text2, ctx.swapped, ctx.savedDiffs, getCharDiff);
+                cleanUpLines(updated);
+                // console.log(updated);
+                ctx.savedDiffs = updated;
+            } else ctx.savedDiffs = getCharDiff(text1, text2, false, ctx.swapped);
+            if (options.showInlineDiffs) {
+                ctx.rawDiffs = ctx.savedDiffs;
+            }
+            return getCharChunks(options.ignoreWhitespace ? filterWhiteSpace(ctx.savedDiffs) : ctx.savedDiffs);
+        }
+
     }
 
     function mergeDiff(dest, src) {
@@ -198,8 +226,7 @@
                 //floating equal lines are forced down
                 //(prepended to next line)
                 if (/^\n+$/.test(text)) {
-                    var type = trailinglines[0] == C.DIFF_INSERT ? C.EDITOR_RIGHT : C
-                        .EDITOR_LEFT;
+                    var type = trailinglines[0] == C.DIFF_INSERT ? C.EDITOR_RIGHT : C.EDITOR_LEFT;
                     obj = {
                         leftStartLine: offset.left,
                         leftEndLine: offset.left,
@@ -255,26 +282,256 @@
         };
     };
 
-    function getDiff(a, b, ignoreWhitespace, swap) {
-        if (!dmp) dmp = new diff_match_patch();
-        var diff = dmp.diff_main(a, b);
-        // The library sometimes leaves in empty parts, which confuse the algorithm
-        for (var i = 0; i < diff.length; ++i) {
-            var part = diff[i];
-            if (ignoreWhitespace ? !/[^ \t]/.test(part[1]) : !part[1]) {
-                diff.splice(i--, 1);
-            } else if (i && diff[i - 1][0] == part[0]) {
-                diff.splice(i--, 1);
-                diff[i][1] += part[1];
+
+    function _unChangedHead(text1, text2, diffs, len) {
+        var start1 = 0,
+            start2 = 0;
+        var last = -1,
+            saved1 = 0,
+            saved2 = 0;
+        for (var i = 0; i < len; i++) {
+            var type = diffs[i][0];
+            var text = diffs[i][1];
+            if (type >= 0) {
+                if (text2.substring(start2, start2 + text.length) == text) {
+                    start2 += text.length;
+                } else break;
+            }
+            if (type <= 0) {
+                if (text1.substring(start1, start1 + text.length) == text) {
+                    start1 += text.length;
+                } else break;
+            }
+            if (type === 0) {
+                saved1 = start1;
+                saved2 = start2;
+                last = i;
             }
         }
+        return {
+            0: last,
+            1: saved1,
+            2: saved2,
+            3: i == len && start1 == text1.length && start2 == text2.length
+        };
+    }
+
+    function _unChangedTail(text1, text2, diffs, begin) {
+        var start1 = text1.length,
+            start2 = text2.length;
+        var last = diffs.length,
+            saved1 = start1,
+            saved2 = start2;
+
+        if (last - begin < 3 || diffs[last - 1][0])
+            return [last, saved1, saved2];
+        for (var i = last - 1;; i--) {
+            var type = diffs[i][0];
+            var text = diffs[i][1];
+            if (type >= 0) {
+                if (text2.substring(start2 - text.length, start2) == text) {
+                    start2 -= text.length;
+                } else break;
+            }
+            if (type <= 0) {
+                if (text1.substring(start1 - text.length, start1) == text) {
+                    start1 -= text.length;
+                } else break;
+            }
+            if (type === 0) {
+                saved1 = start1;
+                saved2 = start2;
+                last = i;
+                if (i - begin < 4) break;
+            }
+        }
+        return {
+            0: last,
+            1: saved1,
+            2: saved2
+        };
+    }
+    //Find a equal row that starts length chars away from end
+    function walkBack(diffs, length, data) {
+        var len = diffs.length - 1;
+        for (var i = len; i >= 0; i--) {
+            var type = diffs[i][0];
+            var textL = diffs[i][1].length;
+            if (type == 0) {
+                length -= textL;
+                if (length < 0) {
+                    // i++;//keep equal row
+                    break;
+                }
+            }
+            if (type >= 0) {
+                data[2] -= textL;
+            }
+            if (type <= 0) {
+                data[1] -= textL;
+            }
+        }
+        diffs.splice(i + 1);
+        data[0] = i;
+    }
+    //Find an equal row that starts length chars away from start
+    function walkForward(diffs, length, data) {
+        var len = diffs.length - 1;
+        for (var i = 0; i <= len && (length > 0 || diffs[i][0]); i++) {
+            var type = diffs[i][0];
+            var textL = diffs[i][1].length;
+            if (type == 0) {
+                length -= textL;
+                if (length < 0) {
+                    // i--;
+                    break;
+                }
+            }
+            if (type >= 0) {
+                data[2] += textL;
+            }
+            if (type <= 0) {
+                data[1] += textL;
+            }
+        }
+        diffs.splice(0, i);
+        data[0] = i;
+    }
+    var UNCHANGED = 3;
+
+    function updateDiff(a, b, swapped, diffs, func) {
+        if (swapped) {
+            var t = a;
+            a = b, b = t;
+        }
+        var len = diffs.length;
+        //Find the extent of the change
+        var headT = _unChangedHead(a, b, diffs, len);
+        if (headT[UNCHANGED]) return diffs;
+        var start = headT[0];
+        var tailT = _unChangedTail(a, b, diffs, start);
+        var end = tailT[0];
+
+        var head = diffs.slice(0, start + 1);
+        var tail = diffs.slice(end);
+
+        //Add some context for the change to get best results for diffing
+        //Find nearby equal rows that are small enough to be affected by the change
+        var lenChange = Math.max(100, (tailT[1] - headT[1]) + (tailT[2] - headT[2]));
+        walkBack(head, lenChange, headT);
+        walkForward(tail, lenChange, tailT);
+        start = headT[0];
+        end += tailT[0];
+
+        //rediff changed section
+        a = a.substring(headT[1], tailT[1]);
+        b = b.substring(headT[2], tailT[2]);
+        if (swapped) {
+            var t2 = b;
+            b = a,
+                a = t2;
+        }
+        var mid = func(a, b, false, swapped);
+
+        //merge adjacent equal chunks
+        if (head.length) {
+            if (mid.length && mid[0][0] == C.DIFF_EQUAL) {
+                head[head.length - 1][1] += mid.shift()[1];
+            }
+        }
+        if (tail.length) {
+            if (mid.length && mid[mid.length - 1][0] == C.DIFF_EQUAL) {
+                tail[0][1] = mid.pop()[1] + tail[0][1];
+            }
+        }
+
+        return head.concat(mid).concat(tail);
+    }
+
+    function getCharDiff(a, b, ignoreWhitespace, swap, rawDiffs) {
+        var diff = rawDiffs || dmp.diff_main(a, b);
         cleanUpLines(diff);
         if (swap) {
-            for (i = 0; i < diff.length; ++i) {
+            for (var i = 0; i < diff.length; ++i) {
                 diff[i][0] = -diff[i][0];
             }
         }
         return diff;
+    }
+
+    function filterWhiteSpace(diff) {
+        var SPACE = /[^ \t]/;
+        diff = diff.slice(0);
+        for (var i = 0; i < diff.length; ++i) {
+            var part = diff[i];
+            if (!SPACE.test(part[1])) {
+                diff.splice(i--, 1);
+            } else if (i && diff[i - 1][0] == part[0]) {
+                diff.splice(i--, 1);
+                diff[i] = [diff[i][0], diff[i][1] + part[1]];
+            }
+        }
+        return diff;
+    }
+
+    function getCharChunks(diff) {
+        var chunks = [];
+        if (!diff.length) return chunks;
+        var startRight = 0,
+            startLeft = 0;
+        var right = Pos(0, 0),
+            left = Pos(0, 0);
+        for (var i = 0, p = diff.length; i < p; ++i) {
+            var part = diff[i],
+                tp = part[0];
+            if (tp == C.DIFF_EQUAL) {
+                var startOff = (left.ch || right.ch) ? 1 : 0;
+                var cleanFromRight = right.line + startOff,
+                    cleanFromLeft = left.line + startOff;
+                moveOver(right, part[1], null, left);
+                var endOff = i == p - 1 || (i == p - 2 && diff[p - 1][1][0] == '\n') ? 1 : 0; //(left.ch === 0 && right.ch === 0) ? 0 : 0;
+                var cleanToRight = right.line + endOff,
+                    cleanToLeft = left.line + endOff;
+                if (cleanToRight > cleanFromRight) {
+                    if (i) chunks.push({
+                        leftStartLine: startLeft,
+                        leftEndLine: cleanFromLeft,
+                        rightStartLine: startRight,
+                        rightEndLine: cleanFromRight
+                    });
+                    startRight = cleanToRight;
+                    startLeft = cleanToLeft;
+                }
+            } else {
+                moveOver(tp == C.DIFF_INSERT ? right : left, part[1]);
+            }
+        }
+        if (startRight <= right.line || startLeft <= left.line)
+            chunks.push({
+                leftStartLine: startLeft,
+                leftEndLine: left.line + 1,
+                rightStartLine: startRight,
+                rightEndLine: right.line + 1
+            });
+        return chunks;
+    }
+
+
+    function cleanUpLines(diff) {
+        //alternative to using start of line
+        //and end of line clean
+        //try to make equal rows
+        //end with newlines when possible
+        //dmp.diff_cleanupEfficiency(diff);
+        for (var i = diff.length; i-- > 2;) {
+            if (diff[i][0] === 0) { //equal row
+                if (diff[--i][0]) { //unequal row between
+                    if (diff[i - 1][0] === 0) { //equal row
+                        shift(diff[i - 1], diff[i], diff[i + 1]);
+                    }
+                }
+            }
+        }
     }
 
     function shift(before, center, after) {
@@ -282,6 +539,7 @@
         var diff = center[1];
         var start = eq1.lastIndexOf("\n");
         if (start > -1 && start < eq1.length - 1) {
+            //make equal center start on new line
             var trail = eq1.substring(start + 1);
             if (diff.endsWith(trail)) {
                 before[1] = before[1].substring(0, start + 1);
@@ -296,71 +554,13 @@
             var head = eq2.substring(0, start + 1);
             if (diff.startsWith(head)) {
                 before[1] = eq1 + head;
-                center[1] = diff.substring(head.length + 1) + head;
-                after[1] = after[1].substring(head.length + 1);
+                center[1] = diff.substring(head.length) + head;
+                after[1] = after[1].substring(head.length);
+
             }
         }
     }
 
-    function cleanUpLines(diff) {
-        //alternative to using start of line
-        //and end of line clean
-        //try to make equal rows
-        //end with newlines when possible
-        dmp.diff_cleanupEfficiency(diff);
-        for (var i = diff.length; i-- > 2;) {
-            if (diff[i][0] === 0) {
-                if (diff[--i][0]) {
-                    if (diff[i - 1][0] === 0) {
-                        shift(diff[i - 1], diff[i], diff[i + 1]);
-                    }
-                }
-            }
-        }
-    }
-
-    function getChunks(diff) {
-        var chunks = [];
-        if (!diff.length) return chunks;
-        var startRight = 0,
-            startLeft = 0;
-        var right = Pos(0, 0),
-            left = Pos(0, 0);
-        for (var i = 0; i < diff.length; ++i) {
-            var part = diff[i],
-                tp = part[0];
-            if (tp == DIFF_EQUAL) {
-                var startOff = (left.ch || right.ch) ? 1 : 0;
-                var cleanFromRight = right.line + startOff,
-                    cleanFromLeft = left.line + startOff;
-                moveOver(right, part[1], null, left);
-                var endOff = i == diff.length - 1 ? 1 :
-                0; //(left.ch === 0 && right.ch === 0) ? 0 : 0;
-                var cleanToRight = right.line + endOff,
-                    cleanToLeft = left.line + endOff;
-                if (cleanToRight > cleanFromRight) {
-                    if (i) chunks.push({
-                        leftStartLine: startLeft,
-                        leftEndLine: cleanFromLeft,
-                        rightStartLine: startRight,
-                        rightEndLine: cleanFromRight
-                    });
-                    startRight = cleanToRight;
-                    startLeft = cleanToLeft;
-                }
-            } else {
-                moveOver(tp == DIFF_INSERT ? right : left, part[1]);
-            }
-        }
-        if (startRight <= right.line || startLeft <= left.line)
-            chunks.push({
-                leftStartLine: startLeft,
-                leftEndLine: left.line + 1,
-                rightStartLine: startRight,
-                rightEndLine: right.line + 1
-            });
-        return chunks;
-    }
 
     function moveOver(pos, str, copy, other) {
         var out = copy ? Pos(pos.line, pos.ch) : pos,
@@ -404,8 +604,7 @@
             if (!isOrig && editor != editors[pairs[i].right].ace) {
                 continue;
             }
-            var pos = dir < 0 ? findPrevDiff(diff, line, isOrig) : findNextDiff(diff, line,
-                isOrig);
+            var pos = dir < 0 ? findPrevDiff(diff, line, isOrig) : findNextDiff(diff, line, isOrig);
 
             if (pos != null && (found == null || (dir < 0 ? pos > found : pos < found)))
                 found = pos;
@@ -424,7 +623,14 @@
         }
         return opt;
     }
-
+    /*
+    deep? - boolean whether recurse
+    target? - object
+    src... - objects to extend from
+     If you provide only src, then target is this
+     ie a.extend = extend
+     a.extend(deep,src)
+    */
     function extend() {
         var options, name, src, copy, copyIsArray, clone, target = arguments[0] || {},
             i = 1,
@@ -458,16 +664,14 @@
                     return !isNaN(parseFloat(obj)) && isFinite(obj);
                 },
                 type: function(obj) {
-                    return obj === null ? String(obj) : class2type[toString.call(obj)] ||
-                        "object";
+                    return obj === null ? String(obj) : class2type[toString.call(obj)] || "object";
                 },
                 isPlainObject: function(obj) {
                     if (!obj || jQuery.type(obj) !== "object" || obj.nodeType) {
                         return false;
                     }
                     try {
-                        if (obj.constructor && !hasOwn.call(obj, "constructor") && !hasOwn
-                            .call(obj.constructor.prototype, "isPrototypeOf")) {
+                        if (obj.constructor && !hasOwn.call(obj, "constructor") && !hasOwn.call(obj.constructor.prototype, "isPrototypeOf")) {
                             return false;
                         }
                     } catch (e) {
@@ -498,8 +702,7 @@
                     if (target === copy) {
                         continue;
                     }
-                    if (deep && copy && (jQuery.isPlainObject(copy) || (copyIsArray = jQuery
-                            .isArray(copy)))) {
+                    if (deep && copy && (jQuery.isPlainObject(copy) || (copyIsArray = jQuery.isArray(copy)))) {
                         if (copyIsArray) {
                             copyIsArray = false;
                             clone = src && jQuery.isArray(src) ? src : [];
@@ -530,44 +733,86 @@
             context = this;
             args = arguments;
             if (!timeout) {
-                setTimeout(later, wait);
+                timeout = setTimeout(later, wait);
             }
         };
     }
 
     /*endregion Common Code*/
 
+    function binarySearch(diffs, row, TYPE, invert) {
+        var startLine = TYPE(invert, "StartLine");
+        var endLine = TYPE(invert, "EndLine");
+        var recursionHead = 0;
+        var first = 0;
+        var last = diffs.length - 1;
+        while (first <= last) {
+            if (++recursionHead > 1000) {
+                throw new Error('Loop Limit Exceeded');
+            }
+            var mid = (first + last) >> 1;
+            if (diffs[mid][startLine] > row)
+                last = mid - 1;
+            else if (diffs[mid][endLine] <= row)
+                first = mid + 1;
+            else
+                return mid;
+        }
+        //use ABOVE to get first
+        return -(first + 1);
+    }
+
+    function HOST(invert, type) {
+        return (invert ? C.EDITOR_RIGHT : C.EDITOR_LEFT) + (type || "");
+    }
+
+    function ABOVE(line) {
+        return -line - 2;
+    }
     // our constructor
+    //Technically most methods can handle more than 3 diffs
+    //except for the options parsing and splitDiffs
     function AceDiff(options) {
         this.options = {};
-
-        extend(true, this.options, {
+        extend(true, this.options, AceDiff.defaults, {
+            left: {
+                id: null,
+                content: null,
+                editable: true,
+            },
+            right: {
+                id: null,
+                content: null,
+            },
+            activePane: C.EDITOR_LEFT,
             showConnectors: !(options && options.lockScrolling),
             showCopyArrows: window.innerWidth > 700,
-            threeWay: options && options.center
-        }, AceDiff.defaults, options);
-        if (this.options.threeWay) {
+        }, options);
+        if (this.options.center) {
             options = {};
             extend(true, options, {
-                activeEditor: C.EDITOR_CENTER,
+                center: {
+                    id: null,
+                    content: null,
+                },
                 classes: {
                     gutterLeftID: this.options.classes.gutterID + "-left",
                     gutterRightID: this.options.classes.gutterID + "-right",
                 }
             }, this.options);
             this.options = options;
-        } else options.center = undefined;
+        }
         // instantiate the editors in an internal data structure that will store a little info about the diffs and
         // editor content
 
         this.editors = {
             left: {
-                ace: ace.edit(this.options.left.id),
+                ace: this.options.left.editor || ace.edit(this.options.left.id),
                 markers: [],
                 lineLengths: []
             },
             right: {
-                ace: ace.edit(this.options.right.id),
+                ace: this.options.right.editor || ace.edit(this.options.right.id),
                 markers: [],
                 lineLengths: []
             }
@@ -575,14 +820,14 @@
 
         setupEditor(this, C.EDITOR_RIGHT);
         setupEditor(this, C.EDITOR_LEFT);
-        this.lineHeight = this.editors.left.ace.renderer.lineHeight ||
-        14; // assumption: both editors have same line heights
+        // this.lineHeight = this.editors.left.ace.renderer.lineHeight ||
+        //     14; // assumption: both editors have same line heights
         this.pairs = [];
         addEventHandlers(this, C.EDITOR_LEFT);
         addEventHandlers(this, C.EDITOR_RIGHT);
-        if (this.options.threeWay) {
+        if (this.options.center) {
             this.editors[C.EDITOR_CENTER] = {
-                ace: ace.edit(this.options.center.id),
+                ace: this.options.center.editor || ace.edit(this.options.center.id),
                 markers: [],
                 lineLengths: []
             };
@@ -605,7 +850,8 @@
                 gutterID: this.options.classes.gutterID
             });
         }
-        this.editors[this.options.activeEditor].ace.focus();
+        this.activePane = this.options.activePane;
+        this.editors[this.activePane].ace.focus();
         if (this.options.showConnectors) {
             createSvgContainer(this);
         }
@@ -618,8 +864,8 @@
         addWindowResizeHandler(this);
         // store the visible height of the editors (assumed the same)
         this.editorHeight = getEditorHeight(this);
-        this.diff();
 
+        //decorate after all the editors have rendered at least once
         var count = 0,
             total = 0;
         var init = (function() {
@@ -630,7 +876,10 @@
             this.editors[i].ace.renderer.once('afterRender', init);
             total++;
         }
-        this.goNextDiff(this.editors[this.options.activeEditor].ace);
+
+        if (!dmp) dmp = new diff_match_patch();
+        this.diff();
+        this.goNextDiff(this.editors[this.options.activePane].ace);
     }
 
     // our public API
@@ -639,7 +888,7 @@
             return this.diffs.length;
         },
 
-        // exposes the Ace editors in case the dev needs it
+        // exposes the Ace editors
         getEditors: function() {
             return {
                 left: this.editors.left.ace,
@@ -654,7 +903,7 @@
             return goNearbyDiff(this, editor, -1);
         },
 
-        diff: function() {
+        diff: function(clean) {
             var count = 0;
             for (var i in this.pairs) {
                 var pair = this.pairs[i];
@@ -662,23 +911,28 @@
                 var ses2 = this.editors[pair.right].ace.getSession();
                 var text1 = ses1.getValue();
                 var text2 = ses2.getValue();
-                if (this.options.showInlineDiffs) {
-                    pair.rawDiffs = getDiff(text1, text2, false);
-                    pair.diffs = getChunks(this.options.ignoreWhitespace ? getDiff(
-                        text1, text2, true) : pair.rawDiffs);
-                } else if (ses1.getLength() + ses2.getLength() < 65535) {
-                    pair.diffs = getLineChunks(text1, text2, this.options
-                        .ignoreWhitespace);
-                } else pair.diffs = getChunks(getDiff(text1, text2, this.options
-                    .ignoreWhitespace));
-
+                //reset clean based on size
+                this.$reset(pair, clean === true ? 0 :
+                    text1.length + text2.length < 100000 ? 5 :
+                    text1.length + text2.length > 1000000 ? 50 :
+                    25);
+                if (clean) pair.savedDiffs = null;
+                pair.diffs = getDiffs(text1, text2, this.options, pair, ses1.getLength() + ses2.getLength() < 30000);
                 count += pair.diffs.length;
             }
             if (count > this.options.maxDiffs) return;
-            if (this.pairs.length > 1)
+            if (this.pairs.length > 1) {
                 splitDiffs(this.pairs[0].diffs, this.pairs[1].diffs);
+            }
             decorating = false;
             this.decorate();
+        },
+        $reset: function(pair, min) {
+            pair.$i = pair.$i || 0;
+            if (++pair.$i > min) {
+                pair.$i = 0;
+                pair.savedDiffs = null;
+            }
         },
         decorate: function() {
             var acediff = this;
@@ -687,23 +941,26 @@
             decorating = true;
             clearDiffMarkers(acediff);
             if (acediff.options.alignLines) {
-                for (var i in this.editors) {
-                    clearLineWidgets(acediff.editors[i]);
-                }
-                var offsets = computeOffsets(acediff.pairs[0].diffs, acediff.pairs[1] ?
-                    acediff.pairs[1].diffs : null);
-                for (i in this.editors) {
-                    for (var j in offsets[i]) {
-                        addLineWidget(acediff.editors[i], Number(j), offsets[i][j]);
-                    }
-                }
+                alignEditors(acediff, acediff.pairs[0], acediff.pairs[1]);
+                // var offsets;
+                // if (acediff.pairs.length == 1) {
+                //     offsets = computeOffsets(acediff.pairs[0].diffs);
+                // } else {
+                //     offsets = computeOffsets3(acediff.pairs[0].diffs, acediff.pairs[1].diffs);
+                // }
+                // for (i in this.editors) {
+                //     for (var j in offsets[i]) {
+                //         addLineWidget(acediff.editors[i], Number(j), offsets[i][j]);
+                //     }
+                // }
             }
             if (acediff.pairs.length == 1) {
+                var pair = acediff.pairs[0];
                 if (acediff.options.showDiffs) {
                     acediff.pairs[0].diffs.forEach(function(info) {
-                        showDiff(acediff, right, info.rightStartLine, info
+                        addDiffMarker(acediff, C.EDITOR_RIGHT, info.rightStartLine, info
                             .rightEndLine, acediff.options.classes.added);
-                        showDiff(acediff, left, info.leftStartLine, info
+                        addDiffMarker(acediff, C.EDITOR_LEFT, info.leftStartLine, info
                             .leftEndLine, acediff.options.classes.removed);
                     });
                 }
@@ -715,27 +972,29 @@
                     highlight3(acediff, acediff.pairs[1]);
                 }
             }
-            this.update(true);
+            this.updateGutter(true);
             decorating = false;
         },
-        update: function(gutter) {
+        updateGutter: function(updateCopyArrows) {
             var acediff = this;
-            gutter = gutter && this.options.showCopyArrows;
-            var connect = this.options.showConnectors;
-            if (!(connect || gutter)) return;
+            if (!this.options.showCopyArrows) {
+                updateCopyArrows = false;
+            }
+            var updateConnectors = this.options.showConnectors;
+            if (!(updateConnectors || updateCopyArrows)) return;
 
-            if (gutter) {
+            if (updateCopyArrows) {
                 clearArrows(acediff);
             }
-            if (connect)
+            if (updateConnectors)
                 clearSvgContainer(acediff);
 
             acediff.pairs.forEach(function(pair) {
                 pair.diffs.forEach(function(info, diffIndex) {
-                    if (gutter) {
+                    if (updateCopyArrows) {
                         addCopyArrows(acediff, info, diffIndex, pair);
                     }
-                    if (connect) {
+                    if (updateConnectors) {
                         var left = pair.left;
                         var right = pair.right;
                         var leftScrollTop = acediff.editors[left].ace
@@ -773,13 +1032,13 @@
             }
             for (var i in this.editors) {
                 if (!this.options[i].editor) {
-                    this.editors[i].destroy();
+                    this.editors[i].ace.destroy();
                 }
             }
             if (this.options.showConnectors) {
                 this.pairs.forEach(function(pair) {
                     document.getElementById(pair.gutterID).removeChild(pair
-                    .svg);
+                        .svg);
                 });
             }
         }
@@ -787,6 +1046,7 @@
     };
 
     function setupEditor(acediff, side) {
+        var ace = acediff.editors[side].ace;
         var commands = {
             nextDiff: {
                 name: "nextDiff",
@@ -805,30 +1065,50 @@
         };
         var options = getOption(acediff, side, 'options');
         if (options) {
-            acediff.editors[side].ace.setOptions(options);
+            ace.setOptions(options);
         }
-        acediff.editors[side].ace.getSession().setMode(getOption(acediff, side, 'mode'));
-        acediff.editors[side].ace.setReadOnly(!acediff.options[side].editable);
-        acediff.editors[side].ace.setTheme(getOption(acediff, side, 'theme'));
+        var mode = getOption(acediff, side, 'mode');
+        if(mode){
+            ace.getSession().setMode(mode);
+        }
+        var editable = getOption(acediff,side,'editable');
+        if(editable!=null){
+            ace.setReadOnly(!editable);
+        }
+        var theme = getOption(acediff, side, 'theme');
+        if(theme){
+            ace.setTheme(theme);
+        }
         // if the data is being supplied by an option, set the editor values now
-        if (acediff.options[side].content) {
-            acediff.editors[side].ace.setValue(acediff.options[side].content, -1);
+        var content = acediff.options[side].content;
+        if (content) {
+            ace.setValue(acediff.options[side].content, -1);
         }
+        acediff.editors[side].$acediff3Commands = commands;
         for (var i in commands)
-            acediff.editors[side].ace.commands.addCommand(commands[i]);
+            ace.commands.addCommand(commands[i]);
     }
-
-    function syncScrolling(acediff, side, tag, close) {
+    /*
+     @param side - left|right|center The editor whose scroll changed
+     @param lastScrollT - used to keep track of which editors have been auto scrolled 
+                    recently to prevent them from later scrolling other editors
+     @param isAutoScroll - shows that the scroll is as a result of another editor scrolling
+    */
+    function syncScrolling(acediff, side, lastScrollT, isAutoScroll) {
         //this can end up in an endless loop
-        if (!close) {
-            tag = new Date().getTime();
+        if (isAutoScroll && !lastScrollT) throw new Error('ValueError: missing lastScrollT parameter');
+        if (!isAutoScroll) {
+            lastScrollT = new Date().getTime() - (acediff.options.alignLines ? 100 : 1000);
             //scroll cooldown
-            if (tag - acediff.editors[side].tag < 1000)
-                return;
-        } else if (!tag) throw 'ValueError';
+            if (lastScrollT - acediff.editors[side].lastScrollT < 0) {
+                if (side === acediff.activePane) {
+                    return acediff.synchronize(acediff, side);
+                }
+            }
+        }
         acediff.scrollSyncing = true;
         try {
-            acediff.editors[side].tag = tag;
+            acediff.editors[side].lastScrollT = lastScrollT;
             for (var i in acediff.pairs) {
                 var pair = acediff.pairs[i];
                 var other = pair.left == side ?
@@ -837,17 +1117,17 @@
                     pair.left : null;
                 if (!other) continue;
                 var editor = acediff.editors[other];
-                if (editor.tag == tag) continue;
+                if (editor.lastScrollT == lastScrollT) continue;
                 var result = syncPair(acediff, pair, side == pair.left);
                 if (result)
-                    syncScrolling(acediff, other, tag, true);
+                    syncScrolling(acediff, other, lastScrollT, true);
             }
         } catch (e) {
             console.error(e);
         }
-        acediff.scrollSyncing = !!close;
+        acediff.scrollSyncing = !!isAutoScroll;
         if (!acediff.scrollSyncing) {
-            acediff.editors[side].tag = 0;
+            acediff.editors[side].lastScrollT = 0;
         }
     }
 
@@ -859,11 +1139,10 @@
         var scroll, targetScrollTop;
         if (!otherEditor.ace) return;
         if (acediff.options.alignLines) {
-            scroll = getScrollingInfo(acediff, side) - acediff.editors[side].scrollOffset *
-                acediff.lineHeight;
+            scroll = getScrollingInfo(acediff, side) - editor.scrollOffset *
+                editor.ace.renderer.lineHeight;
             var top = getScrollingInfo(acediff, other);
-            var offset = otherEditor.scrollOffset * acediff.lineHeight;
-
+            var offset = otherEditor.scrollOffset * editor.ace.renderer.lineHeight;
             if (offset + top != clampScroll(otherEditor, scroll + offset)) {
                 targetScrollTop = scroll + offset;
             }
@@ -890,7 +1169,7 @@
                 targetPos = targetPos * mix + scroll * (1 - mix);
             } else if ((botDist = config.maxHeight - size.scrollerHeight - scroll) <
                 halfScreen) {
-                var otherInfo = getScrollingInfo(acediff, other);
+                //var otherInfo = getScrollingInfo(acediff, other);
                 var otherConfig = otherEditor.ace.renderer.layerConfig;
                 var otherSize = otherEditor.ace.renderer.$size;
 
@@ -928,26 +1207,34 @@
                 beforeO = chunk.rightStartLine;
             }
         }
-        return { edit: { before: beforeE, after: afterE }, orig: { before: beforeO,
-                after: afterO } };
+        return {
+            edit: {
+                before: beforeE,
+                after: afterE
+            },
+            orig: {
+                before: beforeO,
+                after: afterO
+            }
+        };
     }
 
     function getOffsets(editor, around) {
         var bot = around.after;
-        if (bot == null) bot = editor.ace.getSession().getLength();;
+        if (bot == null) bot = editor.ace.getSession().getLength();
         return {
             top: getRowPosition(editor, around.before || 0, false),
             bot: getRowPosition(editor, bot, false)
         };
     }
 
-    function cursorToScreenPos(cursor) {
-        var pos = editor.renderer.$cursorLayer.getPixelPosition(cursor, true);
-        pos.left += editor.renderer.gutterWidth - editor.session.getScrollLeft() + editor
-            .renderer.margin.left;
-        pos.top += editor.renderer.margin.top - editor.renderer.layerConfig.offset;
-        return pos;
-    }
+    // function cursorToScreenPos(cursor) {
+    //     var pos = editor.renderer.$cursorLayer.getPixelPosition(cursor, true);
+    //     pos.left += editor.renderer.gutterWidth - editor.session.getScrollLeft() + editor
+    //         .renderer.margin.left;
+    //     pos.top += editor.renderer.margin.top - editor.renderer.layerConfig.offset;
+    //     return pos;
+    // }
 
     function removeEventHandlers(acediff) {
         for (var i in acediff.events) {
@@ -966,20 +1253,40 @@
             target.on(name, func);
         }
         var synchronize = throttle(syncScrolling, 70);
+        acediff.synchronize = synchronize;
         addEvent(acediff.editors[side].ace, "mousedown", function() {
-            acediff.activeEditor = side;
+            acediff.activePane = side;
         });
+        if (acediff.options.alignLines) {
+            addEvent(acediff.editors[side].ace.getSession(), "changeFold", function(ev) {
+                alignEditors(acediff, acediff.pairs[0], acediff.pairs[1]);
+            });
+        }
+
+        addEvent(acediff.editors[side].ace.renderer, 'changeCharacterSize', debounce(function(e) {
+            var editor = acediff.editors[side].ace;
+            var fontSettings = {
+                fontFamily: editor.renderer.$fontFamily,
+                fontSize: editor.renderer.$fontSize,
+                lineSpacing: editor.renderer.$lineSpacing
+            };
+            for (var i in acediff.editors) {
+                if (i != side) {
+                    acediff.editors[i].ace.renderer.setOptions(fontSettings);
+                }
+            }
+        }, 700));
         addEvent(acediff.editors[side].ace.getSession(), 'changeScrollTop', function(scroll) {
             if (acediff.options.lockScrolling && !acediff.scrollSyncing) {
                 synchronize(acediff, side);
             }
             acediff.editors[side].ace.renderer.once('afterRender', function() {
-                acediff.update(false);
+                acediff.updateGutter(false);
             });
         });
         if (acediff.options.showConnectors || acediff.options.showCopyArrows) {
             addEvent(acediff.editors[side].ace.getSession(), 'changeFold', function(scroll) {
-                acediff.update(true);
+                acediff.updateGutter(true);
             });
         }
         var diff = throttle(acediff.diff, 500).bind(acediff);
@@ -1008,9 +1315,8 @@
 
     function addWindowResizeHandler(acediff) {
         var onResize = debounce(function() {
-            acediff.availableHeight = document.getElementById(acediff.options.left.id)
-                .offsetHeight;
-            acediff.update(true);
+            acediff.availableHeight = getEditorHeight(acediff);
+            acediff.updateGutter(true);
         }, 250);
         acediff.$onResize = onResize;
         window.addEventListener('resize', onResize);
@@ -1072,18 +1378,16 @@
         acediff.diff();
     }
 
+    function removeMarker(editor, marker) {
+        editor.ace.getSession().removeMarker(marker);
+    }
 
     function clearDiffMarkers(acediff) {
-        acediff.editors.left.markers.forEach(function(marker) {
-            this.editors.left.ace.getSession().removeMarker(marker);
-        }, acediff);
-        acediff.editors.right.markers.forEach(function(marker) {
-            this.editors.right.ace.getSession().removeMarker(marker);
-        }, acediff);
-        if (acediff.options.threeWay)
-            acediff.editors.center.markers.forEach(function(marker) {
-                this.editors.center.ace.getSession().removeMarker(marker);
-            }, acediff);
+        for (var i in acediff.editors) {
+            var clear = removeMarker.bind(null, acediff.editors[i]);
+            acediff.editors[i].markers.forEach(clear);
+        }
+
     }
 
     function clearLineWidgets(editor) {
@@ -1153,7 +1457,7 @@
         }
     }
     // shows a diff in one of the two editors.
-    function showDiff(acediff, side, startLine, endLine, className) {
+    function addDiffMarker(acediff, side, startLine, endLine, className) {
         var editor = acediff.editors[side];
         if (endLine < startLine) { // can this occur? Just in case.
             endLine = startLine;
@@ -1167,7 +1471,6 @@
         // to get Ace to highlight the full row we just set the start and end chars to 0 and 1
         editor.markers.push(editor.ace.session.addMarker(new Range(startLine, 0, endLine, 1),
             classNames, 'fullLine'));
-
     }
 
     function addConnector(acediff, pair, leftStartLine, leftEndLine, rightStartLine,
@@ -1308,21 +1611,25 @@
             centerPosition = C.EDITOR_LEFT;
             class_ += " " + acediff.options.classes.fromRight;
         }
-        pair.diffs.forEach(function(info) {
-            var stops = info.stops;
-            var start = info[centerPosition + "StartLine"];
+        var centerStartLine = centerPosition + "StartLine";
+        var centerEndLine = centerPosition + "EndLine";
+        var otherStartLine = other + "StartLine";
+        var otherEndLine = other + "EndLine";
+        pair.diffs.forEach(function(lineDiff) {
+            var stops = lineDiff.stops;
+            var start = lineDiff[centerStartLine];
             //highlight conflict blocks in center
             for (var i in stops) {
                 if (stops[i][1] > start) {
-                    showDiff(acediff, center, start, stops[i][1], stops[i][0] ?
+                    addDiffMarker(acediff, center, start, stops[i][1], stops[i][0] ?
                         conflict : class_);
                 }
                 start = stops[i][1];
             }
-            if (info[centerPosition + "EndLine"] > start)
-                showDiff(acediff, center, start, info[centerPosition + "EndLine"],
+            if (lineDiff[centerEndLine] > start)
+                addDiffMarker(acediff, center, start, lineDiff[centerEndLine],
                     class_);
-            showDiff(acediff, other, info[other + "StartLine"], info[other + "EndLine"],
+            addDiffMarker(acediff, other, lineDiff[otherStartLine], lineDiff[otherEndLine],
                 otherClass);
         });
         if (pair.rawDiffs) {
@@ -1334,10 +1641,9 @@
     //used to get get the conflict zones
     //a diff
     function splitDiffs(diff1, diff2) {
-        var line = 0;
         var index1 = 0;
         var index2 = 0;
-        var offset1, offset2, end1, end2;
+        var start1, start2, end1, end2;
         var swapped = false;
 
         function swap() {
@@ -1351,132 +1657,231 @@
             temp = end2;
             end2 = end1;
             end1 = temp;
-            temp = offset2;
-            offset2 = offset1;
-            offset1 = temp;
+            temp = start2;
+            start2 = start1;
+            start1 = temp;
             swapped = !swapped;
         }
+        //starts represent the positions of line diffs
+        //diff1 is the diff that comes earlier in the center ie origin document
         while (index1 < diff1.length && index2 < diff2.length) {
             if (swapped) {
-                offset2 = diff2[index2].rightStartLine;
-                offset1 = diff1[index1].leftStartLine;
+                start2 = diff2[index2].rightStartLine;
+                start1 = diff1[index1].leftStartLine;
                 end2 = diff2[index2].rightEndLine;
                 end1 = diff1[index1].leftEndLine;
             } else {
-                offset1 = diff1[index1].rightStartLine;
-                offset2 = diff2[index2].leftStartLine;
+                start1 = diff1[index1].rightStartLine;
+                start2 = diff2[index2].leftStartLine;
                 end1 = diff1[index1].rightEndLine;
                 end2 = diff2[index2].leftEndLine;
             }
-            if (offset1 <= offset2) {
-                if (end1 <= offset2) {
+            //if diff1 is still above diff2
+            if (start1 <= start2) {
+                //if completely above, move to the next diff
+                if (end1 <= start2) {
                     index1++;
                     continue;
                 }
+                //A stop is used for markers
+                //given      |start [true, s1] [false s2] end
+                //represents |   conflict   |  noconflict   |
                 diff1[index1].stops || (diff1[index1].stops = []);
                 diff2[index2].stops || (diff2[index2].stops = []);
+                //Conflict is not dependent on whether chunks match
+                //each other just on whether diffs overlap
                 if (end1 <= end2) {
-                    diff1[index1].stops.push([false, offset2]);
+                    diff1[index1].stops.push([false, start2]);
                     diff1[index1++].stops.push([true, end1]);
                     diff2[index2].stops.push([true, end1]);
                     swap();
                 } else {
-                    diff1[index1].stops.push([false, offset2]);
+                    diff1[index1].stops.push([false, start2]);
                     diff1[index1].stops.push([true, end2]);
                     diff2[index2++].stops.push([true, end2]);
-
                 }
             } else {
                 swap();
             }
 
         }
-        if (swapped) swap();
+        //if (swapped) swap();
     }
 
-    //computeOffsets for aligning lines
-    //provided no folding
-    function computeOffsets(diffs, diff2) {
-        var diff;
-        var left = {};
-        var right = {};
-        var leftEndLine = 0,
-            rightEndLine = 0;
-        for (var j in diffs) {
-            var info = diffs[j];
-            rightEndLine = info.rightEndLine;
-            leftEndLine = info.leftEndLine;
-            var heightLeft = info.leftEndLine - info.leftStartLine;
-            var heightRight = info.rightEndLine - info.rightStartLine;
-            var offset = heightLeft - heightRight;
-            if (offset > 0) {
-                right[rightEndLine] = offset;
-            } else if (offset < 0) {
-                left[leftEndLine] = -offset;
-            }
+
+    function alignEditors(acediff, pairL, pairR, changes) {
+        if (acediff.isAligning == pairL) return;
+        acediff.isAligning = pairL;
+        var equal = {};
+        //map of lines aligned between left and center
+        //In the end we have something like,
+        // row: [left?,right?]
+
+        //move from left to right
+        var editors = [acediff.editors[pairL.left], acediff.editors[pairL.right]];
+        pairL.diffs.forEach(function(e) {
+            equal[e.rightEndLine] = [e.leftEndLine, e.rightEndLine];
+        });
+        if (pairR) {
+            editors.push(acediff.editors[pairR.right]);
+            pairR.diffs.forEach(function(e) {
+                if (equal[e.leftEndLine]) {
+                    equal[e.leftEndLine].push(e.rightEndLine);
+                } else equal[e.leftEndLine] = [null, e.leftEndLine, e.rightEndLine];
+                //to add more to the right, we'd then add a new equal object
+                //and make this array a value inside, but why
+            });
         }
-        if (!diff2) {
-            return {
-                left: left,
-                leftEndLine: leftEndLine,
-                right: right,
-                rightEndLine: rightEndLine
-            };
+        var start = 0;
+        if (changes) {
+            start = Infinity;
+            var row;
+            for (var i in changes) {
+                if (i == pairL.right) {
+                    row = changes[i];
+                } else {
+                    var pair = (i == pairL.left) ? pairL : pairR;
+                    var index = binarySearch(pair.diffs, changes[i], HOST, i == pairL.right);
+                    if (index < 0) index = ABOVE(index);
+                    row = index < 0 ? 0 : pair.diffs[index][HOST(i !== pairL.right, "StartLine")];
+                }
+                if (row < start) start = row;
+            }
+            //incomplete
         } else {
-            var other = computeOffsets(diff2);
-            var lastline = Math.max(rightEndLine, other.leftEndLine) + 1;
-            var la = -1,
-                lb = -1,
-                a = 0,
-                b = 0;
-            for (var i = 0; i < lastline;) {
-                var offsetLeft = right[i] || 0;
-                var offsetRight = other.left[i] || 0;
-                var delta = offsetLeft - offsetRight;
-                var db = offsetRight - (other.right[i] || 0);
-                var da = (left[i] || 0) - offsetLeft;
-
-                if (delta > 0) {
-                    other.right[b] = (other.right[b] || 0) + delta;
-                    other.left[i] = offsetLeft;
-
-                } else if (delta < 0) {
-                    left[a] = (left[a] || 0) - delta;
-                    right[i] = offsetRight;
-                }
-                a -= da;
-                b += db;
-                i++, a++, b++;
+            for (var k in acediff.editors) {
+                clearLineWidgets(acediff.editors[k]);
             }
-            for (i in right)
-                if (right[i] != other.left[i]) {
-                    console.error(other.left);
-                    throw Error("failed to merge offsets");
-                }
-            return {
-                left: left,
-                leftEndLine: leftEndLine,
-                center: right,
-                centerEndLine: lastline - 1,
-                right: other.right,
-                rightEndLine: other.rightEndLine
-            };
 
         }
+        if (equal[0]) equal[0] = editors.map(function(e, i) {
+            return equal[0][i] || 0;
+        });
+        var endOfLines = editors.map(function(el) {
+            return el.ace.session.getLength();
+        });
+        var len = endOfLines[1];
+        equal[len] = endOfLines;
+        for (var j = start; j <= len; j++) {
+            var rows = equal[j];
+            if (rows) {
+                alignLines(rows, editors);
+            }
+        }
+        if (acediff.isAligning == pairL)
+            acediff.isAligning = null;
     }
-    /*Note
-    //Refactoring in progress
-    //Functions with args(acediff,editor ....)
-    //require a pane for editor value ie left,right,center,only etc
-    //Functions with args(editor ..) require an editor object
-    */
+
+    function alignLines(rows, panes) {
+        var max = 0;
+        var offsets = {};
+        panes.forEach(function(e, i) {
+            if (rows[i] != undefined) {
+                offsets[i] = e.ace.session.documentToScreenRow(rows[i], 0) + e.scrollOffset;
+                if (offsets[i] > max) max = offsets[i];
+            }
+        });
+        panes.forEach(function(e, i) {
+            if (rows[i] != undefined && max > offsets[i])
+                addLineWidget(e, rows[i], max - offsets[i]);
+        });
+    }
+
+    // //computeOffsets for aligning lines
+    // //provided no folding
+    // //if we use screenToDocumentRow, we might get better results
+    // function computeOffsets(diffs) {
+    //     var left = {};
+    //     var right = {};
+    //     var leftEndLine = 0,
+    //         rightEndLine = 0;
+    //     for (var j in diffs) {
+    //         var info = diffs[j];
+    //         rightEndLine = info.rightEndLine;
+    //         leftEndLine = info.leftEndLine;
+    //         var heightLeft = info.leftEndLine - info.leftStartLine;
+    //         var heightRight = info.rightEndLine - info.rightStartLine;
+    //         var offset = heightLeft - heightRight;
+    //         if (offset > 0) {
+    //             right[rightEndLine] = offset;
+    //         } else if (offset < 0) {
+    //             left[leftEndLine] = -offset;
+    //         }
+    //     }
+    //     return {
+    //         left: left,
+    //         leftEndLine: leftEndLine,
+    //         right: right,
+    //         rightEndLine: rightEndLine
+    //     };
+    // }
+
+    // //BETTER STRUCTURE ABOVE - alignEditors
+    // //TODO come up with a better data structure for offsets
+    // function computeOffsets3(diffLeft, diffRight) {
+    //     var diffL = computeOffsets(diffLeft);
+    //     var diffR = computeOffsets(diffRight);
+    //     //should be equal but just in case
+    //     var lastline = Math.max(diffL.rightEndLine, diffR.leftEndLine);
+    //     /*
+    //     Similar to splitDiffs, but this time we are computing offsets
+    //     Am sure the codes can be merged somehow
+    //     computeOffsets adds an offset struct to the diffs
+    //     computeOffsets3 aligns those offsets by addition
+    //     a,i,b - The current line numbers on the left,center and right docs respectively
+    //     da ,db - Used to increment the line numbers on a,b respectively
+    //     delta - The difference between the offsets at that point
+    //     */
+    //     var a = 0,
+    //         i = 0,
+    //         b = 0;
+    //     //walk each line in the document ensuring that
+    //     //wherever there is an offset on one side, the other side
+    //     //is padded to match it
+    //     for (; i <= lastline; a++, i++, b++) {
+    //         var offsetLeft = diffL.right[i] || 0;
+    //         var offsetRight = diffR.left[i] || 0;
+    //         var delta = offsetLeft - offsetRight;
+    //         var db = offsetRight - (diffR.right[i] || 0);
+    //         var da = (diffL.left[i] || 0) - offsetLeft;
+
+    //         if (delta > 0) {
+    //             diffR.right[b] = (diffR.right[b] || 0) + delta;
+    //             diffR.left[i] = offsetLeft;
+
+    //         } else if (delta < 0) {
+    //             diffL.left[a] = (diffL.left[a] || 0) - delta;
+    //             diffL.right[i] = offsetRight;
+    //         }
+    //         a -= da;
+    //         b += db;
+    //     }
+    //     for (i in diffL.right)
+    //         if (diffL.right[i] != diffR.left[i]) {
+    //             console.error(diffR.left);
+    //             throw Error("failed to merge offsets");
+    //         }
+    //     return {
+    //         left: diffL.left,
+    //         leftEndLine: diffL.leftEndLine,
+    //         center: diffL.right,
+    //         centerEndLine: lastline,
+    //         right: diffR.right,
+    //         rightEndLine: diffR.rightEndLine
+    //     };
+    // }
+    // /*Note
+    // //Refactoring in progress
+    // //Functions with args(acediff,editor ....)
+    // //require a pane for editor value ie left,right,center,only etc
+    // //Functions with args(editor ..) require an editor object
+    // */
     function getScrollingInfo(acediff, editor) {
         return acediff.editors[editor].ace.getSession().getScrollTop();
     }
 
     function getEditorHeight(acediff) {
-        //editorHeight: document.getElementById(acediff.options.left.id).clientHeight
-        return document.getElementById(acediff.options.left.id).offsetHeight;
+        return acediff.editors[acediff.pairs[0].left].ace.container.offsetHeight;
     }
     // note that this and everything else in this script uses 0-indexed row numbers
     function endOfLineClean(diff, i) {
@@ -1518,7 +1923,10 @@
     function getRowPosition(editor, row, onScreen) {
         if (onScreen === undefined)
             onScreen = true;
-        var top = editor.ace.renderer.$cursorLayer.getPixelPosition({ row: row, column: 0 },
+        var top = editor.ace.renderer.$cursorLayer.getPixelPosition({
+                    row: row,
+                    column: 0
+                },
                 onScreen).top -
             (onScreen ? editor.ace.renderer.layerConfig.offset : 0);
         return top;
@@ -1544,7 +1952,7 @@
 
     // acediff.editors.left.ace.getSession().getLength() * acediff.lineHeight
     function getTotalHeight(acediff, editor) {
-        return acediff.editors[editor].ace.getSession().getScreenLength() * acediff.lineHeight;
+        return acediff.editors[editor].ace.getSession().getScreenLength() * acediff.editors[editor].ace.renderer.lineHeight;
     }
 
     // generates a Bezier curve in SVG format
@@ -1604,64 +2012,64 @@
             if (callNow) func.apply(context, args);
         };
     }
-    AceDiff.diff = function(container, opts) {
+    AceDiff.createContainer = function(container, opts) {
+        //unlike ace-inline diff, we create the editor
         function c(id, className) {
-            var left = document.createElement('div');
-            left.className = className;
-            left.id = id;
-            container.appendChild(left);
+            var div = document.createElement('div');
+            div.className = className;
+            div.id = id;
+            container.appendChild(div);
         }
         container.className += " acediff-container";
         c('acediff-left-editor', 'acediff-editor');
-        if (opts.center && opts.threeWay !== false) {
+        extend(opts,{
+            left: {
+                id: 'acediff-left-editor'
+            },
+            right: {
+                id: 'acediff-right-editor'
+            }
+        });
+        var showGutter = opts.showCopyArrows || opts.showConnectors;
+        if (opts.center && opts.left && opts.right && opts.threeWay !== false) {
+            extend(opts,{
+                center: {
+                    id: 'acediff-center-editor'
+                }
+            });
             container.className += " acediff-three-pane";
-            c('acediff-gutter-left', 'acediff-gutter');
+            showGutter && c('acediff-gutter-left', 'acediff-gutter');
             c('acediff-center-editor', 'acediff-editor');
-            c('acediff-gutter-right', 'acediff-gutter');
+            showGutter && c('acediff-gutter-right', 'acediff-gutter');
         } else {
-            c('acediff-gutter', 'acediff-gutter');
+            showGutter && c('acediff-gutter', 'acediff-gutter');
         }
         c('acediff-right-editor', 'acediff-editor');
+    };
+    AceDiff.diff = function(container,opts){
+        AceDiff.createContainer(container,opts);
         return new AceDiff(opts);
     };
     AceDiff.defaults = {
-        mode: null,
-        theme: null,
         ignoreWhitespace: false,
         diffGranularity: C.DIFF_GRANULARITY_BROAD,
-        lockScrolling: undefined,
+        lockScrolling: true,
         showDiffs: true,
         showInlineDiffs: true,
         alignLines: true,
         maxDiffs: 5000,
         showConnectors: undefined,
         showCopyArrows: undefined,
-        activeEditor: C.EDITOR_LEFT,
-        threeWay: undefined,
-        left: {
-            id: 'acediff-left-editor',
-            content: null,
-            mode: null,
-            theme: null,
-            editable: true,
-            copyLinkEnabled: true
-        },
-        center: {
-            id: 'acediff-center-editor',
-            content: null,
-            mode: null,
-            theme: null,
-            editable: true,
-            copyLinkEnabled: true
-        },
-        right: {
-            id: 'acediff-right-editor',
-            content: null,
-            mode: null,
-            theme: null,
-            editable: true,
-            copyLinkEnabled: true
-        },
+        activePane: C.EDITOR_LEFT,
+        theme: null, //can be configured per session
+        mode: null,
+        editable: false,
+        content: null,
+        copyLinkEnabled: true,
+        id: null,
+        left: null,
+        right: null,
+        center: null,
         classes: {
             gutterClass: 'acediff-gutter',
             gutterID: 'acediff-gutter',
@@ -1669,7 +2077,8 @@
             removed: 'acediff-removed',
             conflict: 'acediff-conflict',
             connector: 'acediff-connector',
-            inline: 'acediff-inline',
+            inlineRemoved: "acediff-inline-removed",
+            inlineAdded: "acediff-inline-added",
             newCodeConnectorLink: 'acediff-new-code-connector-copy',
             newCodeConnectorLinkContent: '&#8594;',
             deletedCodeConnectorLink: 'acediff-deleted-code-connector-copy',

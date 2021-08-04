@@ -5,7 +5,7 @@
 }
 
 .acediff-container {
-    height: 100%;
+    height: auto;
     width: 100%;
     overflow-y: hidden;
     font-size: 0;
@@ -13,11 +13,24 @@
     white-space: nowrap;
 }
 
+.acediff-container .acediff-editor:first-child{
+    border-top-left-radius: 4px;
+    border-bottom-left-radius: 4px;
+    border-left-width: 2px;
+}
+.acediff-container .acediff-editor:last-child{
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    border-right-width: 2px;
+}
 .acediff-container .acediff-gutter,
 .acediff-editor {
     height: 100%;
     display: inline-block;
     overflow: hidden;
+    border: 2px solid #222222;
+    border-left-width: 0;
+    border-right-width: 0;
     position: relative;
     margin: 0;
     padding: 0;
@@ -27,10 +40,9 @@
     width: 45%;
     min-width: 250px;
 }
-
 .acediff-container .acediff-gutter {
     font-size: 20px;
-    width: 40px;
+    width: 30px;
 }
 
 @media only screen and (min-width: 800px) {
@@ -43,9 +55,9 @@
     }
 }
 
-.acediff-diff.targetOnly {
+.targetOnly {
     height: 0px !important;
-    border-top: 1px solid #036daa;
+    border-top: 2px solid #036daa;
     border-bottom: 0px;
     position: absolute;
 }
@@ -102,14 +114,15 @@
     color: green;
 }
 
-.acediff-inline {
+.acediff-inline-added,
+.acediff-inline-removed {
     display: block;
     box-sizing: border-box;
     border: 1px solid grey;
     position: absolute;
 }
 
-.acediff-inline.fading {
+.fading {
     border-right: 5px solid transparent;
     border-top-style: dashed;
     border-bottom-style: dashed;
@@ -117,15 +130,16 @@
 
 .acediff-conflict {
     background-color: #9921ab;
+    opacity: 0.2;
     border-top: 1px solid #036daa;
     border-bottom: 1px solid #036daa;
     position: absolute;
     z-index: 4;
 }
 
-.acediff-content-removed .acediff-inline {
+.acediff-inline-removed {
     background: rgb(255, 0, 0);
-    opacity: 0.7;
+    opacity: 0.3;
 }
 
 .acediff-swapped .acediff-gutter-removed {
@@ -135,7 +149,7 @@
     border-left: 1px solid red;
 }
 
-.acediff-content-added .acediff-inline {
+.acediff-inline-added {
     background: rgb(0, 255, 0);
     opacity: 0.3;
 }
@@ -147,7 +161,7 @@
 }
 
 .acediff-removed {
-    opacity: 0.4;
+    opacity: 0.2;
     position: absolute;
     background: red;
 }

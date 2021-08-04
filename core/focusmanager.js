@@ -1,16 +1,15 @@
 _Define(function(global) {
-    //FocusManager is a class to manager transfer of
-    //focus in mobile, the defining methods are
-    //FocusManager.trap and FocusManager.focusIfKeyboard
+    //FocusManager - a class to manager transfer of
+    //focus in mobile
+    //FocusManager.trap
     //The first method ensures clicks to a particular element
-    //never blur an active input
-    //The other allows softKeyboard to behave like a hardware
-    //keyboard if visible, allowing window shortcuts etc
-    //There is a third form exposed only to overflows and quicklists
-    //In this method if an activeElement exists it is cached
-    //On close the activeElement is focused
+    //never blur an active input aka Android focusableInTouchMode
+    //FocusManager.focusIfKeyboard
+    //Allows intuitve movement of softKeyboard focus
+    //as well as editor shortcuts used by InvisibleTextArea
     //FocusManager.visit
-    //Usually the target is a keylistener
+    //Moves focus an element and returns a function that when called resets focus to
+    //the previously focused element if any
     "use strict";
     /**
      *  The Virtual Keyboard Detector
@@ -24,8 +23,8 @@ _Define(function(global) {
     var virtualKeyboardVisible = false;
     var KeyboardDetector;
     var debugKey = false;
-    if (!Env.isDesktop) {
-        //250 lines just so you can work on the web
+    if (!Env.isHardwareKeyboard) {
+        //>250 lines instead of an Android interface just so you can work on the web
         KeyboardDetector = (function(window, undefined) {
             //if you want something done well do it yourself
             var focusListener = (function() {
@@ -145,7 +144,7 @@ _Define(function(global) {
                             // This is the only time to assume keyboard is hidden
                             //But it will bring wrong values
                             //on hardware keyboard
-                            if (-heightDiff >= keyboardHeight-20) {
+                            if (-heightDiff >= keyboardHeight - 20) {
                                 keyboardHeight = -heightDiff;
                                 return -2;
                             } else {
@@ -232,7 +231,8 @@ _Define(function(global) {
                     } else {
                         //increase/decrease trust if it did not change
                         if (trust < 1.5 && trust > -1.5) {
-                            delta = Math.sign(trust + 0.01) * (1 - Math.pow(Math.tanh(trust), 2)) * Math.min(1, waitCount / 5);
+                            delta = Math.sign(trust + 0.01) * (1 - Math.pow(Math.tanh(trust), 2)) * Math
+                                .min(1, waitCount / 5);
                             if (agreed) delta = -delta;
                             trust -= delta;
                         }
@@ -260,8 +260,12 @@ _Define(function(global) {
             function resizeHandler() {
                 var score = getScore(sizeListener.activated(virtualKeyboardVisible),
                     focusListener.activated(virtualKeyboardVisible));
-                if(debugKey){
-                    console.log({trust,heightDiff,score});
+                if (debugKey) {
+                    console.log({
+                        trust: trust,
+                        heightDiff: heightDiff,
+                        score: score
+                    });
                 }
                 if (score > 0 && !virtualKeyboardVisible) {
                     virtualKeyboardVisible = true;
@@ -304,16 +308,16 @@ _Define(function(global) {
 
     function focus(el) {
         //Modals trap focus horribly
-        if (M.Modal._modalsOpen > 0) {
-            var a = $(el).closest(".modal");
-            //if the element is not in a modal, ignore
-            if (a.length < 1) return postClearRefocus(true);
-            var instance = M.Modal.getInstance(a[a.length - 1]);
-            //if the modal is not the topmost modal ignore
-            if (!instance || instance._nthModalOpened !== M.Modal._modalsOpen) {
-                return postClearRefocus(true);
-            }
-        }
+        // if (M.Modal._modalsOpen > 0) {
+        //     var a = $(el).closest(".modal");
+        //     //if the element is not in a modal, ignore
+        //     if (a.length < 1) return postClearRefocus(true);
+        //     var instance = M.Modal.getInstance(a[a.length - 1]);
+        //     //if the modal is not the topmost modal ignore
+        //     if (!instance || instance._nthModalOpened !== M.Modal._modalsOpen) {
+        //         return postClearRefocus(true);
+        //     }
+        // }
         if (!el.parentElement) return;
         //ace has special focus handling
         //for old browsers
@@ -369,6 +373,7 @@ _Define(function(global) {
     var clearRefocusTimer = null;
 
     function isFocusable(el) {
+        if (Env.isHardwareKeyboard) return true;
         if (el.tagName == "TEXTAREA") return !el.readOnly;
         if (el.tagName == "INPUT") {
             var type = el.type;
@@ -408,7 +413,7 @@ _Define(function(global) {
         if (hook) {
             focus(activeElement);
         } else {
-            if (e.realtedTarget && isFocusable(e.relatedTarget)) focus(e.relatedTarget);
+            if (e.relatedTarget && isFocusable(e.relatedTarget)) focus(e.relatedTarget);
             else setImmediate(function() {
                 if (activeElement && !hasFocusedInput()) {
                     focus(activeElement);
@@ -418,30 +423,52 @@ _Define(function(global) {
     };
     var hook = false;
 
-    function focusIfKeyboard(el, allowDesktop, force) {
+    function focusIfKeyboard(el, allowHardwareKbd, force) {
         if (activeElement) {
             postClearRefocus(true);
         }
         if (
             virtualKeyboardVisible ||
             force ||
-            (allowDesktop && Env.isDesktop)
+            (allowHardwareKbd && Env.isHardwareKeyboard)
         ) {
             focus(el);
             autoRefocus();
             postClearRefocus();
         }
     }
+    //Focus on an element and return a callback
+    //which smartly returns focus to original position
+    //Useful for dialogs
+    function visit(newfocus, forceFocus) {
+        var element =
+            activeElement ||
+            ((virtualKeyboardVisible || Env.isHardwareKeyboard) &&
+                hasFocusedInput() &&
+                document.activeElement);
+        if (newfocus) focusIfKeyboard(newfocus, true, forceFocus);
+        else element && element.blur();
+        if (element) {
+            //return a function to return focus
+            return function() {
+                if (hasFocusedInput() && document.activeElement != newfocus)
+                    return;
+                focusIfKeyboard(element, true);
+            };
+        } else {
+            return noop;
+        }
+    }
     global.FocusManager = {
         get activeElement() {
             return (
                 activeElement ||
-                ((hasFocusedInput() || Env.isDesktop) && document.activeElement)
+                ((hasFocusedInput() || Env.isHardwareKeyboard) && document.activeElement)
             );
         },
         //allows clicks to buttons to return focus to editor
         trap: function(el, eagerly) {
-            if (!Env.isDesktop) {
+            if (!Env.isHardwareKeyboard) {
                 el.on(
                     event_mousedown,
                     eagerly ? autoRefocusEagerly : autoRefocus
@@ -449,29 +476,8 @@ _Define(function(global) {
                 el.on(event_mouseup, postClearRefocus);
             }
         },
-        canTakeInput: isFocusable,
-        //Focus on an element and return a callback
-        //which smartly returns focus to original position
-        //Useful for dialogs
-        visit: function(newfocus, forceFocus) {
-            var element =
-                activeElement ||
-                ((virtualKeyboardVisible || Env.isDesktop) &&
-                    hasFocusedInput() &&
-                    document.activeElement);
-            if (newfocus) focusIfKeyboard(newfocus, true, forceFocus);
-            else element && element.blur();
-            if (element) {
-                //return a function to return focus
-                return function() {
-                    if (hasFocusedInput() && document.activeElement != newfocus)
-                        return;
-                    focusIfKeyboard(element, true);
-                };
-            } else {
-                return noop;
-            }
-        },
+        isFocusable: isFocusable,
+        visit: visit,
         release: function(el) {
             postClearRefocus(true);
             el.off(event_mousedown, autoRefocus);
@@ -485,7 +491,19 @@ _Define(function(global) {
         hintNoChangeFocus: function() {
             hook = true;
         },
-        debug: function(){
+        onModalOpen: function() {
+            var el = this.$el;
+            var inputs = el.find('input,textarea');
+            var firstFocus = el[0];
+            for (var i in inputs) {
+                if (isFocusable(inputs[i])) {
+                    firstFocus = inputs[i];
+                    break;
+                }
+            }
+            this.$returnFocus = visit(firstFocus, true);
+        },
+        debug: function() {
             debugKey = true;
         },
         get keyboardVisible() {

@@ -47,9 +47,9 @@ _Define(function(global) {
         this.write = function(data, cb) {
             var e = error;
             if (closed)
-                e = {
+                e = global.createError({
                     code: "ECLOSED",
-                };
+                });
             else if (!e) buffers.push(data);
             setImmediate(cb && cb.bind(null, e));
         };
@@ -95,7 +95,7 @@ _Define(function(global) {
                         return cb(e);
                     }
                     if (st.type == "dir") {
-                        var counter = createCounter(function(e) {
+                        var counter = createCounter(function() {
                             if (error.error) return cb(error.error);
                             //ignore errors
                             fs.rmdir(path, cb);
@@ -149,8 +149,8 @@ _Define(function(global) {
                     var each = function(path) {
                         return function(err, stat) {
                             if (
-                                stat &&
-                                stat.type == "dir" &&
+                                (!stat ||
+                                    stat.type == "dir") &&
                                 path[path.length - 1] != "/"
                             ) {
                                 path = path + "/";
@@ -160,8 +160,7 @@ _Define(function(global) {
                         };
                     };
                     var final = function(error) {
-                        if (error) cb(error);
-                        else cb(null, dest);
+                        cb(null, dest);
                     };
                     var counter = createCounter(final);
                     counter.increment();
@@ -242,233 +241,18 @@ _Define(function(global) {
     }
     global.FindFileServer = FindFileServer;
 });
-//restfileserver
-_Define(function(global) {
-    "use strict";
-    var BaseFs = global.BaseFs;
-    var FileUtils = global.FileUtils;
-    var request = global.request;
-    var requestBuffer = global.requestBuffer;
-    var sendBuffer = global.sendBuffer;
-    var normalizeEncoding = FileUtils.normalizeEncoding;
-    /*TODO implement streams ad links, or leave links*/
-    function RESTFileServer(address, rootDir) {
-        var server = address;
-        rootDir = rootDir || "/";
-        var encodings = ["utf8"];
-        request(
-            server + "/encodings",
-            "",
-            function(e, f) {
-                this.$encodingList = null;
-                if (!e) encodings = f;
-            }.bind(this)
-        );
-        this.icon = "storage";
-        this.readFile = function(path, opts, callback) {
-            var encoding;
-            if (opts) {
-                if (typeof opts === "function") {
-                    callback = opts;
-                    opts = null;
-                } else
-                    encoding =
-                    opts.constructor === String ? opts : opts.encoding;
-            }
-            if (!encoding) {
-                requestBuffer(server + "/open", path, callback);
-            } else
-                request(
-                    server + "/open", {
-                        path: path,
-                        encoding: encoding,
-                    },
-                    callback
-                );
-        };
-        this.getDisk = function() {
-            return "local";
-        };
-        this.getFiles = function(path, callback) {
-            request(
-                server + "/files", {
-                    path: path,
-                    appendSlash: true,
-                },
-                callback
-            );
-        };
-        this.fastGetOid = function(path, callback) {
-            request(
-                server + "/fastGetOid", {
-                    path: path,
-                },
-                callback
-            );
-        };
-        this.readdir = function(path, callback) {
-            request(
-                server + "/files", {
-                    path: path,
-                },
-                callback
-            );
-        };
-        this.writeFile = function(path, content, opts, callback) {
-            var encoding;
-            if (opts) {
-                if (typeof opts === "function") {
-                    callback = opts;
-                    opts = null;
-                    encoding = null;
-                } else if (typeof opts == "string") {
-                    encoding = opts;
-                } else {
-                    encoding = opts.encoding;
-                }
-            }
-            var blob = new FormData();
-            blob.set("encoding", encoding);
-            blob.set("content", new Blob([content]), path);
-            sendBuffer(
-                server + "/save?path=" + path.replace(/\//g, "%2F"),
-                blob,
-                callback
-            );
-        };
-        this.mkdir = function(path, callback) {
-            request(
-                server + "/new", {
-                    path: path,
-                },
-                callback
-            );
-        };
-        this.delete = function(path, callback) {
-            request(
-                server + "/delete", {
-                    path: path,
-                },
-                callback
-            );
-        };
-        this.unlink = this.rmdir = this.delete;
-        this.rename = function(path, dest, callback) {
-            request(
-                server + "/rename", {
-                    path: path,
-                    dest: dest,
-                },
-                callback
-            );
-        };
-        this.copyFile = function(path, dest, callback, overwrite) {
-            request(
-                server + "/copy", {
-                    path: path,
-                    dest: dest,
-                    overwrite: overwrite || null,
-                },
-                callback
-            );
-        };
-        this.moveFile = function(path, dest, callback, overwrite) {
-            request(
-                server + "/move", {
-                    path: path,
-                    dest: dest,
-                    overwrite: overwrite || null,
-                },
-                callback
-            );
-        };
-        this.getRoot = function() {
-            return rootDir;
-        };
-        this.stat = function(path, opts, callback) {
-            if (!callback && opts && typeof opts === "function") {
-                callback = opts;
-                opts = null;
-            }
-            request(
-                server + "/info", {
-                    path: path,
-                    isLstat: opts || null,
-                },
-                callback &&
-                function(e, s) {
-                    if (s) {
-                        s = FileUtils.createStats(s);
-                    }
-                    callback(e, s);
-                }
-            );
-        };
-        this.isEncoding = function(e) {
-            if (encodings.indexOf(e) > -1) return e;
-            //inefficient op
-            var i = encodings
-                .map(normalizeEncoding)
-                .indexOf(normalizeEncoding(e));
-            if (i > -1) return encodings[i];
-            return false;
-        };
-        this.getEncodings = function() {
-            return encodings;
-        };
-        this.lstat = function(path, callback) {
-            this.stat(path, true, callback);
-        };
-        this.href = server + "/root/";
-        BaseFs.call(this);
-    }
-    global.RESTFileServer = RESTFileServer;
-    if (Env.canLocalHost) {
-        FileUtils.registerFileServer(
-            "rest",
-            "REST HTTP Fileserver",
-            function(conf) {
-                var address = Env._server;
-                var root = "/";
-                if (conf) {
-                    if (conf.address) {
-                        address = conf.address;
-                        if (!address.startsWith("http"))
-                            address = "http://" + address;
-                    }
-                    if (conf.root) {
-                        root = conf.root;
-                    }
-                }
-                return (window.rfs = new RESTFileServer(address, root));
-            },
-            [{
-                    name: "address",
-                    caption: "Address",
-                    type: "text",
-                    value: Env._server || "http://localhost:8000",
-                },
-                {
-                    name: "root",
-                    caption: "Root Directory",
-                    value: "/",
-                    type: "text",
-                },
-            ]
-        );
-    }
-}); /*_EndDefine*/
 //stubfileserver
 _Define(function(global) {
     var Utils = global.Utils;
-    var noop = global.Utils.noop;
     var FileUtils = global.FileUtils;
     var BaseFs = global.BaseFs;
 
-    function StubFileServer(url, resolve) {
+    function StubFileServer(resolve) {
+        this.fifif = Utils.genID("FKKF");
         //the core async methods of a file server
         var propsToEnqueue = [
             "readFile",
+            "getFiles", //not core, but massive optimization oppurtunity
             "writeFile",
             "readdir",
             "stat",
@@ -491,7 +275,6 @@ _Define(function(global) {
             };
         }, this);
         StubFileServer.super(this);
-        this.$url = url;
         this.$inject = function() {
             var server = resolve();
             server.id = this.id;
@@ -502,6 +285,7 @@ _Define(function(global) {
             propsToEnqueue.forEach(function(e) {
                 this[e] = server[e].bind(server);
             }, this);
+            this.getDisk = server.getDisk.bind(server);
             queuedOps.forEach(function(e) {
                 server[e.method].apply(server, e.args);
             });
@@ -509,43 +293,22 @@ _Define(function(global) {
         }.bind(this);
     }
     Utils.inherits(StubFileServer, BaseFs);
-    /*Override this method if you will have multiple
-        instances eg
-    this.load = function() {
-        if (loaded) $inject()
-        if (loading) loader.on('loaded', $inject)
-        else {
-            loader.load();
-            loader.on('load', $inject);
-        }
-        //toprevent more calls to $inject
-        this.load = function() {}
-    }*/
+    /*Calles when the first request comes in*/
+    StubFileServer.prototype.load = Utils.noop;
     StubFileServer.prototype.$isStub = true;
-    StubFileServer.prototype.load = function() {
-        var script = document.createElement("script");
-        script.setAttribute("type", "text/javascript");
-        script.setAttribute("id", this.id);
-        script.src = this.$url;
-        script.onload = this.$inject;
-        document.body.appendChild(script);
-        this.load = noop;
-    };
     global.StubFileServer = StubFileServer;
-    
+
     //wish we did not have to keep a separate object
     var factories = {};
-    FileUtils.registerFsExtension = function(id,caption, factory,config) {
-        if(caption){
-            FileUtils.registerFileServer(id, caption, function(params) {
-                params.type = "!extensions";
-                params.factoryId = id;
-                return factory(params);
-            },config);
-        }
+    FileUtils.registerFsExtension = function(id, caption, factory, config) {
+        FileUtils.registerFileServer(id, caption, function(params) {
+            params.type = "!extensions";
+            params.factoryId = id;
+            return factory(params);
+        }, config);
         if (factory) {
-            factories[id]=factory;
-            FileUtils.ownChannel(id, function(stub) {
+            factories[id] = factory;
+            FileUtils.ownChannel("servers-" + id, function(stub) {
                 stub.$inject();
             });
         }
@@ -555,9 +318,9 @@ _Define(function(global) {
         if (factories[params.factoryId]) {
             return factories[params.factoryId](params);
         } else {
-            var stub = new StubFileServer(null, load);
-            stub.load = Utils.noop;
-            FileUtils.postChannel("server-" + params.factoryId, stub);
+            var stub = new StubFileServer(load.bind(null, params));
+            stub.icon = params.icon;
+            FileUtils.postChannel("servers-" + params.factoryId, stub);
             return stub;
         }
     }
@@ -569,61 +332,80 @@ _Define(function(global) {
 }); /*_EndDefine*/
 //lightningfs
 _Define(function(global) {
+    /*globals LightningFS*/
     var InAppFileServer;
     var noop = global.Utils.noop;
     var FileUtils = global.FileUtils;
     var StubFileServer = global.StubFileServer;
     var BaseFs = global.BaseFs;
-    global.getBrowserFileServer = function() {
+    var Imports = global.Imports;
+
+    function initBrowserFs() {
         if (InAppFileServer) return InAppFileServer;
         var fs = InAppFileServer;
         if (window.LightningFS) {
-            fs = InAppFileServer = new LightningFS("grace");
-            //No worker will be using you anytime soon
+            var isApp = Env.isWebView;
+            fs = InAppFileServer = new LightningFS(isApp ? "grace_app" : "grace");
+            //No worker will be using it anytime soon
             //And we want to be able to use storage
             //even when quota is exhausted
             //todo make this less of a hack
             fs.promises._initPromise.then(function() {
-                fs.promises._mutex = {
-                    _has: true,
-                    has: function() {
-                        return this._has;
-                    },
-                    acquire: function() {
-                        this._has = true;
-                        return true;
-                    },
-                    wait: noop,
-                    release: function() {
-                        this._has = false;
-                        return true;
-                    },
-                    _keepAlive: function() {
-                        this._keepAliveTimeout = true;
-                    },
-                    _stopKeepAlive: function() {
-                        if (this._keepAliveTimeout) {
-                            this._keepAliveTimeout = null;
-                        }
-                    },
+                if (isApp) {
+                    fs.promises._mutex = {
+                        _has: true,
+                        has: function() {
+                            return this._has;
+                        },
+                        acquire: function() {
+                            this._has = true;
+                            return true;
+                        },
+                        wait: noop,
+                        release: function() {
+                            this._has = false;
+                            return true;
+                        },
+                        _keepAlive: function() {
+                            this._keepAliveTimeout = true;
+                        },
+                        _stopKeepAlive: function() {
+                            if (this._keepAliveTimeout) {
+                                this._keepAliveTimeout = null;
+                            }
+                        },
+                    };
+                    fs.promises._deactivate = noop;
+                }
+                var read = fs.readFile;
+                fs.readFile = function(path, opts, cb) {
+                    if (typeof opts == 'function') {
+                        cb = opts;
+                        opts = {};
+                    }
+                    read.call(fs, path, opts, function(e, i) {
+                        if (!e && i === undefined) {
+                            cb(global.createError({
+                                code: 'EISDIR'
+                            }));
+                        } else cb(e, i);
+                    });
                 };
-                fs.promises._deactivate = noop;
             });
             BaseFs.call(fs);
         } else {
-            fs = new StubFileServer(
-                "./libs/js/lightning-fs.js",
-                global.getBrowserFileServer
-            );
+            fs = new StubFileServer(initBrowserFs);
+            fs.load = Imports.define(["./libs/js/lightning-fs.js"],
+                fs.$inject, noop);
         }
         fs.icon = "memory";
         fs.id = "inApp";
         fs.isCached = true;
         return fs;
-    };
+    }
     FileUtils.registerFileServer(
         "inApp",
         "In-Memory FileSystem",
-        global.getBrowserFileServer
-    );
+        initBrowserFs,
+        null, true);
 });

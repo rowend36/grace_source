@@ -113,10 +113,10 @@ _Define(function(global) {
             copyTextEl.selectionEnd = text.length;
             var release = FocusManager.visit(copyTextEl, true);
             var result = document.execCommand("copy") ?
-                undefined : {
+                undefined : global.createError({
                     code: "EUNKNOWN",
                     message: "Failed to write clipboard",
-                };
+                });
             release();
             callback && callback(result);
         };
@@ -125,10 +125,10 @@ _Define(function(global) {
             copyTextEl.focus();
             copyTextEl.value = "";
             var result = document.execCommand("paste") ?
-                undefined : {
+                undefined : global.createError({
                     code: "EUNKNOWN",
                     message: "Failed to write clipboard",
-                };
+                });
             release();
             callback(result, copyTextEl.value);
         };
@@ -224,14 +224,34 @@ _Define(function(global) {
     });
 
     function initEditor(e) {
-        e.editor.on("copy", Functions.copy);
         //hack to get native clipboard content
-        e.editor.on("paste", Functions.copy);
+       e.editor.commands.on('exec', function(e) {
+            if (e.command.name == "cut" || e.command.name == "copy") {
+                clipboard.set(e.editor.getCopyText(), true);
+
+            } else if (e.command.name == "paste") {
+                clipboard.set(e.args.text, true);
+            }
+        });
+        e.editor.on("menuClick", function(e, editor) {
+            switch (e.action) {
+                case "copy":
+                case "cut":
+                    clipboard.set(editor.getCopyText());
+                    break;
+                case "paste":
+                    clipboard.get(0, function(text) {
+                        editor.execCommand(e.action, text || "");
+                    });
+                    break;
+                default:
+                    return;
+            }
+            e.preventDefault();
+        });
     }
     Editors.forEach(function(editor) {
-        editor.on("copy", Functions.copy);
-        //hack to get native clipboard content
-        editor.on("paste", Functions.copy);
+      initEditor({editor:editor});  
     });
     Functions.initMultiClipboard = initEditor;
     appEvents.on("createEditor", initEditor);
@@ -245,15 +265,15 @@ _Define(function(global) {
             //not counting extra tokens such as escpae /, etc
             var needed = data.length - MAX_CLIP_SIZE;
             clip = clip.slice(0);
-            var keys = clip.map(function(e, i) {
+            var indices = clip.map(function(e, i) {
                 return i;
             });
-            keys.sort(function(a, b) {
+            indices.sort(function(a, b) {
                 return (a - b) * 10000 + (clip[a].length - clip[b].length);
             });
             do {
-                needed -= keys[0].length;
-                data.splice(keys[0], 1);
+                needed -= indices[0].length;
+                clip.splice(indices[0], 1);
             } while (clip.length && needed > 0);
             data = JSON.stringify(clip);
         }
@@ -264,6 +284,7 @@ _Define(function(global) {
     }, 40);
 
     var clipboardList = new BottomList("clipboard-list", clipboard._clip);
+    clipboardList.headerText = 'Multi Clipboard';
     Editors.addCommands([{
         name: "openClipboard",
         bindKey: {
@@ -273,7 +294,7 @@ _Define(function(global) {
         exec: function() {
             clipboardList.show();
         },
-    },{
+    }, {
         name: "pushToMultiClipboard",
         bindKey: {
             win: "Ctrl-Alt-C",
@@ -282,14 +303,16 @@ _Define(function(global) {
         exec: function(editor) {
             clipboard.text = editor.getSelectedText();
         },
-    },{
+    }, {
         name: "pasteFromMultiClipboard",
         bindKey: {
             win: "Ctrl-Alt-V",
             mac: "Command-Alt-V",
         },
         exec: function(editor) {
-            editor.insert(clipboard.text);
+            editor.execCommand('paste', {
+                text: clipboard.text
+            });
         },
     }, {
         name: "swapIntoMultiClipboard",
@@ -299,11 +322,14 @@ _Define(function(global) {
         },
         exec: function(editor) {
             var text = editor.getSelectedText();
-            editor.insert(clipboard.text);
+            editor.execCommand('paste', {
+                text: clipboard.text
+            });
             clipboard.delete();
-            if(text)clipboard.text = text;
+            if (text)
+                clipboard.text = text;
         },
-    } ]);
+    }]);
     clipboardList.on("select", function(ev) {
         //remove pasted index
         if (ev.index && clipboard.get(ev.index) == ev.item) {
@@ -316,28 +342,29 @@ _Define(function(global) {
         clipboardList.hide();
     });
     clipboardList.on("clear", function(ev) {
-        clipboard.onchange(clipboardList._clip);
+        clipboard.onchange(clipboardList.items);
     });
     var copyFilePath = {
         caption: "Copy File Path",
         onclick: function(ev) {
-            var marked = ev.marked?ev.marked.map(ev.browser.childFilePath,ev.browser):null;
-            if ((ev.filepath || marked) && ev.browser.getParent) {
+            ev.preventDefault();
+            var marked = ev.marked ? ev.marked.map(ev.browser.childFilePath, ev.browser) : null;
+            if (!marked && !ev.filepath) return;
+            if (ev.browser.getParent) {
                 var root = false;
                 var a = ev.browser.getParent();
-                ev.preventDefault();
                 while (a && a.rootDir) {
                     root = a.rootDir;
                     a = a.getParent();
                 }
                 if (root) {
                     return (clipboard.text =
-                        "./" + marked ? marked.map(function(e) {
-                            return FileUtils.relative(root, e);
-                        }).join(",") : FileUtils.relative(root, ev.filepath));
+                        "./" + marked ?
+                        marked.map(FileUtils.relative.bind(null, root)).join(",") :
+                        FileUtils.relative(root, ev.filepath));
                 }
-                return (clipboard.text = marked ? marked.join(",") : ev.filepath || ev.rootDir);
             }
+            return (clipboard.text = marked ? marked.join(",") : ev.filepath || ev.rootDir);
         }
     };
     FileUtils.registerOption(
