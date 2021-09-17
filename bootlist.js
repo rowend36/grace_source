@@ -1,125 +1,27 @@
 _Define(function(global) {
+    //Extra files in a simple import format
+    //Such that bundling is also very easy,
     "use strict";
     var appEvents = global.AppEvents;
     var appConfig = global.appConfig;
-    var Functions = global.Functions;
     var Imports = global.BootList;
-    var MainMenu = global.MainMenu;
-    Imports.add({
-        ignoreIf: Env.isWebView,
-        func: function() {
-            var method = "requestFullscreen" in document.body ?
-                "requestFullscreen" :
-                "webkitRequestFullscreen" in window ?
-                "webkitRequestFullscreen" : "webkitRequestFullScreen" in window ?
-                "webkitRequestFullScreen" : null;
-            if (method)
-                MainMenu.addOption("fullscreen", {
-                    icon: "fullscreen",
-                    onclick: function() {
-                        document.body[method]();
-                    },
-                    caption: "Enable Immersive Mode"
-                }, true);
-
-
-        }
-    });
+    //HttpServer brought up because of custom themes
+    Imports.add(["./fileserver/httpfs.js"]);
+    Imports.add([{
+            name: "Confuguration",
+            func: $.noop //bootlist insists we add something
+        },
+        "./prefs/config.js",
+        "./prefs/key_binding.js"
+    ]);
     Imports.add({
         //material colors
         name: "Material Colors",
         style: "./libs/css/materialize-colors.css",
     });
     Imports.add("./libs/js/brace-expansion.js");
-    Imports.add({
-        name: "Inbuilt Fonts",
-        func: function() {
-            var fonts = [
-                "Anonymous Pro",
-                "Courier Prime",
-                {
-                    name: "Fira Code",
-                    types: ["Regular", "Bold"],
-                    formats: ["woff", "woff2", "ttf"],
-                },
-                "Hack",
-                {
-                    name: "Inconsolata",
-                    types: ["Regular", "Bold"],
-                },
-                "JetBrains Mono",
-                {
-                    name: "Roboto Mono",
-                    types: ["Regular", "Bold"],
-                },
-                {
-                    name: "PT Mono",
-                    types: ["Regular"],
-                },
-                "Source Code Pro",
-                "Ubuntu Mono",
-                {
-                    name: "Nova Mono",
-                    types: ["Regular"],
-                },
-            ];
-            /*var Default = {
-                types: ['Regular', 'Bold', 'Italic', 'BoldItalic'],
-                formats: ['ttf']
-            };
-            var template =
-                "@font-face {\
-font-family: $NAME;\
-src: $SRC\
-font-weight: $WEIGHT;\
-font-style: $STYLE;\
-}";
-            var weights = {
-                "Bold": 'bold',
-                "Regular": 'normal',
-                "Italic": 'normal',
-                "BoldItalic": 'bold'
-            };
-            var url = "url(\"$PATH.$EXT\") format(\"$FORMAT\")";
-            var cssText = fonts.map(function(e) {
-                if (typeof e == 'string') {
-                    Default.name = e;
-                    e = Default;
-                } else if (!e.formats) {
-                    e.formats = Default.formats;
-                }
-                var name = "\"" + e.name + "\"";
-                var condensed = "./libs/fonts/"+e.name.replace(/ /g,"_")+"/"+e.name.replace(/ /g,"");
-                return e.types.map(function(type) {
-                    var style = type.indexOf('Italic')<0?'normal':'italic';
-                    var weight = weights[type];
-                    var path = condensed+"-"+type;
-                    var src = e.formats.map(function(ext) {
-                        return url.replace("$EXT",ext).replace("$PATH",path).replace("$FORMAT",ext=='ttf'?'truetype':ext);
-                    }).join(", ")+";";
-                    return template.replace("$SRC",src)
-                        .replace("$WEIGHT",weight)
-                        .replace("$STYLE",style)
-                        .replace("$NAME",name);
-                }).join("\n");
-            }).join("\n");
-            var styleEl = document.createElement('style');
-            styleEl.innerHTML = cssText;
-            document.head.appendChild(styleEl);*/
-            global.registerValues({
-                fontFamily: "Font used by the editor and search results. Availability of fonts varies with operating. The following are guaranteed to be available " +
-                    fonts
-                    .map(function(e) {
-                        return e.name || e;
-                    })
-                    .join(", ") +
-                    ".\n",
-            }, "editor");
-        },
-    });
-    Imports.add("./prefs/linter_options.js", {
-        script: "./prefs/auto_settings.js",
-    });
+    Imports.add("./core/glob.js");
+    Imports.add("./prefs/linter_options.js", "./prefs/auto_settings.js");
     //runManager
     Imports.add({
         script: "./libs/js/splits.js",
@@ -129,20 +31,19 @@ font-style: $STYLE;\
         script: "./run/previewer.js",
     }, {
         name: "Creating run manager",
-        script: "./run/modes.js",
+        script: "./run/modes.js"
     }, {
         name: "Enhanced Clipboard",
         script: "./tools/enhanced_clipboard.js",
     }, {
         func: function() {
             var button = $("#runButton");
-            button.click(Functions.run);
-            var lastClass = "btn-large",
-                hideRunButton;
+            button.click(global.runCode); //defined in run/modes.js
+            var hideRunButton;
 
             function update(ev) {
                 var enable = appConfig.enableFloatingRunButton;
-                if(ev){
+                if (ev) {
                     button.removeClass("centerV");
                     button.addClass("btn-large");
                     appEvents.off("keyboard-change", hideRunButton);
@@ -174,7 +75,7 @@ font-style: $STYLE;\
                 } else {
                     button.hide();
                 }
-            };
+            }
             global.ConfigEvents.on("application.enableFloatingRunButton", update);
             update();
         },
@@ -190,7 +91,8 @@ font-style: $STYLE;\
                 name: "Tags",
                 script: "./autocompletion/tags/completer.js",
             },
-            "./autocompletion/tags/finders.js"
+            "./autocompletion/tags/async_tags.js",
+            "./autocompletion/tags/regex_tags.js"
         ], {
             script: "./autocompletion/loader.js",
         }, {
@@ -217,8 +119,7 @@ font-style: $STYLE;\
             var FileUtils = global.FileUtils;
             var EventsEmitter = global.EventsEmitter;
             //FileBrowsers
-            appEvents.triggerForever("filebrowsers");
-            if (global.RFileBrowser) {
+            if (!appConfig.disableOptimizedFileBrowser && global.RFileBrowser) {
                 global.FileBrowser = global.RFileBrowser;
             }
             FileUtils.initialize(global.SideView, global.SideViewTabs);
@@ -275,14 +176,13 @@ font-style: $STYLE;\
             }
             global.createSearch('#search_text', "#find_file_btn", doFind);
             $("#find_file_cancel_btn").click(stopFind);
+            FileUtils.triggerForever("filebrowsers-loaded");
         },
     });
-    //HttpServer
-    Imports.add(["./fileserver/httpfs.js"]);
 
     //StatusBar SearchBox
     Imports.add({
-        name: "SearchBox and Status", //Looks awful on small splits
+        name: "SearchBox and Status", //Looks awful in landscape
         /*Isolated*/
         func: function() {
             var Dropdown = global.Dropdown;
@@ -295,11 +195,9 @@ font-style: $STYLE;\
                 var SB_HEIGHT = 100;
                 var SB_WIDTH = 300;
                 var lastAlign = null;
+                var refocus;
 
                 function position() {
-                    var refocus = global.FocusManager.visit(
-                        global.FocusManager.activeElement
-                    );
                     var el = SearchBox.element;
                     var editDiv = SearchBox.editor.container;
                     var editRect = editDiv.getBoundingClientRect();
@@ -324,7 +222,11 @@ font-style: $STYLE;\
                             (inContent && SearchBox.active)
                         ) {
                             if (!inContent) {
+                                refocus = global.FocusManager.visit(
+                                    global.FocusManager.activeElement
+                                );
                                 $(".content")[0].appendChild(SearchBox.element);
+                                refocus();
                                 inContent = true;
                             }
                             //in content overlapping and overflowing
@@ -332,7 +234,11 @@ font-style: $STYLE;\
                         } else {
                             //in editDiv, overlapping no overflow
                             if (inContent) {
+                                refocus = global.FocusManager.visit(
+                                    global.FocusManager.activeElement
+                                );
                                 editDiv.appendChild(el);
+                                refocus();
                                 inContent = false;
                             }
                             l = editRect.left;
@@ -352,11 +258,14 @@ font-style: $STYLE;\
                             el.style.right = "auto";
                             el.style.left = p[0] - l + "px";
                         }
-                        refocus();
                     } else {
                         //small editor height
                         if (!inContent) {
+                            refocus = global.FocusManager.visit(
+                                global.FocusManager.activeElement
+                            );
                             $(".content")[0].appendChild(SearchBox.element);
+                            refocus();
                             inContent = true;
                         }
                         var u = $("#viewroot")[0].getBoundingClientRect();
@@ -388,7 +297,6 @@ font-style: $STYLE;\
                             SearchBox.alignContainer(SearchBox.ALIGN_NONE);
                             lastAlign = SearchBox.ALIGN_NONE;
                         }
-                        refocus();
                     }
                 }
                 ace.config.loadModule("ace/ext/statusbar", function(module) {
@@ -438,7 +346,6 @@ font-style: $STYLE;\
         script: "./libs/js/drag-tabs.js",
     }, {
         script: "./libs/js/hammer.min.js",
-        ignoreIf: false, //not quite there yet
     }, {
         script: "./libs/js/scroll-behaviour.js",
     }, {
@@ -600,16 +507,8 @@ font-style: $STYLE;\
     Imports.add({
         script: "./ui/recycler.js",
         ignoreIf: !searchConfig.useRecyclerViewForSearchResults,
-    }, "./ui/overlayMode.js", "./ui/rangeRenderer.js", {
-        script: "./libs/js/brace-expansion.js", //core
     }, {
-        script: "./search/searchList.js", //dynamic
-    }, {
-        script: "./search/searchResults.js", //dynamic
-    }, {
-        script: "./search/searchReplace.js", //dynamic
-    }, {
-        script: "./search/searchTab.js",
+        script: "./search/searchTab.js"
     }, {
         name: "Creating Search Panel",
         func: function() {

@@ -25,8 +25,8 @@ _Define allowed me to get the best of both worlds.
 You know the function names. Why bother with where they are located
 var Utils = global.Utils works all the time.
 Splitting files is simple. Merging them is even easier.
-It's like Java, actually. Not suitable for big projects but I loved it.
-Untils Object.keys(global).length became 156
+It's like Java, actually.And while it's not suitable for big projects, it was perfect for a time.
+Of course, that was until Object.keys(global).length became 156
 Think of it like a really large index.js.
 
 

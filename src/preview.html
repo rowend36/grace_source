@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+    <script src='./libs/js/eruda.js' type="text/javascript" charset="utf-8"></script>
+</head>
+
+<body>
+    <script>
+        //cache default elements
+        function handleUpdate(type, data) {
+            switch (type) {
+                case 'html':
+                    if (eruda._isInit)
+                        eruda.destroy();
+                    document.documentElement.innerHTML = data;
+                    eruda.init();
+                    if (window.top !== window)
+                        eruda._entryBtn.hide();
+                    break;
+            }
+        }
+        var data = new URLSearchParams(window.location.search);
+        window.addEventListener('message', function(ev) {
+            var data = ev.data;
+            if (data.action == 'reload') {
+                handleUpdate(data.type, data.data)
+            }
+        });
+        if (data.has('html')) {
+            handleUpdate('html', atob(data.get('html')));
+        } else if (data.has('href')) {
+            window.location.href = data.get('href');
+        }
+    </script>
+</body>
+</html>
