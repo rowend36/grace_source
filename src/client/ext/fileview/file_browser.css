@@ -1,0 +1,320 @@
+/*region filebrowser*/
+
+.emphasis {
+    animation: floater 500ms ease-in 0s 10 alternate;
+    -webkit-animation: floater 500ms ease-in 0s 10 alternate;
+}
+
+.destroyed {
+    display: none;
+}
+
+#opendocs {
+    max-height: 50%;
+    height: auto;
+    width: 100%;
+    overflow: auto;
+    overflow-x: hidden;
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+    min-height: 100px;
+    padding-bottom: 5px;
+    margin-bottom: 10px;
+}
+
+
+.project_view_panel {
+    position: absolute;
+    top: 0;
+    height: 110px;
+    width: 100%;
+    line-height: 18px;
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+}
+
+#project_view {
+    position: relative;
+    padding-top: 110px;
+    overflow: auto;
+    height: 100%;
+    width: 100%;
+}
+
+#project_view.find_file_hidden {
+    padding-top: 2.25rem;
+}
+
+.find_file_hidden .project_view_panel {
+    height: 2.25rem;
+}
+
+#hierarchy_tab {
+    overflow: scroll;
+    padding-top: 5px;
+}
+
+.hide {
+    display: none;
+}
+
+.drag-target {
+    width: 35px;
+    z-index: 20;
+}
+
+/* #opendocs>.file-item{
+    padding-left: 15px;
+} */
+.hierarchy-closed>#opendocs {
+    max-height: 70%;
+    min-height: 50%;
+}
+
+.hierarchy-closed>#project_view {
+    display: none;
+}
+
+.hierarchy-closed>.no-project {
+    display: block;
+}
+
+.fileview-recycler>.file-item {
+    will-change: top;
+    contain: strict;
+}
+
+.file-item {
+    height: 32px;
+    padding: 0 40px 0 15px;
+    overflow: hidden;
+    text-overflow: hidden;
+    white-space: pre;
+    position: relative;
+    width: 100%;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+    -ms-user-select: none;
+    -o-user-select: none;
+    user-select: none;
+    vertical-align: top;
+}
+
+
+.file-item span {
+    vertical-align: top;
+    display: inline-block;
+    line-height: 32px;
+}
+
+.file-item .filename {
+    line-height: 32px;
+    overflow: hidden;
+    width: 90%;
+    margin-left: 5px;
+}
+
+.file-item:hover .filename {
+    overflow: auto;
+}
+
+.fileview-info>.file-item {
+    height: 48px;
+    line-height: 48px;
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+}
+
+.fileview-info>.file-item>span>.type-icon {
+    font-size: 24px;
+}
+
+.fileview-info>.file-item>span>.folder-icon {
+    margin-left: -6px;
+}
+
+.fileview-info>.file-item>.file-info {
+    font-size: 12px;
+    left: -90%;
+    top: 32px;
+    text-align: right;
+    bottom: 5px;
+    position: relative;
+    line-height: 12px;
+    height: 18px;
+}
+
+.file-item>.dropdown-btn {
+    position: absolute;
+    height: 100%;
+    width: 40px;
+    line-height: inherit;
+    text-align: center;
+    right: 0;
+    top: 0;
+}
+
+.fileview-footer {
+    height: 40px;
+    width: 100%;
+    position: relative;
+}
+
+.fileview-footer>h6 {
+    margin: 0;
+    line-height: 40px;
+}
+
+.binary-file .filename {
+    color: grey;
+    opacity: 0.8;
+}
+
+.fileview-footer .arrow_button {
+    height: 100%;
+    width: 40px;
+    vertical-align: middle;
+    margin-left: 20px;
+    margin-right: 20px;
+}
+
+.filenav {
+    overflow-x: auto;
+    white-space: nowrap;
+    padding-right: 50px;
+}
+
+.filenav.clipper-text {
+    padding-right: 130px;
+    margin-left: 0;
+    padding-left: 0;
+}
+
+.nav-breadcrumb {
+    margin-right: 5px;
+    padding: 0 10px;
+    height: 25px;
+    font-size: 85%;
+    border-radius: 7px;
+    opacity: 0.8;
+    display: inline-block;
+    vertical-align: middle;
+    background: white;
+}
+
+.nav-breadcrumb-icon {
+    vertical-align: bottom;
+}
+
+.app-theme-dark .nav-breadcrumb {
+    background: #101010;
+    border: 1px solid #070707;
+}
+
+
+.filenav>span:last-child>.material-icons {
+    font-size: 150%;
+}
+
+.filenav>span {
+    font-size: 110%;
+    line-height: normal;
+    margin-left: 5px;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+#error-text {
+    line-height: 20px;
+    vertical-align: top;
+}
+
+.error-text {
+    color: #e51c23;
+}
+
+.renameField {
+    margin-top: 5px;
+    margin-bottom: 5px;
+    padding-left: 15px;
+}
+
+.fileview-container {
+    background: inherit;
+    overflow: hidden;
+}
+
+/*.fileview-container>.fileview{*/
+/*    border-top-left-radius: 3px;*/
+/*    border-top-right-radius: 3px;*/
+/*}*/
+.fileview {
+    max-height: 100%;
+    overflow: auto;
+    width: 100%;
+    margin: 0;
+    padding-bottom: 30vh;
+    position: relative;
+}
+
+.fileview::-webkit-scrollbar {
+    touch-action: none;
+    opacity: 0.5;
+    width: 5px;
+    height: 0;
+}
+
+
+
+.fileview-header {
+    position: absolute;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    padding-left: 10px;
+    padding-top: 4px;
+    height: 40px;
+    line-height: 36px;
+    text-transform: none;
+    border-radius: 0;
+    margin: 0;
+    font-weight: normal;
+}
+
+.fileview>.fileview {
+    padding: 0;
+    padding-left: 12px;
+    width: 100%;
+    min-width: 15rem;
+    height: auto;
+    overflow: visible;
+}
+
+.fileview>.fileview-recycler {
+    padding: 0;
+    left: 12px;
+    right: 0;
+    width: auto;
+}
+
+.clipboard-empty .hide-if-clip-empty {
+    display: none;
+}
+
+#filedir-select input {
+    border-radius: 0;
+    padding: 0;
+    margin: 0;
+    background: none;
+    height: 40px;
+}
+
+#filedir-select input {
+    border-radius: 0;
+    padding: 0;
+    margin: 0;
+    background: none;
+    height: 40px;
+}
+
+/*endregion*/

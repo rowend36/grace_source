@@ -1,0 +1,95 @@
+<aside id="side-menu" class="clipboard-empty container sidenav">
+
+    <ul id="selector" class="nav-main tabs" data-nav-behaviour="tabs">
+
+    </ul>
+
+    <div id="hierarchy_tab" class='tab-page'>
+        <h6 id="opendocs-toggle" class="toggleBelow sub-header">Open
+            Documents
+            <button class="btn-toggle" tabIndex=0><i
+                    class="material-icons">keyboard_arrow_up</i></button>
+        </h6>
+        <ul id="opendocs" class="fileview border-inactive">
+
+        </ul>
+        <div id="project_view">
+            <div class="project_view_panel border-inactive">
+                <h6 id="find_file-toggle" class="sub-header toggleBelow">
+                    Current Project<button class="btn-toggle" tabIndex=0><i
+                            class="material-icons">keyboard_arrow_up</i></button>
+                </h6>
+                <div id='find_file' class='mt-5 pb-10'>
+                    <label for="#search_text" class="pl-15">Find
+                        file</label>
+                    <div class="mt-5 find_file edge_box-2 h-30">
+                        <div class="fill_box pl-15"><input type="search"
+                                name="search_text" id="search_text"
+                                value="" /></div>
+                        <button id="find_file_btn"
+                            class="side-1 material-icons">search</button>
+                        <button id="find_file_cancel_btn"
+                            class="side-2 material-icons">refresh</button>
+                    </div>
+                </div>
+            </div>
+            <ul id="hierarchy" class="fileview">
+            </ul>
+        </div>
+        <h6 class="hide no-project center color-inactive">No project folder
+        </h6>
+    </div>
+    <div id="search_container" class='tab-page' style="padding:15px">
+        <label>Search in workspace</label>
+        <div class="mt-5 edge_box-2 h-30">
+            <div class="fill_box input-field inline">
+                <input id="searchInput" placeholder="Search for"
+                    type="search" class="">
+            </div>
+
+            <button id="searchBtn"
+                class="side-1 material-icons">search</button>
+            <button id='searchConfig'
+                class="side-2 material-icons">filter_list</button>
+        </div>
+        <div class='replaceBox' style='margin-top:15px'>
+            <label>Replace all instances with</label>
+            <div class="edge_box-2 h-30 mt-5">
+                <div class="input-field inline fill_box">
+                    <input id="replaceInput" placeholder="Replace with"
+                        type="text" class="">
+                </div>
+                <button id="undoReplaceBtn" class="side-1"><i
+                        class="material-icons">autorenew</i></button>
+                <button id="replaceBtn" class="side-2"><i
+                        class="material-icons">swap_horiz</i></button>
+            </div>
+        </div>
+        <div class="ace_search_options mt-5">
+            <button id='toggleReplace'
+                class="btn-toggle big left material-icons">keyboard_arrow_down</button>
+            <button id="toggleRegex" class="right ace_button">.*</button>
+            <button id="caseSensitive" class="right ace_button">Aa</button>
+            <button id="toggleWholeWord"
+                class="right ace_button">[ab]</button>
+        </div>
+        <h6 id="searchInfo"></h6>
+        <div id="searchStatus"><span
+                id="searchStatusOp">Searching...</span><span
+                id="searchStatusFile">Searching...</span><br />
+            <div class="align-right"><button id="searchStop"
+                    class='btn-flat '>Stop</button></div>
+        </div>
+        <div id="searchResults">
+            <div class='no-results color-inactive'>No results</div>
+        </div>
+        <div class="align-right"><button id="showMoreResults"
+                class="btn btn-flat">More results</button></div>
+    </div>
+
+    <div id="settings" class='tab-page' style="">
+
+    </div>
+
+
+</aside>

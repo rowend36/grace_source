@@ -13,12 +13,10 @@ exports.static = function(rootFile, rootPrefix) {
                 if ('ENOENT' == err.code) {
                     res.type('text/plain');
                     res.statusCode = 404;
-                    console.log(url + ":" + 404);
                     res.end('Not Found');
                 }
                 else {
                     res.statusCode = 500;
-                    console.log(url + ":" + 500);
                     res.end('Internal Server Error');
                 }
             }
