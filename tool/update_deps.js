@@ -51,7 +51,7 @@ var deps = {
             return src;
         }
     },
-    xquery: {
+    /*xquery: {
        path: "mode/xquery/xquery_lexer.js",
        browserify: {
            npmModule: "git+https://github.com/wcandillon/xqlint.git#master",
@@ -89,7 +89,7 @@ var deps = {
        postProcess: function(src){
            return src;
        }
-    },
+    },*/
     jshint: {
         path: "mode/javascript/jshint.js",
         browserify: {
@@ -217,7 +217,7 @@ var getDep = function(dep) {
 function run(cmd, cb) {
 	var proc = process.platform == "win32"
         ? spawn("cmd", ["/c", cmd], {cwd: __dirname})
-        : spawn("bash", ["-c", cmd], {cwd: __dirname});
+        : spawn("sh", ["-c", cmd], {cwd: __dirname});
 
     var result = "", err = "";
 	proc.stderr.setEncoding("utf8");    
