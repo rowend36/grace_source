@@ -109,10 +109,10 @@ TODO
 <div id="editor"></div>
 </div>
 
-<script src="../build/src/ace-uncompressed.js" type="text/javascript" charset="utf-8"></script>
+<script src="../build/src/ace.js" type="text/javascript" charset="utf-8"></script>
 <script src="../build/src/mode-javascript.js" type="text/javascript" charset="utf-8"></script>
 <script id="main">
-
+var require = ace.require;
 window.onload = function() {
     var editor = ace.edit("editor");
     

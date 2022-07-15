@@ -60,7 +60,11 @@ function main(args) {
         return showHelp();
     }
     if (type == "core"){
-        buildCore({}, {outputFile: "ace.js"});
+        buildCore({
+            compress: args.indexOf("--m") != -1,
+            noconflict: args.indexOf("--nc") != -1,
+            shrinkwrap: args.indexOf("--s") != -1
+        }, {outputFile: "ace.js"});
     }
     else if(type == "ext"){
         var name = args[3];
@@ -100,7 +104,7 @@ function showHelp(type) {
     console.log("  demo         Runs demo build of Ace");
     console.log("  full         all of above");
     console.log("  core         Builds only ace.js");
-    console.log("  ext         Builds only specified extension");
+    console.log("  ext <name>        Builds only specified extension");
     console.log("  highlighter  ");
     console.log("args:");
     console.log("  --target ./path   path to build folder");
@@ -552,7 +556,7 @@ function namespace(ns) {
         text = text
             .toString()
             .replace(/ACE_NAMESPACE\s*=\s*""/, 'ACE_NAMESPACE = "' + ns +'"')
-            .replace(/\bdefine\(/g, function(def, index, source) {
+            .replace(/\bdefine\([\'\"]/g, function(def, index, source) {
                 if (/(^|[;}),])\s*$/.test(source.slice(0, index)))
                     return ns + "." + def;
                 return def;

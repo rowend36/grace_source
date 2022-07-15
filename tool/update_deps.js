@@ -13,23 +13,23 @@ var SKIP_NPM = false;
 var deps = {
     csslint: {
         path: "mode/css/csslint.js",
-        // url: "https://raw.github.com/stubbornella/csslint/master/release/csslint.js",
+        fetch: browserify,
+        // url: "https://raw.githubusercontent.com/CSSLint/csslint/master/dist/csslint.js",
         browserify: {
             npmModule: "git+https://github.com/CSSLint/csslint.git#master",
-            path: "jshint/src/jshint.js",
-            exports: "jshint"
+            path: "csslint/dist/csslint-node.js",
+            exports: "CSSLint"
         },
-        fetch: browserify,
         wrapAmd: true
     }, 
     requirejs: {
         path: "../../demo/kitchen-sink/require.js",
-        url: "https://raw.github.com/jrburke/requirejs/master/require.js",
+        url: "https://raw.githubusercontent.com/jrburke/requirejs/master/require.js",
         wrapAmd: false
     },
     luaparse: {
         path: "mode/lua/luaparse.js",
-        url: "https://raw.github.com/oxyc/luaparse/master/luaparse.js",
+        url: "https://raw.githubusercontent.com/oxyc/luaparse/master/luaparse.js",
         wrapAmd: true,
         postProcess: function(src) {
             return src.replace(
@@ -92,14 +92,11 @@ var deps = {
     },*/
     jshint: {
         path: "mode/javascript/jshint.js",
-        browserify: {
-            npmModule: "git+https://github.com/ajaxorg/jshint.git#master",
-            path: "jshint/src/jshint.js",
-            exports: "jshint"
-        },
-        fetch: browserify,
+        url: "https://raw.githubusercontent.com/jshint/jshint/master/dist/jshint.js",
         wrapAmd: true,
         postProcess: function(src) {
+            src = "var define;" + src;
+            src = dereqire(src);
             src = src.replace(
                 /"Expected a conditional expression and instead saw an assignment."/g,
                 '"Assignment in conditional expression"'
@@ -111,8 +108,8 @@ var deps = {
     emmet: {
         path: "ext/emmet core.js",
         url: [
-            "https://raw.github.com/sergeche/emmet-sublime/master/emmet/emmet-app.js",
-            "https://raw.github.com/sergeche/emmet-sublime/master/emmet/snippets.json"
+            "https://raw.githubusercontent.com/sergeche/emmet-sublime/master/emmet/emmet-app.js",
+            "https://raw.githubusercontent.com/sergeche/emmet-sublime/master/emmet/snippets.json"
         ],
         postProcess: function(data) {
             return data[0]
@@ -130,7 +127,7 @@ var deps = {
     vim: {
         fetch: function(){
             var rootHref = "https://raw.githubusercontent.com/codemirror/CodeMirror/master/"
-            var fileMap = {"keymap/vim.js": "keyboard/vim.js", "test/vim_test.js": "keyboard/vim_test.js"};
+            var fileMap = {"keymap/vim.js": "keyboard/vim2.js", "test/vim_test.js": "keyboard/vim_test.js"};
             async.forEach(Object.keys(fileMap), function(x, next) {
                 download(rootHref + x, function(e, d) {
                     d = d.replace(/^\(function.*{[^{}]+^}[^{}]+{/m, "define(function(require, exports, module) {");
@@ -143,36 +140,37 @@ var deps = {
             });
         }
     },
-    liveScript: {
-        path: "mode/livescript.js",
-        url: "https://raw.githubusercontent.com/gkz/LiveScript/master/lib/mode-ls.js"        
-    },
+    // liveScript: {
+    //     path: "mode/livescript.js",
+    //     url: "https://raw.githubusercontent.com/gkz/LiveScript/master/lib/mode-ls.js"        
+    // },
     coffee: {
         path: "mode/coffee/coffee.js",
-        url: "https://raw.githubusercontent.com/jashkenas/coffeescript/master/extras/coffee-script.js",    
+        url: "https://raw.githubusercontent.com/jashkenas/coffeescript/main/lib/coffeescript-browser-compiler-legacy/coffeescript.js",
+        //url: "https://raw.github.com/jashkenas/coffeescript/master/extras/coffee-script.js",    
         wrapAmd: true,
         postProcess: function(src){
             return "function define(f) { module.exports = f() }; define.amd = {};\n"
                 + dereqire(src);
         }
     },
-    xmldom: {
-        fetch: function() {
-            var rootHref = "https://raw.githubusercontent.com/iDeBugger/xmldom/master/"
-            var fileMap = {
-               "sax.js": "mode/xml/sax.js",
-               "dom-parser.js": "mode/xml/dom-parser.js",
-               "dom.js": "mode/xml/dom.js"
-            };
-            async.forEach(Object.keys(fileMap), function(x, next) {
-                download(rootHref + x, function(e, d) {
-                    fs.writeFile(rootDir + fileMap[x], d, next)
-                })
-            }, function() {
-                console.log("XmlDOM updating done")
-            });
-        }
-    },
+    // xmldom: {
+    //     fetch: function() {
+    //         var rootHref = "https://raw.github.com/iDeBugger/xmldom/master/"
+    //         var fileMap = {
+    //           "sax.js": "mode/xml/sax.js",
+    //           "dom-parser.js": "mode/xml/dom-parser.js",
+    //           "dom.js": "mode/xml/dom.js"
+    //         };
+    //         async.forEach(Object.keys(fileMap), function(x, next) {
+    //             download(rootHref + x, function(e, d) {
+    //                 fs.writeFile(rootDir + fileMap[x], d, next)
+    //             })
+    //         }, function() {
+    //             console.log("XmlDOM updating done")
+    //         });
+    //     }
+    // },
 };
 
 var download = function(href, callback) {
@@ -188,6 +186,9 @@ var download = function(href, callback) {
 
         res.on("data", function(chunk){
             data += chunk;
+        });
+        res.on("error", function(e){
+            console.error(e);
         });
 
         res.on("end", function(){
