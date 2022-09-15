@@ -1,5 +1,5 @@
 define(function (require, exports, module) {
-  "use strict";
+  'use strict';
   /**
    * Decided to try micromatch again driven by the smaller bundle size
    * with webpack 5, dynamic loading with requirejs and (very)+ rare bugs in old_glob.js.
@@ -13,21 +13,21 @@ define(function (require, exports, module) {
    * Plus we can always go back,...
       return require("./libs/old_glob");
    **/
-  var micromatch = require("./libs/micromatch");
+  var micromatch = require('./libs/micromatch');
   var braceExpand = micromatch.braceExpand;
-  var appConfig = require("grace/core/config").Config.registerAll(
+  var appConfig = require('grace/core/config').Config.registerAll(
     {
       dotStar: false,
     },
-    "files"
+    'files',
   );
-  require("grace/core/config").Config.registerInfo(
+  require('grace/core/config').Config.registerInfo(
     {
-      dotStar: "Enable dotstar matching for globs.eg main/* matches main/.tmp",
+      dotStar: 'Enable dotstar matching for globs.eg main/* matches main/.tmp',
     },
-    "files"
+    'files',
   );
-  var FileUtils = require("grace/core/file_utils").FileUtils;
+  var FileUtils = require('grace/core/file_utils').FileUtils;
   var isDirectory = FileUtils.isDirectory;
 
   function globToRegex(s) {
@@ -43,18 +43,18 @@ define(function (require, exports, module) {
   function preprocess(g) {
     var globs;
     if (!g) return [];
-    if (typeof g == "object") {
+    if (typeof g == 'object') {
       globs = g.reduce(function (a, i) {
         a.push.apply(a, braceExpand(i));
         return a;
       }, []);
     } else {
       if (/\{|\}/.test(g)) {
-        g = braceExpand("{" + g + ",}")
+        g = braceExpand('{' + g + ',}')
           .slice(0, -1)
-          .join(",");
+          .join(',');
       }
-      globs = g.split(",");
+      globs = g.split(',');
     }
     return globs
       .map(FileUtils.normalize)
@@ -79,7 +79,7 @@ define(function (require, exports, module) {
           dot: appConfig.dotStar,
           format: FileUtils.normalize,
           basename: false,
-        })
+        }),
       );
       return arr;
     }, []);
@@ -89,7 +89,7 @@ define(function (require, exports, module) {
       var accumulator = [];
       var segCount = 0;
       function addSegment() {
-        segments.push((segCount ? "(?:/" : "") + accumulator.join(""));
+        segments.push((segCount ? '(?:/' : '') + accumulator.join(''));
         accumulator = [];
         segCount++;
       }
@@ -98,24 +98,24 @@ define(function (require, exports, module) {
       }
       parsed.tokens.some(function (e) {
         switch (e.type) {
-          case "text":
+          case 'text':
             addPart(e.value);
             break;
-          case "slash":
+          case 'slash':
             addSegment();
             break;
-          case "bracket":
+          case 'bracket':
             if (e.value.indexOf(FileUtils.sep) > -1) {
               addSegment();
-              addPart("{0}" + e.value);
+              addPart('{0}' + e.value);
             } else addPart(e.value);
             break;
-          case "maybe_slash":
-          case "bos":
+          case 'maybe_slash':
+          case 'bos':
             break;
-          case "paren":
-          case "globstar":
-            addPart(".*");
+          case 'paren':
+          case 'globstar':
+            addPart('.*');
             //why you should just keep your globs simple
             return true;
           default:
@@ -123,17 +123,17 @@ define(function (require, exports, module) {
         }
         return false;
       });
-      addPart("$");
+      addPart('$');
       addSegment();
       while (--segCount > 0) {
-        segments.push("|/$)");
+        segments.push('|/$)');
       }
-      a.push(segments.join(""));
+      a.push(segments.join(''));
     });
     return {
-      re: new RegExp("^(?:" + a.join("|") + ")"),
+      re: new RegExp('^(?:' + a.join('|') + ')'),
       test: function (m) {
-        return this.re.test(isDirectory(m) ? m : m + "/");
+        return this.re.test(isDirectory(m) ? m : m + '/');
       },
     };
   }
@@ -142,16 +142,28 @@ define(function (require, exports, module) {
   }
   FileUtils.globToRegex = globToRegex;
   FileUtils.genQuickFilter = genQuickFilter;
+  function commonHead(path1, path2) {
+    for (var i = 0, n = Math.min(path1.length, path2.length); i < n; ) {
+      if (path1[i] === path2[i]) i++;
+      else break;
+    }
+    return path1.substring(0, i);
+  }
+  function commonRoot(globs) {
+    var META = /^[^*+()?{}!^]*\//;
+    return globs.reduce(function (common, glob, k) {
+      var match = META.exec(glob);
+      return commonHead(common, match ? match[0] : '');
+    }, globs[0]);
+  }
   FileUtils.globToWalkParams = function (glob) {
-    var a = globToRegex(glob);
-    var b = genQuickFilter(glob);
     return {
-      root: a.commonRoot, //the root directory that contains all the matches
-      canMatch: b, //matches directories that could contain possible matches
-      matches: a.regex, //matches files that match the glob
+      root: commonRoot(glob), //the root directory that contains all the matches
+      canMatch: genQuickFilter(glob), //matches directories that could contain possible matches
+      matches: globToRegex(glob), //matches files that match the glob
     };
   };
 
   //Legacy ApI -
-  require("./walk");
+  require('./walk');
 });

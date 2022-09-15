@@ -1,14 +1,16 @@
 define(function (require, exports, module) {
   'use strict';
   var Config = require('grace/core/config').Config;
+  var Schema = require('grace/core/schema').Schema;
   var Docs = require('grace/docs/docs').Docs;
   var removeFrom = require('grace/core/utils').Utils.removeFrom;
-
+  /** @constructor */
   function Provider(name, modes) {
     if (name) this.name = name;
     if (modes) this.modes = modes;
   }
-  Provider.prototype.modes = [];
+  Provider.prototype.ALL = [];
+  Provider.prototype.modes = Provider.prototype.ALL;
   Provider.prototype.name = '';
   Provider.prototype.names = null;
   Provider.prototype.priority = 0;
@@ -16,15 +18,23 @@ define(function (require, exports, module) {
     (this.names || (this.names = [])).push(alias);
   };
 
+  /** @constructor */
   function Registry(action, namespace) {
-    var config;
-    var names = [];
+    var names = [null];
     if (namespace) {
-      config = Config.registerAll({defaultProvider: null}, namespace);
+      Config.registerAll({defaultProvider: null}, namespace);
+      Config.registerInfo(
+        {
+          defaultProvider: {
+            values: names,
+          },
+        },
+        namespace,
+      );
     }
     var providers = [];
     /**
-     * @returns {Provider} [provider]
+     * @returns {Provider|undefined}
      */
     function getProviderByName(name) {
       for (var j = 0; j < providers.length; j++) {
@@ -40,7 +50,7 @@ define(function (require, exports, module) {
     }
 
     /**
-     * @returns {Provider} [provider]
+     * @returns {Provider|undefined}
      */
     function getProviderByHandle(handle) {
       for (var j = 0; j < providers.length; j++) {
@@ -51,11 +61,14 @@ define(function (require, exports, module) {
     }
 
     /**
-     * @returns {Provider} [provider]
+     * @returns {Provider|undefined}
      */
     function getProviderForMode(mode) {
       for (var j = 0; j < providers.length; j++) {
-        if (providers[j].modes.indexOf(mode) > -1) {
+        if (
+          providers[j].modes === providers[j].ALL ||
+          providers[j].modes.indexOf(mode) > -1
+        ) {
           return providers[j];
         }
       }
@@ -67,20 +80,19 @@ define(function (require, exports, module) {
         var name = Config.forPath(path, namespace, 'defaultProvider');
         if (name) provider = getProviderByName(name);
       }
-      if (!provider) {
-        mode = mode || Docs.autoMode(path);
-        return getProviderForMode(mode);
-      }
+      if (provider) return provider;
+      mode = mode || Docs.autoMode(path);
+      return getProviderForMode(mode);
     }
 
     /**
      * @returns {Array<Provider>} - All the providers enabled for this editor
      */
-    function getActiveProviders(editor) {
+    function getActiveProviders(editor, mode) {
       var main;
       var active = [];
       if (!editor.session) return active;
-      var mode = editor.session.getModeName();
+      mode = mode || editor.session.getModeName();
       var doc = Docs.forSession(editor.session);
       if (doc) main = getProviderForPath(doc.getSavePath(), mode);
       if (main) active.push(main);
@@ -106,8 +118,8 @@ define(function (require, exports, module) {
     /** Sort in descending order of name/priority **/
     function byPriority(a, b) {
       return (
-        (a.priority | 0) - (b.priority | 0) ||
-        (a.name > b.name ? 1 : b.name > a.name ? -1 : 0)
+        (b.priority || 0) - (a.priority || 0) ||
+        (b.name > a.name ? 1 : a.name > b.name ? -1 : 0)
       );
     }
 
@@ -126,6 +138,7 @@ define(function (require, exports, module) {
           names.push(e);
         });
       providers.sort(byPriority);
+      names.sort();
       return provider;
     }
 

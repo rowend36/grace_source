@@ -1,6 +1,5 @@
 define(function (require, exports, module) {
   'use strict';
-  var debug = console;
   var appEvents = require('../core/app_events').AppEvents;
   var Notify = require('../ui/notify').Notify;
   var FileUtils = require('../core/file_utils').FileUtils;
@@ -10,13 +9,14 @@ define(function (require, exports, module) {
   var forEachDoc = Docs.forEach;
   var getDoc = Docs.get;
   var Config = require('../core/config').Config;
+  var Utils = require('../core/utils').Utils;
 
   var appConfig = Config.registerAll(
     {
       autoSave: false,
       autoSaveInterval: '1min',
     },
-    'documents'
+    'documents',
   );
   Config.registerInfo(
     {
@@ -26,26 +26,22 @@ define(function (require, exports, module) {
         type: 'time',
       },
     },
-    'documents'
+    'documents',
   );
-  var Utils = require('../core/utils').Utils;
-  Docs.$autoSave = Utils.delay(
-    exports.saveDocs,
-    Math.max(Utils.parseTime(appConfig.autoSaveInterval), 5000)
-  );
+
   Config.on('documents', function (ev) {
     switch (ev.config) {
       case 'autoSaveInterval':
         Docs.$autoSave = Utils.delay(
           exports.saveDocs,
-          Math.max(Utils.parseTime(appConfig.autoSaveInterval), 5000)
+          Math.max(Utils.parseTime(appConfig.autoSaveInterval), 5000),
         );
         break;
       case 'autoSave':
         forEachDoc(function (doc) {
           if (doc.allowAutoSave !== undefined) {
             doc.toggleAutosave(
-              Config.forPath(doc.getSavePath(), 'documents', 'autoSave')
+              Config.forPath(doc.getSavePath(), 'documents', 'autoSave'),
             );
           }
         });
@@ -89,7 +85,7 @@ define(function (require, exports, module) {
                 mainDoc.warned = true;
                 Notify.warn(
                   'Autosave disabled for duplicates of this document.',
-                  1000
+                  1000,
                 );
               }
             }
@@ -106,16 +102,19 @@ define(function (require, exports, module) {
           //Enable autosave if not explicitly disabled
           if (doc.allowAutoSave === undefined) {
             doc.toggleAutosave(
-              Config.forPath(doc.getSavePath(), appConfig, 'autoSave')
+              Config.forPath(doc.getSavePath(), 'documents', 'autoSave'),
             );
             if (doc.allowAutoSave) Notify.info('Autosave enabled');
           }
           doc.save(callback);
-        }
+        },
       );
     }
   };
-
+  Docs.$autoSave = Utils.delay(
+    exports.saveDocs,
+    Math.max(Utils.parseTime(appConfig.autoSaveInterval), 5000),
+  );
   exports.saveAs = function (id, newpath, fileServer, callback) {
     var doc = getDoc(id);
     fileServer = fileServer || FileUtils.getFileServer();
@@ -164,8 +163,9 @@ define(function (require, exports, module) {
         {
           header: 'Update documents to match new path?',
           dismissible: false,
-          form: affected.map(function (doc) {
+          form: affected.map(function (doc, i) {
             return {
+              name: 'doc' + i,
               type: 'accept',
               value: true,
               caption: doc.getPath(),
@@ -174,7 +174,7 @@ define(function (require, exports, module) {
           footers: ['Rename All', 'Proceed'],
           onCreate: function (el) {
             require('../ui/ui_utils').styleClip(
-              el.find('label').addClass('clipper')
+              el.find('label').addClass('clipper'),
             );
             el.find('.modal-rename_all')
               .addClass('error')
@@ -198,7 +198,7 @@ define(function (require, exports, module) {
           el.find('input').off();
           el.find('.modal-rename_all').off();
           el.find('.modal-proceed').off();
-        }
+        },
       );
     }
     function doRename() {
@@ -239,14 +239,14 @@ define(function (require, exports, module) {
                 Notify.info('Refreshed');
               },
               true,
-              false
+              false,
             );
-          }
+          },
         );
       }
     } else {
       Notify.error(
-        'Encoding ' + encoding + ' not supported by this storage backend'
+        'Encoding ' + encoding + ' not supported by this storage backend',
       );
     }
   };
@@ -258,27 +258,27 @@ define(function (require, exports, module) {
       if (err.code === 'ENOENT') {
         Notify.info('File deleted ' + name);
       } else {
-        Notify.error('Failed to load ' + doc.getPath() + ' ' + err.code);
+        Notify.error('Failed to read ' + doc.getPath() + ' ' + err.code);
       }
       return callback(err, false);
     }
+    if (doc.$needsRefreshToCompleteLoad) finishLoad(doc, res);
 
-    if (doc.$needsRefreshToCompleteLoad) {
-      finishLoad(doc, res);
-    }
     if (res.length === doc.getSize() && res === doc.getValue()) {
       if (doc.dirty) doc.setClean();
       return callback(null, true);
     } else if (ignoreDirty && doc.dirty && doc.isLastSavedValue(res)) {
-      //ignoreDirty :ignore docs whose changes were
-      //caused by the editor
+      //ignoreDirty :ignore docs whose changes are
+      //known/created by the user
       return callback(null, false);
     } else if (confirm === false) {
       //force: do not ask confirmation
       doc.updateValue(res, true);
       return callback(null, true);
     } else {
-      doc.setDirty();
+      //The !ignoreDirty check is to prevent calling isLastSavedValue twice
+      var known = !ignoreDirty && doc.dirty && doc.isLastSavedValue(res);
+      if (!known) doc.setDirty(); //Doc no longer knows which revision matches the stored file.
       Notify.ask(
         'File changed. Reload ' + name + '?',
         function () {
@@ -286,35 +286,16 @@ define(function (require, exports, module) {
           callback(null, true);
         },
         function () {
-          doc._LSC = null;
-          doc.lastSave = null;
+          if (!known) {
+            //Mark this as the lastSavedValue
+            doc.setClean(null, res);
+            //But keep Doc as dirty
+            doc.setDirty();
+          }
           callback(null, false);
-        }
+        },
       );
     }
-  };
-  /*Refresh all docs*/
-  exports.refreshDocs = function (id, cb) {
-    var ids = [];
-    if (id) {
-      ids = [id];
-    } else ids = Docs.ids();
-    Utils.asyncForEach(
-      ids,
-      function (i, n, advance) {
-        try {
-          var doc = getDoc(i);
-          if (!doc) return advance();
-          doc.refresh(advance, !!doc.forceReload, true);
-          doc.forceReload = undefined;
-        } catch (e) {
-          debug.error(e);
-          advance();
-        }
-      },
-      cb,
-      3
-    );
   };
   exports.dirty = function (id) {
     getDoc(id).setDirty();

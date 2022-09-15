@@ -1,9 +1,11 @@
 define(function (require, exports, module) {
     var expect = require('chai').expect;
     var forEach = require('grace/core/utils').Utils.asyncForEach;
+    var appEvents = require('grace/core/app_events').AppEvents;
+    var waterfall = require('grace/core/utils').Utils.waterfall;
     var Editors = require('grace/editor/editors').Editors;
     var TabWindow = require('grace/ext/ui/tab_window');
-    var focusEditor = require('grace/editor/host_editor').focusEditor;
+    var setActiveEditor = require('grace/editor/host_editor').setActiveEditor;
     var splits = require('grace/ext/ui/split_editors').SplitEditors;
     require('../docs/test_docs');
     /*
@@ -28,9 +30,9 @@ define(function (require, exports, module) {
             mainEditor; //The output of getMainEditor()
         var tests = [
             {
-                name: 'set editor using $focusEditor',
+                name: 'set editor using $setActiveEditor',
                 exec: function () {
-                    focusEditor(firstEditor);
+                    setActiveEditor(firstEditor);
                     currentEditor = mainEditor = firstEditor;
                 },
             },
@@ -39,11 +41,11 @@ define(function (require, exports, module) {
                 exec: function () {
                     pluginEditor = Editors.createEditor(
                         new DocumentFragment(),
-                        true
+                        true,
                     );
                     pluginEditor.id = 'plugin';
                     pluginEditor.hostEditor = firstEditor;
-                    focusEditor(pluginEditor);
+                    setActiveEditor(pluginEditor);
                     currentEditor = pluginEditor;
                 },
             },
@@ -87,16 +89,36 @@ define(function (require, exports, module) {
             },
         ];
         var times = [500, 125, 30, 15, 0, 0];
+        var id;
+        before(function (done) {
+            waterfall([
+                function (n) {
+                    require(['grace/setup/setup_docs'], n);
+                },
+                function (n) {
+                    appEvents.on('documentsLoaded', n);
+                },
+                function () {
+                    activeDoc =
+                        require('grace/setup/setup_editors').getActiveDoc() ||
+                        ((id = require('grace/docs/docs').openDoc(
+                            'test',
+                            'Test',
+                        )) &&
+                            require('grace/setup/setup_editors').getActiveDoc());
 
-        before(function () {
-            activeDoc = require('grace/setup/setup_editors').getActiveDoc();
-            expect(activeDoc).to.not.be.null;
-            numClones = activeDoc.clones ? activeDoc.clones.length : 0;
-            pluginEditor = currentEditor = splitEditor = mainEditor = undefined;
-            firstEditor = require('grace/setup/setup_editors').getMainEditor();
-            firstEditor.id = 'main';
+                    expect(activeDoc).to.not.be.null;
+                    numClones = activeDoc.clones ? activeDoc.clones.length : 0;
+                    pluginEditor = currentEditor = splitEditor = mainEditor = undefined;
+                    firstEditor = require('grace/setup/setup_editors').getMainEditor();
+                    firstEditor.id = 'main';
+                },
+                done,
+            ]);
         });
-
+        after(function () {
+            if (id) require('grace/docs/docs').closeDoc(id);
+        });
         forEach(
             times,
             function (time, i, next) {
@@ -108,22 +130,22 @@ define(function (require, exports, module) {
                             function (done) {
                                 test.exec();
                                 expect(currentEditor).to.equal(
-                                    require('grace/setup/setup_editors').getEditor()
+                                    require('grace/setup/setup_editors').getEditor(),
                                 );
                                 expect(mainEditor).to.equal(
-                                    require('grace/setup/setup_editors').getMainEditor()
+                                    require('grace/setup/setup_editors').getMainEditor(),
                                 );
                                 expect(
                                     activeDoc.clones
                                         ? activeDoc.clones.length
-                                        : 0
+                                        : 0,
                                 ).to.equal(numClones);
                                 done();
-                            }
+                            },
                         );
                         next();
                     },
-                    next
+                    next,
                 );
             },
             function () {
@@ -131,7 +153,7 @@ define(function (require, exports, module) {
                     var a = require('grace/setup/setup_editors').getMainEditor();
                     while (
                         require('grace/ext/ui/split_editors').SplitEditors.isSplit(
-                            a
+                            a,
                         )
                     ) {
                         a.execCommand('Remove Split');
@@ -147,7 +169,7 @@ define(function (require, exports, module) {
                     numClones = activeDoc.clones ? activeDoc.clones.length : 0;
                     expect(numClones).to.equal(0);
                 });
-            }
+            },
         );
     });
     describe('TabWindow', function () {
@@ -161,19 +183,19 @@ define(function (require, exports, module) {
             expect(tab).has.property('element');
             expect(tab.element).is.instanceOf(Element);
             expect(
-                require('grace/setup/setup_tab_host').DocsTab.indexOf('test')
+                require('grace/setup/setup_tab_host').DocsTab.indexOf('test'),
             ).to.be.above(-1);
         });
         it('should set tab active', function () {
             require('grace/setup/setup_tab_host').setTab('test');
             expect(
-                require('grace/setup/setup_tab_host').DocsTab.active
+                require('grace/setup/setup_tab_host').DocsTab.active,
             ).to.equal('test');
         });
         it('should hide editor container when active', function () {
             expect(
                 require('grace/setup/setup_editors').getEditor().container.style
-                    .display
+                    .display,
             ).to.equal('none');
             expect(tab.element.style.display).to.equal('block');
         });
@@ -181,7 +203,7 @@ define(function (require, exports, module) {
             require('grace/setup/setup_tab_host').setTab(currentDoc);
             expect(
                 require('grace/setup/setup_editors').getEditor().container.style
-                    .display
+                    .display,
             ).to.equal('block');
             expect(tab.element.style.display).to.equal('none');
         });
@@ -189,14 +211,14 @@ define(function (require, exports, module) {
             //Not a serious memory leak since destroyed editors are released from dom
             expect(tab.element.parentElement).to.equal(
                 require('grace/setup/setup_editors').getEditor().container
-                    .parentElement
+                    .parentElement,
             );
         });
         it('should close the tab window', function () {
             require('grace/setup/setup_tab_host').setTab('test');
             TabWindow.closeTabWindow('test');
             expect(
-                require('grace/setup/setup_tab_host').DocsTab.active
+                require('grace/setup/setup_tab_host').DocsTab.active,
             ).to.not.equal('test');
             expect(tab.element.parentElement).to.be.null;
         });

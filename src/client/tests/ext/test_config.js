@@ -5,8 +5,9 @@ define(function (require, exports, module) {
   // var Utils = require('grace/core/utils').Utils;
   var Config = require('grace/core/config').Config;
   var Configs = require('grace/ext/config/configs').Configs;
-  require('grace/ext/config/context'); //needed for contexts
-
+  var Context = require('grace/ext/config/context'); //needed for contexts to work in config
+  require('grace/ext/config/action_context');
+  var Actions = require('grace/core/actions').Actions;
   /**
    * TODO:
    * 1. Stop nested namespaces from colliding with keys
@@ -22,7 +23,7 @@ define(function (require, exports, module) {
           status: true,
           deep: {a: 'b', b: {a: ''}},
         },
-        'test'
+        'test',
       );
       Config.registerInfo({nums: {type: 'array<number>'}}, 'test');
     });
@@ -33,7 +34,7 @@ define(function (require, exports, module) {
         '_triggers.rules',
         rules.filter(function (e) {
           return e.rule.ctx ? !e.rule.ctx.startsWith('test.') : !e.options.test;
-        })
+        }),
       );
     });
     after(function () {
@@ -199,6 +200,14 @@ define(function (require, exports, module) {
       }).to.equal(true);
       expect(testConfig.name).to.equal('Hi');
       expect(testConfig.status).to.equal(false);
+    });
+  });
+  describe('Action Contexts', function () {
+    it('should work', function () {
+      Context.setContext('falsy', false);
+      expect(Actions.checkContext('falsy')).to.equal(false);
+      Context.setContext('falsy', true);
+      expect(Actions.checkContext('falsy')).to.equal(true);
     });
   });
 });

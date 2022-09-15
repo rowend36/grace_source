@@ -1,5 +1,5 @@
 define(function (require, exports, module) {
-    /*globals $*/
+    /*globals $, ace*/
     var Editors = require('grace/editor/editors').Editors;
     var setTab = require('grace/setup/setup_tab_host').setTab;
     var DocsTab = require('grace/setup/setup_tab_host').DocsTab;
@@ -7,21 +7,21 @@ define(function (require, exports, module) {
     var Utils = require('grace/core/utils').Utils;
     var Notify = require('grace/ui/notify').Notify;
     var setEditor = Editors.setEditor;
+    var setActiveEditor = require('grace/editor/host_editor').setActiveEditor;
+    var focus = require('grace/ui/focus_manager').FocusManager.focusIfKeyboard;
     var TEMP_SESSION;
 
     function ViewPager(editor) {
-        var container = editor.container;
+        var defaultView = editor.container;
         this.mainEditor = editor;
-        if (!container) {
-            throw 'Error: first argument should be an editor';
-        }
+        Utils.assert(defaultView, 'First argument should be an editor');
         this.id = Utils.genID('v');
         //These three variables must be assigned together
         //as they can change in between method calls
         //whether such cases will later be classed as errors is not
         //yet decided
         var isIn = false, //the id of the current view
-            currentView = container, //the view it swaps with
+            currentView = defaultView, //the view it swaps with
             host; //holds data for the view
         var mouseHandler;
 
@@ -31,7 +31,7 @@ define(function (require, exports, module) {
                 mouseHandler = {
                     $el: $el,
                     func: function () {
-                        clearMouseHandler(el);
+                        clearMouseHandler(/*el*/);
                         handleMouseDown(editor, el, isIn);
                     },
                 };
@@ -46,21 +46,21 @@ define(function (require, exports, module) {
             mouseHandler = null;
         }
 
-        function _setState(newhost, id, removeView) {
+        //Handling all possible scenarios to make sure this operation is
+        //as attomic as possible besides perhaps DomMutationEvents.
+        function _atomicSetState(newhost, id, shouldDetach) {
+            var shouldSetSession = false;
             if (!newhost || newhost.currentOwner) {
-                //handling all possible scenarios
                 newhost = null;
                 id = null;
             } else if (!host) {
-                editor.setSession(
-                    TEMP_SESSION || (TEMP_SESSION = new ace.EditSession(''))
-                );
+                shouldSetSession = true;
             }
-            if (mouseHandler) clearMouseHandler(currentView);
+            if (mouseHandler) clearMouseHandler(/*currentView*/);
             var parent = currentView.parentElement;
             if (!parent) throw new Error('Invalid State');
             if (host) host.currentOwner = null;
-            if (removeView) {
+            if (shouldDetach) {
                 currentView.remove();
             } else currentView.style.display = 'none';
             host = newhost;
@@ -68,11 +68,17 @@ define(function (require, exports, module) {
             if (newhost) {
                 currentView = newhost.element;
                 addMouseHandler(currentView);
-            } else currentView = container;
+            } else currentView = defaultView;
             if (currentView.parentElement !== parent)
                 parent.appendChild(currentView);
             currentView.style.display = 'block';
             if (host) host.currentOwner = this;
+            if (shouldSetSession) {
+                //Not atomic
+                editor.setSession(
+                    TEMP_SESSION || (TEMP_SESSION = new ace.EditSession('')),
+                );
+            }
         }
         this.enter = function (id, e, _removeView) {
             if (id && this.views[id]) {
@@ -89,18 +95,18 @@ define(function (require, exports, module) {
                 try {
                     host.onExit(editor, this);
                 } catch (e) {
-                    console.error('host exit threw exception ', e);
+                    console.warn('Plugin Host.onExit threw exception!!!');
+                    console.error(e);
                 }
             }
-            var newhost = this.views[id];
-            _setState(newhost, id, !id && _removeView);
+            _atomicSetState(this.views[id], id, _removeView && !id);
             if (host) {
                 if (host.onEnter) {
                     try {
                         host.onEnter(editor, this);
                     } catch (err) {
-                        console.error(
-                            'Plugin host.onEnter: threw exception! Force removing tab'
+                        console.warn(
+                            'Plugin Host.onEnter: threw exception! Force removing tab.',
                         );
                         console.error(err);
                         Notify.error('Plugin error !!!');
@@ -114,6 +120,8 @@ define(function (require, exports, module) {
                 e.preventDefault();
             } else {
                 editor.resize();
+                if (getEditor() === editor) setActiveEditor(editor);
+                focus(editor.textInput.getElement());
                 //editor.renderer.updateFull();
             }
         };
@@ -155,7 +163,7 @@ define(function (require, exports, module) {
     }
 
     function forceClose(id, errHost) {
-        if (errHost && !errHost.autoClose && errHost.onClose) {
+        if (errHost && errHost.onClose) {
             try {
                 errHost.onClose();
             } catch (e) {
@@ -186,29 +194,29 @@ define(function (require, exports, module) {
         if (!doneInit) ViewPager.init();
         var pager = getEditor().viewPager;
         host = host || createEmptyHost();
-        host.autoClose = onClose === true;
-        host.onClose = !host.autoClose && onClose;
+        host.onClose = typeof onClose === 'function' ? onClose : null;
         host.setActive = function () {
             DocsTab.setActive(id, true, true);
         };
         pager.add(id, host);
         if (!DocsTab.isSavedTab(id)) {
-            if (insert !== undefined) {
+            if (insert) {
                 DocsTab.insertTab(
-                    DocsTab.indexOf(insert) + 1,
+                    typeof insert === 'string'
+                        ? DocsTab.indexOf(insert) + 1
+                        : null,
                     id,
                     name,
                     null,
-                    info
+                    info,
                 );
-            }
-            DocsTab.addTab(id, name, null, info);
+            } else DocsTab.addTab(id, name, null, info);
         }
         return host;
     };
 
-    function closeTabWindow(id) {
-        DocsTab.removeTab(id);
+    function closeTabWindow(id, isOpen) {
+        if (isOpen !== false && DocsTab.hasTab(id)) DocsTab.removeTab(id);
         Editors.forEach(function (e) {
             e.viewPager.remove(id);
         });
@@ -216,6 +224,7 @@ define(function (require, exports, module) {
             if (e.viewPager.views[id]) {
                 var host = e.viewPager.views[id];
                 delete e.viewPager.views[id];
+                if (host.onClose) host.onClose();
                 host.element.remove();
             }
         });
@@ -226,16 +235,7 @@ define(function (require, exports, module) {
     ViewPager.init = function () {
         var app = require('grace/core/app_events').AppEvents;
         app.on('tabClosed', function (e) {
-            var id = e.tab;
-            var pager = getEditor().viewPager;
-            var host = pager.views[id];
-            if (host) {
-                if (
-                    host.autoClose ||
-                    (host.onClose && host.onClose() !== false)
-                )
-                    closeTabWindow(id);
-            }
+            closeTabWindow(e.tab, false);
         });
         app.on('changeTab', function (e) {
             getEditor().viewPager.onChangeTab(e);

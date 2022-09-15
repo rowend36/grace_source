@@ -7,9 +7,8 @@ body {
     height: 100%;
     overflow: hidden;
 }
-
 .bigfont {
-    font-size: 18px;
+    font-size: 17.5px;
 }
 
 .mediumfont {
@@ -123,6 +122,15 @@ select {
     height: 100%;
 }
 
+.tabulate {
+    overflow: auto;
+    font-size: 0.9rem;
+    margin-right: auto;
+    min-width: 200px;
+}
+/*.tabulate>tbody>tr>td>.tabulate{*/
+/*    table-layout: fixed;*/
+/*}*/
 .toolbar,
 .material-icons {
     -moz-user-select: none;
@@ -294,14 +302,14 @@ input[type='number'],
 input[type='password'],
 input[type='url'] {
     min-width: 0;
-    min-height: 1.6em;
-    height: 30px;
+    min-height: 28px;
+    height: 1.6rem;
     padding-left: 5px;
     padding-right: 5px;
     border: none;
     border-width: 2px;
     width: 100%;
-    font-size: 1.1rem;
+    font-size: 1rem;
     -o-box-sizing: border-box;
     -moz-box-sizing: border-box;
     -webkit-box-sizing: border-box;
@@ -337,6 +345,10 @@ input[type='url'] {
     vertical-align: top;
 }
 
+.pt-10 {
+    padding-top: 10px;
+}
+
 .pb-10 {
     padding-bottom: 10px;
 }
@@ -345,20 +357,16 @@ input[type='url'] {
     margin-top: 10px;
 }
 
+.mb-10 {
+    margin-bottom: 0.5em;
+}
+
 .mt-5 {
     margin-top: 5px;
 }
 
 .pl-15 {
     padding-left: 15px;
-}
-
-.pt-10 {
-    padding-top: 10px;
-}
-
-.mb-10 {
-    margin-bottom: 0.5em;
 }
 
 .align-right {
@@ -677,6 +685,13 @@ input[type='url'] {
 
 /*endregion*/
 /*region materialize*/
+.modal .toast-icon {
+    font-size: 1em;
+    display: inline-block;
+    vertical-align: bottom;
+    margin-right: 5px;
+}
+
 .modal {
     display: none;
     position: fixed;
@@ -692,13 +707,18 @@ input[type='url'] {
 
 .modal-alert {
     border-radius: 5px;
+    word-wrap: break-word;
+    padding-top: 10px;
 }
 
 .modal-large {
     /*new activity, fill up as much space as possible*/
     width: 60%;
-    height: 720px;
     max-height: 85%;
+}
+
+.modal-fixed-height {
+    height: 720px;
 }
 
 @media only screen and (max-width: 400px) {
@@ -791,7 +811,7 @@ input[type='url'] {
     right: 0;
     border-radius: 0;
     border-top-left-radius: 3px;
-    max-height: 10%;
+    max-height: 15%;
     padding: 10px;
     bottom: -100%;
     min-width: 200px;
@@ -917,7 +937,10 @@ input[type='url'] {
 /*endregion*/
 /*region editor*/
 ::-webkit-scrollbar {
-  display: none;
+    display: none;
+}
+.fileview::-webkit-scrollbar{
+    display: block;
 }
 .editor>.ace_scrollbar-v::-webkit-scrollbar {
     width: 25px;
@@ -1213,7 +1236,7 @@ input[type='url'] {
     height: 35px;
     width: 40px;
     line-height: 40px;
-    z-index: 161;
+    z-index: 162;
     text-align: center;
     border-radius: 25%;
     border-top-left-radius: 50%;
@@ -1485,10 +1508,10 @@ input[type='url'] {
 /*region ace_search,ace_settings*/
 /*settings*/
 .ace_search {
-    padding-left: 10px;
+    padding-left: 15px;
     padding-right: 40px;
     z-index: 99;
-    left: 0;
+    right: 0;
     width: 101%;
     min-width: 300px;
     max-width: 400px;
@@ -1516,6 +1539,7 @@ input[type='url'] {
     border: none;
     margin: 0 5px;
     text-align: center;
+    vertical-align: top;
 }
 
 .ace_search_form,
@@ -1531,7 +1555,7 @@ input[type='url'] {
 
 .ace_search_form td:first-child,
 .ace_replace_form td:first-child {
-    padding: 0;
+    padding: 5px 0 0;
     min-width: 150px;
 }
 
@@ -1543,8 +1567,17 @@ input[type='url'] {
 .ace_search_form td:last-child,
 .ace_replace_form td:last-child {
     padding: 0;
-    padding-left: 10px;
+    padding-left: 5px;
     width: 130px;
+}
+
+.ace_search tr {
+    border-bottom: none;
+}
+
+.ace_search_counter {
+    line-height: 25px;
+    font-size: 14px;
 }
 
 .ace_button {
@@ -1568,6 +1601,16 @@ input[type='url'] {
 .ace_button {
     font-family: monospace;
     font-size: 14px;
+    font-weight: 100;
+    letter-spacing: -1.5px;
+}
+
+.ace_optionbtn {
+    display: inline-block;
+    height: 30px;
+    line-height: 30px;
+    font-size: 14px;
+    vertical-align: top;
 }
 
 .ace_button.checked {
@@ -1576,24 +1619,14 @@ input[type='url'] {
 }
 
 .content>.ace_search {
-    width: 300px;
+    /*width: 300px;*/
     border-width: 1px;
-    border-style: solid;
     border-radius: 3px;
     margin-left: 5px;
     margin-right: 5px;
     z-index: 161;
     max-height: 90%;
     overflow-y: auto;
-}
-
-.ace_search tr {
-    border-bottom: none;
-}
-
-.ace_search_counter {
-    line-height: 25px;
-    font-size: 14px;
 }
 
 /*endregion*/

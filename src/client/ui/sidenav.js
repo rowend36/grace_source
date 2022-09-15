@@ -1,6 +1,6 @@
 define(function(require, exports, module) {
     'use strict';
-    /*globals M*/
+    /*globals $, M*/
     require("../libs/js/materialize");
     var anim = M.anime;
     var _defaults = {
@@ -81,6 +81,7 @@ define(function(require, exports, module) {
         Sidenav._sidenavs.push(this);
     }
     Sidenav.prototype = {
+        $preventSpoof: false,//Used by AutoCloseables
         // "destroy": function destroy() {
         //     //TODO
         //     this.close();

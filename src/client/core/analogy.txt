@@ -7,10 +7,10 @@ Apparent Answer
 
 
 Coincidentally, that is also the right answer to
-how do you spend 3 years building a simple software. :D
+how do you spend 3 years building a tiny simple software. :D
 
 In here, you have replicated functionality of
-- jquery on cashdom & animejs(polyfill)
+- jquery on cashdom & animejs(jquery_compat)
 - axios (ajax)
 - antlr (parser)
 - ot.js (ext/shared_store)

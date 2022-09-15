@@ -7,6 +7,9 @@ define(function (require, exports, module) {
   var getDoc = S.getDoc;
   var docValue = S.docValue;
   var Depend = require('grace/core/depend');
+  var Docs = require('grace/docs/docs').Docs;
+  var modelist = require('ace!ext/modelist');
+  var Autocomplete = require('ace!autocomplete').Autocomplete;
 
   var FileUtils = require('grace/core/file_utils').FileUtils;
   /**@constructor*/
@@ -16,10 +19,11 @@ define(function (require, exports, module) {
     this.transport =
       options.transport || new Transport(this.requestFile.bind(this));
     this.restart(this.options.compilerOptions);
+    this.provider = options.provider;
   };
 
   var debugCompletions = false;
-
+  var TEMP_DIR = '/tmp_0/';
   function sum(doc) {
     var a = doc.getLength();
     if (a < 1) return 0;
@@ -30,7 +34,24 @@ define(function (require, exports, module) {
     return sum;
   }
   TsClient.prototype = Object.assign(Object.create(BaseClient.prototype), {
-    name: 'tsClient',
+    queryTimeout: 4000,
+    sendFragments: true,
+    //Hacks to make Ts Server happy
+    fixFilename: /^config\.json(?:~+\d+)?$/,
+    $fixName: function (name) {
+      return name.startsWith('temp:')
+        ? getTempFileName(this, name)
+        : getValidFile(this, name);
+    },
+    $unfixName: function (name, o) {
+      if (this.docs[name]) return name;
+      if (name.startsWith(TEMP_DIR))
+        return 'temp:' + name.slice(TEMP_DIR.length, name.lastIndexOf('.'));
+      else {
+        var fixed = name.slice(0, name.lastIndexOf('.'));
+        return this.fixFilename.test(fixed) ? fixed : name;
+      }
+    },
     sendDoc: function (doc, cb) {
       var ts = this;
       var changes = ts.getChanges(doc);
@@ -39,20 +60,20 @@ define(function (require, exports, module) {
         changes[changes.length - 1].checksum = sum(doc.doc);
         message = {
           type: 'updateDoc',
-          args: [doc.name, changes, doc.version],
+          args: [this.$fixName(doc.name), changes, doc.version],
         };
         doc.version++;
       } else {
         doc.version = Math.floor(Math.random() * 10000000);
         message = {
           type: 'addDoc',
-          args: [doc.name, docValue(ts, doc), doc.version],
+          args: [this.$fixName(doc.name), docValue(ts, doc), doc.version],
         };
       }
       //Coordinating this is work, but figured it out eventually,
       var expected = doc.version;
       ts.transport.postMessage(message, function (error, version) {
-        if (error || version != expected) {
+        if (error || (version != expected && ts.docs[name])) {
           //possible corruption, force full refresh
           ts.invalidateDoc(ts.docs[name]);
         }
@@ -62,11 +83,19 @@ define(function (require, exports, module) {
     releaseDoc: function (name) {
       this.transport.postMessage({
         type: 'delDoc',
-        args: [name],
+        args: [this.$fixName(name)],
       });
     },
     destroy: function () {
+      BaseClient.prototype.destroy.call(this);
       this.transport.terminate();
+    },
+    insertMatch: function (editor, match) {
+      var completions = editor.completer.completions;
+      if (completions.filterText) {
+        editor.execCommand(Autocomplete.$deletePrefix, completions.filterText);
+      }
+      editor.execCommand('insertstring', match.data.label);
     },
     $getPos: function (editor, pos) {
       return editor.session
@@ -79,7 +108,8 @@ define(function (require, exports, module) {
       data = {
         refs: data.map(function (e) {
           name = name || e.name;
-          var data = this.docs[e.fileName],
+          var file = this.$unfixName(e.fileName);
+          var data = this.docs[file],
             session;
           if (data && typeof data.doc == 'object') {
             session = data.doc;
@@ -87,7 +117,7 @@ define(function (require, exports, module) {
 
           failed = failed || !session;
           return {
-            file: e.fileName,
+            file: file,
             start: session && toAceLoc(session, e.textSpan.start),
             end:
               session &&
@@ -110,10 +140,10 @@ define(function (require, exports, module) {
               this.addDoc(path, res, true),
               function () {
                 this.updateAnnotations(getEditor());
-              }.bind(this)
+              }.bind(this),
             );
           }
-        }.bind(this)
+        }.bind(this),
       );
     },
     requestArgHints: function (editor, start, cb) {
@@ -125,10 +155,13 @@ define(function (require, exports, module) {
         function (e, res) {
           if (debugCompletions) debug.timeEnd('get definition');
           if (e) {
-            return debug.log(e);
-          } else if (!res) return;
-          cb(res);
-        }
+            debug.log(e);
+            cb(e);
+          } else {
+            if (res) res.activeIndex = res.selectedItemIndex;
+            cb(null, res);
+          }
+        },
       );
     },
     requestDefinition: function (editor, cb) {
@@ -141,12 +174,8 @@ define(function (require, exports, module) {
       this.send(
         'getQuickInfoAtPosition',
         [getDoc(this, editor.session).name, this.$getPos(editor, pos)],
-        cb
+        cb,
       );
-    },
-    normalizeName: function (name) {
-      if (!/[^\.\/]\.([tj]sx?)+$/.test(name)) return name + '.js';
-      return name;
     },
     getCompletions: function (editor, session, pos, prefix, callback) {
       var self = this;
@@ -157,9 +186,9 @@ define(function (require, exports, module) {
         } else callback(e);
       });
     },
-    genArgHintHtml: function (args, argpos) {
+    genArgHintHtml: function (args, activeIndex) {
       var createToken = this.ui.createToken.bind(this.ui);
-      var doc = args.items[args.selectedItemIndex];
+      var doc = args.items[activeIndex];
       var html = [];
       for (var i in doc.prefixDisplayParts) {
         html.push(createToken(doc.prefixDisplayParts[i]));
@@ -169,8 +198,8 @@ define(function (require, exports, module) {
           html.push(
             createToken(
               doc.parameters[j].displayParts[m],
-              j == argpos ? 'active' : null
-            )
+              j == activeIndex ? 'active' : null,
+            ),
           );
         }
         if (j < doc.parameters.length - 1)
@@ -186,9 +215,9 @@ define(function (require, exports, module) {
             html.push(doc.documentation.map(function(e) {
                 return e[e.kind]
             }).join("</br>"));*/
-      if (doc.tags[argpos]) {
+      if (doc.tags[activeIndex]) {
         html.push('<div>');
-        var e = doc.tags[argpos];
+        var e = doc.tags[activeIndex];
         html.push(
           '</br>' +
             createToken({
@@ -199,7 +228,7 @@ define(function (require, exports, module) {
             createToken({
               kind: 'paramDoc',
               text: e.text,
-            })
+            }),
         );
         html.push('</div>');
       }
@@ -218,7 +247,7 @@ define(function (require, exports, module) {
               item.docHTML = ts.genInfoHtml(r, true);
               editor.completer.updateDocTooltip();
             }
-          }
+          },
         );
       }
     },
@@ -240,23 +269,32 @@ define(function (require, exports, module) {
        * @type {Array<Dep>} missing
        */
       var missing = [];
-      var dir = FileUtils.normalize(FileUtils.dirname(file));
+      var dir = file.startsWith('temp:/')
+        ? '/'
+        : FileUtils.normalize(FileUtils.dirname(file));
+      if (dir === FileUtils.NO_PROJECT) {
+        cb && cb();
+        return false;
+      }
+      var uniq = {};
       annotations.forEach(function (e) {
-        if (e.text.startsWith('Cannot find')) {
-          var res = /\'(.*)\'/.exec(e.text);
+        if (uniq[e.text]) return;
+        uniq[e.text] = true;
+        if (e.text.startsWith('Cannot find module')) {
+          var res = /\'((?:[^']|\\.)*)\'/.exec(e.text);
           if (res) {
             var module = res[1];
-            if (/\.?\.?\//.test(module))
+            if (/^\.\.?\//.test(module)) {
               missing.push({
                 type: 'source',
                 path: FileUtils.resolve(dir, module),
               });
-            else {
-              var name = module.lastIndexOf('/');
+            } else {
+              var nameIdx = module.lastIndexOf('/');
               missing.push({
                 type: 'module',
                 path: module,
-                name: module.substring(0, name > -1 ? name - 1 : module.length),
+                name: nameIdx > -1 ? module.substring(0, nameIdx) : module,
               });
             }
           }
@@ -269,7 +307,7 @@ define(function (require, exports, module) {
     },
     //todo parse and load dependencies
     resolveDependencies: function (dir, missing, cb) {
-      require('./add_dependencies').addDependencies(this, dir, missing, cb);
+      require('./add_dependencies').addDependencies(this, dir, missing);
     },
     requestAnnotations: function (editor, cb) {
       var file = getDoc(this, editor.session).name;
@@ -277,8 +315,8 @@ define(function (require, exports, module) {
       this.send('getAnnotations', editor, function (e, r) {
         if (r) {
           ts.loadDependenciesFromErrors(file, r);
-          cb(r);
-        } else cb([]);
+          cb(e, r);
+        } else cb(e, []);
       });
     },
     requestReferences: function (editor, cb) {
@@ -317,14 +355,15 @@ define(function (require, exports, module) {
             editor,
             newName,
             n,
-            cache
+            cache,
           );
         },
         function (n, e, data) {
           if (data) {
             data.refs.forEach(function (e) {
               if (e.start) return;
-              var doc = ts.docs[e.file].doc;
+              var data = ts.docs[e.file];
+              var doc = data && data.doc;
               e.start = doc && toAceLoc(doc, e.span.start);
               e.end = doc && toAceLoc(doc, e.span.start + e.span.length);
             });
@@ -349,7 +388,15 @@ define(function (require, exports, module) {
     send: function (type, args, cb) {
       var transport = this.transport;
       if (args && args.session) {
-        args = [getDoc(this, args.session).name, this.$getPos(args)];
+        var doc = getDoc(this, args.session);
+        var pos = this.$getPos(args);
+        if (doc.fragOnly && this.sendFragments) {
+          this.sendDoc({name: doc.name, text: ''});
+          pos = 0;
+        }
+        args = [this.$fixName(doc.name), pos];
+      } else if (type !== 'restart') {
+        args[0] = this.$fixName(args[0]);
       }
       var counter = Utils.createCounter(function () {
         transport.postMessage(
@@ -357,7 +404,7 @@ define(function (require, exports, module) {
             type: type,
             args: args,
           },
-          cb
+          cb,
         );
       });
       counter.increment();
@@ -372,6 +419,36 @@ define(function (require, exports, module) {
       counter.decrement();
     },
   });
+  //Most Language Service Providers have problems
+  //dealing with non-local files, but can handle
+  //non-existent local files all right
+  function getTempFileName(ts, name) {
+    var doc = Docs.forPath(name);
+    if (!doc) return name;
+    if (doc.$lspName) {
+      return doc.$lspName;
+    }
+    var t = doc.session.getModeName();
+    var ext = S.getExtension(
+      ts.provider.modes.indexOf(t) < 0 ? ts.provider.modes[0] : t,
+    );
+    return ext ? name.replace('temp:/', TEMP_DIR) + '.' + ext : name;
+  }
+
+  function getValidFile(ts, name) {
+    if (!ts.$validExtensions)
+      ts.$validExtensions = ts.provider.modes.map(S.getExtension);
+    var ext = FileUtils.extname(name);
+    if (ts.$validExtensions.indexOf(ext) > -1) return name;
+    if (!ts.fixFilename.test(name)) return name;
+    var mode = modelist.getModeForPath(name).name;
+    if (ts.provider.modes.indexOf(mode) < 0) {
+      return name + '.' + ts.$validExtensions[0];
+    } else {
+      ts.$validExtensions.push(ext);
+      return name;
+    }
+  }
 
   function toAceLoc(session, index) {
     return session.getDocument().indexToPosition(index);
@@ -413,20 +490,22 @@ define(function (require, exports, module) {
         try {
           res = (instance[data.type] || instance.getLSP()[data.type]).apply(
             instance,
-            data.args
+            data.args,
           );
         } catch (e) {
           error = e;
           debug.error(error);
         }
         cb && cb(error, res);
-      }
+      },
     );
   };
   var WorkerTransport = function (onRequestFile) {
     var waiting = {};
     var lastId = 1;
-    var worker = new Worker(FileUtils.resolve(module.uri, './libs/ts_worker'));
+    var worker = new Worker(
+      FileUtils.resolve(FileUtils.dirname(module.uri), './libs/ts_worker.js'),
+    );
     this.postMessage = function (data, cb) {
       if (cb) {
         data.id = lastId;
@@ -440,16 +519,18 @@ define(function (require, exports, module) {
         return onRequestFile(data.path);
       }
       var cb = waiting[data.id];
-      if (data.error) debug.error(data.error);
+      var error = data.error && Object.assign(new Error(), data.error);
+      if (error) debug.error(error);
       if (cb) {
         delete waiting[data.id];
-        cb(data.error, data.res);
+        cb(error, data.res);
       }
     };
     worker.onerror = function (e) {
       for (var i in waiting) {
         waiting[i](e);
       }
+      console.log(e);
       debug.error(e);
       waiting = {};
     };

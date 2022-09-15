@@ -1,10 +1,9 @@
 define(function (require, exports, module) {
     'use strict';
-    var storage = require('../core/config').storage;
     var Utils = require('../core/utils').Utils;
-
+    var Store = require('../core/store').Store;
     function _transformIndex(from, to, index) {
-        var r, o; //closes known sibling to the right and offset
+        var r, o=Infinity; //closes known sibling to the right and offset
         for (var i = index; i < from.length; i++) {
             var t = to.indexOf(from[i]);
             if (t > -1) {
@@ -23,22 +22,34 @@ define(function (require, exports, module) {
             }
         }
     }
-
+    // var dup = (e, i, a) => a.indexOf(e, i + 1) > -1;
+    // var _check2 = function (t) {
+    //     if (t.oldTabs) {
+    //         console.log('Added ', t.tabs.filter(Utils.notIn(t.oldTabs)));
+    //         console.log('Removed ', t.oldTabs.filter(Utils.notIn(t.tabs)));
+    //     }
+    //     Utils.assert(Object.keys(t.tempData).filter(t.getOwner, t).length == 0,'Temp with owner');
+    //     t.oldTabs = t.tabs.slice(0);
+    //     Utils.assert(t.tabs.filter(dup).length == 0, 'Duplicate');
+    //     Utils.assert(t.store.get().filter(dup).length == 0, 'Duplicate');
+    //     Utils.assert(
+    //         t.tabs
+    //             .filter(Utils.notIn(t.store.get()))
+    //             .filter(Utils.notIn(Object.keys(t.tempData))).length === 0,
+    //         'Tab sync error',
+    //     );
+    // };
     // function _confirmSync(tabs, renderer) {
     //     try {
     //         renderer.$el.children().each(function (i) {
     //             Utils.assert(this.getAttribute(renderer.ID_ATTR) == tabs[i], tabs[i]);
     //         });
-    //         console.log("in sync");
     //     } catch (e) {
     //         console.error(e);
     //     }
     // }
     function TabHost(id, renderers) {
-        //Used for persistence
-        this.id = id;
-
-        //Renderers show visually depict the state of the tabhost
+        //Renderers show the state of the tabhost
         //On adding a renderer, call TabHost#recreate to
         //resync the renderers with the tabhost state
         this.$renderers = renderers || [];
@@ -51,9 +62,10 @@ define(function (require, exports, module) {
         //a tab is in isSavedTab to not add it manually
         //and instead call recreate
         //Saved Tabs are thus never deleted
-        this.savedTabs = [];
-        this.$fromJSON(storage.getItem(this.id) || '');
-
+        /** @type {Store<string[]>} */
+        this.store = new Store(id, []);
+        this.activeStore = new Store(id + '.active');
+        this.$persist = Utils.delay(this.store.save.bind(this.store), 2000);
         //The first letter of a tab id shows the populator
         //m -> Docs
         //d -> Diffs
@@ -61,80 +73,83 @@ define(function (require, exports, module) {
         //The populator provides tab name and info
         this._populators = {};
     }
+
     //Internal - Controls whether the tab should reset the active tab to saved value
     TabHost.prototype.$usePersistedActive = true;
-    TabHost.prototype.$toJSON = function () {
-        return this.savedTabs.filter(this.getOwner, this).join(',');
-    };
-    TabHost.prototype.$fromJSON = function (json) {
-        this.savedTabs = json.split(',').filter(Boolean);
-    };
-    TabHost.prototype.$persist = Utils.delay(function () {
-        storage.setItem(this.id, this.$toJSON());
-    }, 2000);
 
     TabHost.prototype.addRenderer = function (renderer) {
         this.$renderers.push(renderer);
     };
 
     TabHost.prototype.registerPopulator = function (char, pop) {
-        this._populators[char] = pop;
+        this._populators[char + '_'] = pop;
     };
 
     TabHost.prototype.getOwner = function (id) {
-        return this._populators[id] || this._populators[id[0]];
+        return this._populators[id && id.slice(0, 2)];
     };
-
     //TODO should only recreate if changed
     TabHost.prototype.recreate = function () {
         //Does 3 things,
-        //Adds back closed tabs,
+        //Adds back hidden tabs,
         //Creates views for them
-        //Remove orphaned tabs
-        this.tabs = this.savedTabs;
+        //Hides unloaded tabs
+        //Removes orphaned tabs
+        var tabs = this.store.get();
+        this.tabs.forEach(function (e, i) {
+            //Could remote changes have saved a tempData tab?
+            if (tabs.indexOf(e) < 0 && this.tempData[e]) {
+                if (tabs === this.store.get()) tabs = tabs.slice(0);
+                tabs.splice(_transformIndex(this.tabs, tabs, i), 0, e);
+            }
+        }, this);
+        this.tabs = tabs;
         this.$renderers.forEach(function (e) {
             e.$el.empty();
         });
         var tab;
-        var id, namefile, annotations;
+        var id, tabName, annotations;
 
         function render(r) {
-            tab = r.createItem(id, namefile, annotations);
+            tab = r.createItem(id, tabName, annotations);
             r.$el.append(tab);
             r.setAnnotations(
                 id,
                 annotations && annotations.length
                     ? r.createAnnotationItem(annotations)
-                    : undefined
+                    : undefined,
             );
         }
         for (var i = 0; i < this.tabs.length; ) {
             id = this.tabs[i];
-            var t = this.getOwner(id) || this;
-            namefile = t.getName(id);
-            if (namefile) {
+            var t = this.tempData[id] ? this : this.getOwner(id);
+            tabName = t && t.getName(id);
+            if (tabName || t === this) {
+                //Never remove tempData
                 annotations = t.getAnnotations(id);
                 this.$renderers.forEach(render);
                 i++;
             } else {
-                if (!t.canDiscard || t.canDiscard(id)) {
+                if (t && (!t.canDiscard || t.canDiscard(id))) {
                     this.$deleteTab(i, id);
                 } else {
                     //remove from visible tabs
-                    if (this.tabs === this.savedTabs) {
-                        this.tabs = this.savedTabs.slice(0);
+                    if (this.tabs === this.store.get()) {
+                        this.tabs = this.store.get().slice(0);
                     }
                     this.tabs.splice(i, 1);
                 }
             }
         }
+
+        // _check2(this);
         // this.$renderers.forEach((r) => _confirmSync(this.tabs, r));
         this.updateActive();
     };
     TabHost.prototype.updateActive = function () {
         var active = this.active;
         if (this.$usePersistedActive) {
-            active = storage.getItem(this.id + '.active');
+            active = this.activeStore.get();
         }
         if (this.hasTab(active)) {
             this.setActive(active, active !== this.active, true);
@@ -144,9 +159,9 @@ define(function (require, exports, module) {
                 : this.tabs[0];
             this.setActive(fallback, fallback !== this.active, true);
         }
-        if (active && this.active !== active) {
+        if (active && this.activeStore.get() !== active) {
             this.$usePersistedActive = true;
-            storage.setItem(this.id + '.active', active);
+            this.activeStore.set(active);
         }
     };
 
@@ -157,19 +172,19 @@ define(function (require, exports, module) {
                 r.scrollIntoView(r.getTabEl(id));
             });
         }
-        if (click) {
+        if (click !=+ false) {
             var _active = this.active;
             this.active = id;
             if (this.afterClick(id, _active) === false && this.active === id) {
                 this.active = _active;
                 return;
             }
+            if (this.$usePersistedActive) this.$usePersistedActive = false;
+            this.activeStore.set(this.active);
         }
         this.$renderers.forEach(function (r) {
             r.setActive(r.getTabEl(this.active));
         }, this);
-        if (this.$usePersistedActive) this.$usePersistedActive = false;
-        storage.setItem(this.id + '.active', this.active);
     };
 
     //A populator might want to know if its tab is still open
@@ -177,7 +192,7 @@ define(function (require, exports, module) {
         return this.tabs.indexOf(id) > -1;
     };
     TabHost.prototype.isSavedTab = function (id) {
-        return this.savedTabs.indexOf(id) > -1;
+        return this.store.get().indexOf(id) > -1;
     };
     TabHost.prototype.numTabs = function () {
         return this.tabs.length;
@@ -196,8 +211,10 @@ define(function (require, exports, module) {
                 id,
                 annotations && annotations.length
                     ? r.createAnnotationItem(annotations)
-                    : undefined
+                    : undefined,
             );
+
+            // _check2(this);
             // _confirmSync(this.tabs, r);
         }, this);
         if (id == this.active) {
@@ -209,7 +226,7 @@ define(function (require, exports, module) {
         id,
         name,
         annotations,
-        info
+        info,
     ) {
         if (!index && index !== 0) index = this.tabs.indexOf(this.active);
         this.addTab(id, name, annotations, info);
@@ -221,25 +238,27 @@ define(function (require, exports, module) {
         if (relative) index = oldIndex + index;
         if (index >= this.tabs.length) {
             index = this.tabs.length - 1;
-            return;
         }
-        if (oldIndex == index) {
-            return;
-        }
+        if (oldIndex == index) return;
+
         //--thank You for splice
         this.tabs.splice(index, 0, this.tabs.splice(oldIndex, 1)[0]);
-        if (this.tabs !== this.savedTabs) {
-            //update savedTabs also
-            var tIndex = this.savedTabs.indexOf(id);
+        if (!this.tempData[id] && this.tabs !== this.store.get()) {
+            //update store.get( also
+            var tIndex = this.store.get().indexOf(id);
             Utils.assert(tIndex > -1, 'Tab sync error');
-            this.savedTabs.splice(
-                _transformIndex(index),
-                0,
-                this.savedTabs.splice(tIndex, 1)[0]
-            );
+            var m = this.store.get().splice(tIndex, 1)[0];
+            this.store
+                .get()
+                .splice(
+                    _transformIndex(this.tabs, this.store.get(), index),
+                    0,
+                    m,
+                );
         }
         this.$persist();
 
+        // _check2(this);
         this.$renderers.forEach(function (r) {
             var oldEl = r.getTabEl(id)[0];
             if (!oldEl)
@@ -250,35 +269,41 @@ define(function (require, exports, module) {
             } else {
                 r.$el[0].appendChild(oldEl);
             }
+
             // _confirmSync(this.tabs, r);
         }, this);
         return true;
     };
     TabHost.prototype.$deleteTab = function (index, id) {
         this.tabs.splice(index, 1);
-        if (this.tabs !== this.savedTabs) {
-            //update savedTabs also
-            var tIndex = this.savedTabs.indexOf(id);
+        if (this.tempData[id]) delete this.tempData[id];
+        else if (this.tabs !== this.store.get()) {
+            //update store.get( also
+            var tIndex = this.store.get().indexOf(id);
             Utils.assert(tIndex > -1, 'Tab sync error');
-            this.savedTabs.splice(tIndex, 1);
+            this.store.get().splice(tIndex, 1);
         }
         this.$persist();
+        if (this.tempAnnotations[id]) delete this.tempAnnotations[id];
     };
     TabHost.prototype.removeTab = function (id) {
-        delete this.tempPopulators[id];
+        // _check2(this);
         var pos = this.tabs.indexOf(id);
-        if (pos < 0) throw new Error('Item not a child');
+        if (pos < 0) throw new Error('Cannot close unexisting tab.');
         this.$deleteTab(pos, id);
+
+        // _check2(this);
         this.$renderers.forEach(function (r) {
             r.getTabEl(id).remove();
             // _confirmSync(this.tabs, r);
         }, this);
         if (id == this.active) {
+            this.active = undefined;
             if (this.tabs.length > 0) {
                 this.setActive(
                     this.tabs[pos - 1] || this.tabs[pos],
                     true,
-                    false
+                    false,
                 );
             }
         }
@@ -287,87 +312,93 @@ define(function (require, exports, module) {
         if (this.hasTab(id)) return this.replaceTab(id, name, annotations);
         if (this.isSavedTab(id)) {
             console.warn(
-                'To keep tab order, do not add closed tabs. Call recreate instead'
+                'To keep tab order, do not add closed tabs[' +
+                    id +
+                    ']. Call recreate instead.',
             );
-            this.savedTabs.splice(this.savedTabs.indexOf(id), 1);
+            this.store.get().splice(this.store.get().indexOf(id), 1);
         }
-        this.tabs.push(id);
-        if (this.tabs !== this.savedTabs) {
-            //update savedTabs also
-            this.savedTabs.push(id);
-        }
-        this.$persist();
-        if (!this.getOwner(id)) {
-            this.tempPopulators[id] = {
+        var owner = this.getOwner(id);
+        if (!owner) {
+            //This will stop this tab from ever being saved
+            //Do we remove tempData for tabs with owners in recreate?
+            this.tempData[id] = {
                 name: name,
                 annotations: annotations,
                 info: info,
             };
+            if (this.tabs === this.store.get())
+                this.tabs = this.store.get().slice();
+            owner = this;
         }
+        this.tabs.push(id);
+        if (!this.tempData[id] && this.tabs !== this.store.get()) {
+            this.store.get().push(id);
+        }
+        this.$persist();
 
-        //exactly what happens in recreate
+        // _check2(this);
+        //Exactly what happens in recreate
+        if (!name) name = owner.getName(id);
+        if (!annotations) annotations = owner.getAnnotations(id);
         this.$renderers.forEach(function (r) {
             r.$el.append(r.createItem(id, name, annotations));
             r.setAnnotations(
                 id,
                 annotations && annotations.length
                     ? r.createAnnotationItem(annotations)
-                    : undefined
+                    : undefined,
             );
             // _confirmSync(this.tabs, r);
         }, this);
     };
 
     //Modify existing tabs
+    TabHost.prototype.tempAnnotations = {};
     TabHost.prototype.setAnnotations = function (id, annotations) {
-        if (this.tempPopulators[id])
-            this.tempPopulators[id].annotations = annotations;
+        this.tempAnnotations[id] = annotations;
         this.$renderers.forEach(function (r) {
             r.setAnnotations(
                 id,
                 annotations && annotations.length
                     ? r.createAnnotationItem(annotations)
-                    : undefined
+                    : undefined,
             );
         });
     };
     TabHost.prototype.addAnnotation = function (id, annotation) {
-        if (!this.tempPopulators[id]) this.tempPopulators[id] = {};
-        if (!this.tempPopulators[id].annotations)
-            this.tempPopulators[id].annotations = [];
-        var i = this.tempPopulators[id].annotations;
+        if (!this.tempAnnotations[id]) this.tempAnnotations[id] = [];
+        var i = this.tempAnnotations[id];
         if (i.indexOf(annotation) < 0) {
             i.push(annotation);
             this.setAnnotations(id, i);
         }
     };
     TabHost.prototype.removeAnnotation = function (id, annotation) {
-        if (this.tempPopulators[id] && this.tempPopulators[id].annotations) {
-            var all = this.tempPopulators[id].annotations;
-            if (Utils.removeFrom(all, annotation) > -1) {
-                this.setAnnotations(id, all);
-            }
+        var all = this.tempAnnotations[id];
+        if (all && Utils.removeFrom(all, annotation) > -1) {
+            this.setAnnotations(id, all);
         }
     };
     TabHost.prototype.setName = function (id, name) {
-        if (this.tempPopulators[id]) this.tempPopulators[id].name = name;
+        if (this.tempData[id]) this.tempData[id].name = name;
         this.replaceTab(
             id,
             name,
-            (this.getOwner(id) || this).getAnnotations(id)
+            (this.getOwner(id) || this).getAnnotations(id),
         );
     };
 
     /*Populator Interface*/
-    TabHost.prototype.tempPopulators = {};
+    TabHost.prototype.tempData = {};
     TabHost.prototype.getAnnotations = function (id) {
-        return this.tempPopulators[id] && this.tempPopulators[id].annotations;
+        return this.tempAnnotations[id];
     };
     TabHost.prototype.getName = function (id) {
-        return this.tempPopulators[id] && this.tempPopulators[id].name;
+        return this.tempData[id] && this.tempData[id].name;
     };
     TabHost.prototype.getInfo = function (id) {
-        return this.tempPopulators[id].info;
+        return this.tempData[id].info;
     };
     exports.TabHost = TabHost;
 });

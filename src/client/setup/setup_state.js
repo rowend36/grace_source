@@ -7,8 +7,8 @@ define(function (require, exports, module) {
     var State = new StateManager(window);
     if (!Env.isWebView) State.ensure('noexit', true);
     State.addListener(
-        function (tab) {
-            switch (tab) {
+        function (hash) {
+            switch (hash) {
                 case 'noexit':
                     var delay = Utils.parseTime(uiConfig.backButtonDelay);
                     cyclicRequire('../ui/notify').Notify.info(

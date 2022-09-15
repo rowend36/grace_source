@@ -1,8 +1,8 @@
 define(function (require, exports, module) {
     var Notify = require('grace/ui/notify').Notify;
-    var GitCommands = require('./git_commands').GitCommands;
-    var failure = GitCommands.failure;
-    GitCommands.log = function (ev, prov) {
+    var GitUtils = require('./git_utils').GitUtils;
+    var failure = GitUtils.failure;
+    exports.log = function (ev, prov) {
         prov.log().then(function (logs) {
             Notify.modal({
                 header: 'History',

@@ -3,20 +3,36 @@
 define(function (require, exports, module) {
     var FileUtils = require('grace/core/file_utils').FileUtils;
     var Utils = require('grace/core/utils').Utils;
-    var openDoc = require('grace/docs/docs').openDoc;
-    var GitCommands = require('./git_commands').GitCommands;
+    var Docs = require('grace/docs/docs').Docs;
+
+    var StopSignal = require('grace/ext/stop_signal').StopSignal;
     var registerDiffFactory = require('grace/ext/diff').registerDiffFactory;
     var createDiffView = require('grace/ext/diff').createDiffView;
     var relative = FileUtils.relative;
 
-    registerDiffFactory('git', function (doc, ev, cb) {
-        openDoc(null, doc);
-        var abort = new Utils.AbortSignal();
+    registerDiffFactory('git', function (ev, cb) {
+        var doc;
+        if (typeof ev.doc == 'string') doc = Docs.get(ev.doc);
+        else {
+            doc = ev.doc;
+            ev.doc = doc && doc.id;
+        }
+        var panes = {}; //map names to content
+        var names = []; //The pane to render views in ie theirs,ours,origin
+        var refs = []; //The refs to read, must be more than 0
+        Object.keys(ev.panes).forEach(function (key) {
+            if (ev.panes[key] === ev.doc) panes[key] = doc;
+            else {
+                names.push(key);
+                refs.push(ev.panes[key]);
+            }
+        });
+        var task = new StopSignal();
         var targetFile = ev.filepath;
         var opts = {
             fs: FileUtils.getFileServer(ev.fs),
             gitdir: ev.gitdir,
-            trees: ev.refs.map(function (e) {
+            trees: refs.map(function (e) {
                 //get the trees
                 switch (e) {
                     case 'ours':
@@ -29,28 +45,31 @@ define(function (require, exports, module) {
                     ref: e,
                 });
             }),
-            map: abort.control(async function (filepath, items) {
+            map: task.control(async function (filepath, items) {
                 if (!filepath || filepath == '.') return;
+                if (targetFile.startsWith(filepath + '/')) return;
                 if (filepath == targetFile) {
                     var decoder = new TextDecoder('utf8');
-                    var views = (
-                        await Promise.all(items.map(getContent.bind(null, ev)))
-                    ).map(function (e) {
-                        return e ? decoder.decode(e) : '';
-                    });
-                    abort.abort();
-                    cb(views, ev.refs.join('|'), ev);
-                } else if (!targetFile.startsWith(filepath + '/')) {
-                    return null;
+                    await Promise.all(
+                        refs.map(async function (ref, i) {
+                            var content = await getContent(ev, ref, items[i]);
+                            panes[names[i]] = content
+                                ? decoder.decode(content)
+                                : '';
+                        }),
+                    );
+                    task.stop();
+                    cb(panes, refs.join('|'), ev);
                 }
+                return null;
             }, null),
             reduce: Utils.noop,
         };
-        git.walk(opts);
+        git.walk(opts).finally(task.control(cb.bind(null, null)));
     });
 
     /*Only works for conflict entries*/
-    async function getStage(e, stage, ev) {
+    async function getStage(ev, stage, e) {
         const oids = (await e.conflictData()).oids;
         console.log(oids);
         const oid = oids[stage] || oids[0];
@@ -66,36 +85,34 @@ define(function (require, exports, module) {
             return '';
         }
     }
-    async function getContent(ev, e, i) {
+    async function getContent(ev, ref, e) {
         if (!e) return '';
-        switch (ev.refs[i]) {
+        switch (ref) {
             case 'ours':
-                return getStage(e, 2, ev);
+                return getStage(ev, 2, e);
             case 'base':
-                return getStage(e, 1, ev);
-            /*falls through*/
+                return getStage(ev, 1, e);
             case 'theirs':
-                return getStage(e, 3, ev);
-            /*falls through*/
+                return getStage(ev, 3, e);
             case 'index':
-                return getStage(e, 0, ev);
+                return getStage(ev, 0, e);
             default:
                 return e.content();
         }
     }
 
-    GitCommands.diff = function (ev, prov) {
+    exports.diff = function (ev, prov) {
         FileUtils.getDocFromEvent(ev, function (doc) {
             createDiffView(
                 'git',
-                doc,
                 {
+                    doc: doc.id,
                     fs: prov.fs.id,
                     gitdir: prov.gitdir,
                     filepath: relative(prov.dir, ev.filepath),
-                    refs: ['index'],
+                    panes: {origin: 'index', ours: doc.id},
                 },
-                true
+                true,
             );
         });
     };

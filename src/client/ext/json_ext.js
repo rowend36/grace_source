@@ -172,6 +172,7 @@ define(function (require, exports, module) {
     ARRAY = keys.ARRAY,
     KEY = keys.KEY,
     OBJ_VALUE = keys.OBJ_VALUE,
+    OBJ_ITEM = keys.OBJ_ITEM,
     OBJECT = keys.OBJECT,
     IDENTIFIER = keys.identifier,
     NUMBER = keys.number,
@@ -187,126 +188,99 @@ define(function (require, exports, module) {
       text: str,
     });
     var parser = JSONExt;
-    /**@type {Array<{type:string,pos:number,indent:string,name?:string}>}*/
+    /**@type {Array<{
+      type:string,
+      pos:number,
+      indent:string,
+      start:number,
+      name?:string}>}*/
     var ctx = [];
 
-    var next = '',
-      nextPos = -1,
+    var comment = '',
       key;
 
-    function postComment(fullName, pos) {
+    function insertComment() {
+      var fullName = ctx
+        .map(function (e) {
+          return e.name;
+        })
+        .join('.');
       var info = getInfo(fullName);
       if (!info) return;
       var comments = info.split('\n').filter(Boolean);
+      var affected =
+        key.start < key.pos - key.indent.length
+          ? ctx.filter(function (e) {
+              return e.pos >= key.start;
+            })
+          : [key];
+      if (affected.length > 1) {
+        comments.unshift(
+          '~' +
+            affected
+              .map(function (e) {
+                return e.name;
+              })
+              .join('.'),
+        );
+      }
       if (comments.length > 1) {
         var lines = [];
         for (var j in comments) {
-          lines.push(key.indent + (j == 0 ? '/* ' : ' * ') + comments[j]);
+          lines.push(key.indent + '// ' + comments[j]);
         }
-        lines.push(key.indent + ' */\n');
-        next = '\n' + lines.join('\n');
-      } else next = '\n' + key.indent + '/* ' + comments[0] + ' */\n';
-      nextPos = pos;
+        lines.push('');
+        comment = '\n' + lines.join('\n');
+      } else comment = '\n' + key.indent + '// ' + comments[0] + '\n';
+
+      if (comment) {
+        parser.insert(comment, key.start);
+        affected.forEach(function (e) {
+          e.pos += comment.length;
+        });
+        comment = '';
+      }
     }
-    var isFirst = false;
+    /**
+      Comments are inserted in two places above each item.
+      //Comment
+      name: hello
+    */
     //listener pattern
     try {
       parser.walk({
         enter: function (tag, pos, str) {
           switch (tag) {
             case KEY:
-            case ARR_VALUE:
-              if (next) {
-                //"outer_key": {
-                // comment
-                //    ^key
-                var newline = str.lastIndexOf('\n', pos);
-                if (newline >= nextPos) {
-                  key = ctx[ctx.length - 1];
-                  parser.insert(next.slice(0, -1), newline);
-                  key.handled = true;
-                }
-                next = '';
-              }
-              if (tag == 'ARR_VALUE') break;
               //^"ke...
               //start a key
-              var indent = str.lastIndexOf('\n', pos) + 1;
+              var start = str.lastIndexOf('\n', pos) + 1;
+              //@ts-ignore
+              var indent = /[ \t]*/.exec(str.slice(start))[0];
               ctx.push({
                 type: 'key',
                 pos: pos,
-                indent: repeat(pos - indent),
+                start: start,
+                handled: false, //set if the comment is inserted inside the object/array
+                indent: indent,
               });
               break;
-            case ARRAY:
-            case OBJECT:
-              //"key": ^{
-              if (!ctx.length) return;
-              if (isFirst) {
-                var fullName = ctx
-                  .map(function (e) {
-                    return e.name;
-                  })
-                  .join('.');
-                key = ctx[ctx.length - 1];
-                //TODO proper indenting
-                postComment(fullName, pos);
-              }
-              break;
           }
         },
-        exit: function (tag, pos, text) {
+        exit: function (tag, pos, str) {
           switch (tag) {
             case KEY:
-              //"key"^
-              //get key name
               key = ctx[ctx.length - 1];
-              key.name = text.slice(key.pos + 1, pos - 1);
-              isFirst = true;
-              return;
-            case OBJ_VALUE:
-              isFirst = false;
-              //"key": "value"^
-              //get the value of the key to insert after , { or [
-              //or before ] } hopefully all possible tokens
-              if (!ctx.length) return;
-              var fullName = ctx
-                .map(function (e) {
-                  return e.name;
-                })
-                .join('.');
-              key = ctx.pop();
-              if (key.handled) return;
-              postComment(fullName, pos);
-          }
-        },
-        token: function (type, pos, text, token) {
-          if (!next || isFirst) return;
-          switch (token) {
-            case ']':
-            case '}':
-              //try to insert it before token
-              var before = text.lastIndexOf('\n', pos);
-              if (before >= nextPos) {
-                //"key":"value"
-                //comment
-                //}
-                parser.insert(next.slice(0, -1), before);
-              } else {
-                //"key":"value"}
-                //comment
-                parser.insertAfter(next, true);
-              }
-              next = '';
+              var name = str.slice(key.pos, pos);
+              if (name[0] === '"' || name[0] == "'") name = name.slice(1, -1);
+              key.name = name;
+              insertComment();
               break;
-            case ',':
-              //"key": "value",
-              //comment
-              //insert comment before next item
-              parser.insertAfter(next, true);
-              next = '';
+            case OBJ_VALUE:
+              ctx.pop();
           }
         },
+        token: function (type) {},
       });
     } catch (e) {
       debug.error(e); //no errors
@@ -315,7 +289,7 @@ define(function (require, exports, module) {
     parser.setState({});
     return text;
   };
-
+  /** @constructor */
   function JSONConverter(parser, json, strict) {
     JSONConverter.super(this);
     this.textOffset = 0;
@@ -334,7 +308,8 @@ define(function (require, exports, module) {
   }
   Utils.inherits(JSONConverter, TreeListener);
   JSONConverter.prototype.delete = function (node) {
-    var len = node.text.length;
+    var len =
+      node.text === undefined ? node.end - node.start : node.text.length;
     this.parser.delete(len, node.start);
     this.textOffset -= len;
     if (this.textOffset < 0) {
@@ -356,7 +331,7 @@ define(function (require, exports, module) {
     //Precisely, node.start should be kept valid.
     switch (node.type) {
       case IDENTIFIER:
-        this.replace(node, '"' + node + '"');
+        this.replace(node, '"' + node.text + '"');
         break;
       case STRING:
         var text = node.text;
@@ -387,11 +362,15 @@ define(function (require, exports, module) {
         this.replace(node, node.text.replace(/^\+|,/g, ''));
         break;
       case UNDEFINED:
-        var parent = node.parent;
-        if (parent.type === OBJ_VALUE) parent = parent.parent;
-        this.delete(parent);
-        parent.isDeleted = true;
-        parent.parent.deleteNextComma = true;
+          var parent = node.parent;
+          if (parent.type === OBJ_VALUE) parent = parent.parent;
+          parent.isDeleted = true;
+          parent.parent.deleteNextComma = true;
+        
+        break;
+      case OBJ_ITEM:
+      case ARR_VALUE:
+        if (node.isDeleted) this.delete(node);
         break;
       case COMMA:
         if (node.parent.deleteNextComma) {
@@ -414,15 +393,18 @@ define(function (require, exports, module) {
     this.setState({});
     return JSON.parse(json, reviver);
   };
-
-  JSONExt.stringify = function (obj, transformer) {
-    return JSON.stringify(obj, function keepUndefined(key, value) {
-      if (value === undefined) {
-        return '~~UNDEFINED~~';
-      }
-      return transformer ? transformer(key, value) : value;
-    }).replace(/\"~~UNDEFINED~~\"/g, 'undefined');
+  JSONExt.stringify = function (obj, transformer, spaces) {
+    return JSON.stringify(
+      obj,
+      function keepUndefined(key, value) {
+        if (transformer) value = transformer(key, value);
+        if (value !== undefined) return value;
+        return '~#x~UnDF~x#~';
+      },
+      spaces,
+    ).replace(/"~#x~UnDF~x#~"/g, 'undefined');
   };
+  console.log(JSONExt.parse(JSONExt.stringify({p: undefined})));
   // JSONExt._debug = true;
   exports.JSONExt = JSONExt;
 });

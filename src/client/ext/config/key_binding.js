@@ -6,11 +6,10 @@ define(function (require, exports, module) {
     //     'keyBindings'
     // );
     var Config = require('grace/core/config').Config;
-    var getEditor = require('grace/setup/setup_editors').getActiveEditor;
+    var getEditor = require('grace/setup/setup_editors').getEditor;
     var shortcuts = require('ace!ext/menu_tools/get_editor_keyboard_shortcuts');
     var Schema = require('grace/core/schema').Schema;
     var Editors = require('grace/editor/editors').Editors;
-    var appEvents = require('grace/core/app_events').AppEvents;
     var keyConfig = require('grace/core/config').Config.registerAll(
         {
             store: {},
@@ -42,7 +41,6 @@ define(function (require, exports, module) {
 
     //Overridable
     exports.addUserBindings = function (editor) {
-        if (editor.editor) editor = editor.editor;
         var kbHandler = editor.keyBinding;
         if (kbHandler.$userKbHandler) return;
         kbHandler.$userKbHandler = userKbHandler;
@@ -92,9 +90,8 @@ define(function (require, exports, module) {
                 userKbHandler.bindKey(store[i], i);
             }
         });
-        Editors.forEach(function (e) {
+        Editors.onEach(function (e) {
             exports.addUserBindings(e);
         });
-        appEvents.on('createEditor', exports.addUserBindings);
     })();
 }); /*_EndDefine*/

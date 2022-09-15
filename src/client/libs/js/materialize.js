@@ -1700,7 +1700,10 @@ M.anime = (function(unsafeAnime){
                 key: "_handleFocus",
                 value: function _handleFocus(e) {
                     // Only trap focus if this modal is the last model opened (prevents loops in nested modals).
-                    if(e.target.className.indexOf('keyboard-listener')>-1)return;
+                    if(e.target.className.indexOf('keyboard-listener')>-1) return;
+                    //eruda
+                    else if(e.target.tagName === 'DIV' && e.target.parentNode === document.documentElement) return;
+                    if(Modal._ignoreOutsideFocus) return;
                     if (!this.el.contains(e.target) && this._nthModalOpened === Modal._modalsOpen) {
                         this.el.focus();
                     }

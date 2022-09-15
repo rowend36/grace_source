@@ -7,7 +7,7 @@ define(function (require, exports, module) {
     var closeDoc = require('grace/docs/docs').closeDoc;
     var Doc = require('grace/docs/document').Doc;
     var join = require('grace/core/file_utils').FileUtils.join;
-    var GitCommands = require('./git_commands').GitCommands;
+    var GitUtils = require('./git_utils').GitUtils;
     var FileUtils = require('grace/core/file_utils').FileUtils;
 
     function MergeDoc() {
@@ -32,7 +32,7 @@ define(function (require, exports, module) {
                 this.getItem().mergedText,
                 cb,
                 ignoreDirty,
-                confirm
+                confirm,
             );
         } else {
             var gitdir = this.gitdir;
@@ -52,9 +52,9 @@ define(function (require, exports, module) {
                         this.getItem().mergedText,
                         cb,
                         ignoreDirty,
-                        confirm
+                        confirm,
                     );
-                }.bind(this)
+                }.bind(this),
             );
         }
         return true;
@@ -67,7 +67,7 @@ define(function (require, exports, module) {
     MergeDoc.prototype.unserialize = function (obj) {
         Doc.prototype.unserialize.apply(this, arguments);
         this.gitdir = obj.gitdir;
-        Docs.refreshDocs(this.id, false, true, Utils.noop);
+        this.refresh(Utils.noop, false, true);
     };
 
     MergeDoc.prototype.save = function (cb) {
@@ -88,11 +88,11 @@ define(function (require, exports, module) {
                         gitdir: doc.gitdir,
                         fs: doc.getFileServer(),
                     },
-                    doc.mergeTree
+                    doc.mergeTree,
                 );
                 MergeDoc.previewTree(
                     doc.mergeTree,
-                    MergeDoc.getProv(doc.mergeTree)
+                    MergeDoc.getProv(doc.mergeTree),
                 );
             } else {
                 cb && cb(doc, 'No such item');
@@ -109,7 +109,7 @@ define(function (require, exports, module) {
     var loading = {};
     MergeDoc.getTree = function load(opts, cb) {
         var path = join(
-            opts.gitdir + '-merge-index-' + opts.fs.getDisk() + '.json'
+            opts.gitdir + '-merge-index-' + opts.fs.getDisk() + '.json',
         );
         if (trees[path] !== undefined) cb(null, trees[path]);
         else {
@@ -117,7 +117,7 @@ define(function (require, exports, module) {
                 loading[path].push(cb);
             } else {
                 loading[path] = [cb];
-                GitCommands.readFile(
+                GitUtils.readFile(
                     'merge-index-' + opts.fs.getDisk(),
                     opts,
                     function (err, res) {
@@ -139,7 +139,7 @@ define(function (require, exports, module) {
                         loading[path].forEach(function (op) {
                             op(err, tree);
                         });
-                    }
+                    },
                 );
             }
         }
@@ -150,24 +150,24 @@ define(function (require, exports, module) {
         tree.fs = tree.fs.id;
         var res = JSON.stringify(tree);
         var id = join(
-            opts.gitdir + '-merge-index-' + opts.fs.getDisk() + '.json'
+            opts.gitdir + '-merge-index-' + opts.fs.getDisk() + '.json',
         );
-        GitCommands.writeFile(
+        GitUtils.writeFile(
             'merge-index-' + opts.fs.getDisk(),
             res,
             opts,
             function (err) {
                 if (err)
                     Notify.error('Error while saving tree:' + err.toString());
-            }
+            },
         );
     };
     MergeDoc.deleteTree = function (opts, tree, cb) {
         var id = join(
-            opts.gitdir + '-merge-index-' + opts.fs.getDisk() + '.json'
+            opts.gitdir + '-merge-index-' + opts.fs.getDisk() + '.json',
         );
         trees[id] = undefined;
-        GitCommands.removeFile('merge-index-' + opts.fs.getDisk(), opts, cb);
+        GitUtils.removeFile('merge-index-' + opts.fs.getDisk(), opts, cb);
     };
 
     MergeDoc.prototype.factory = 'git-merge';

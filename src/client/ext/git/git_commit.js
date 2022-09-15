@@ -2,12 +2,12 @@
 define(function (require, exports, module) {
     var Notify = require("grace/ui/notify").Notify;
     var appConfig = require("grace/core/config").Config.registerAll({}, "git");
-    var GitCommands = require("./git_commands").GitCommands;
+    var GitUtils = require("./git_utils").GitUtils;
     var configure = require("grace/core/config").Config.configure;
-    var failure = GitCommands.failure;
-    var success = GitCommands.success;
-    var createProgress = GitCommands.createProgress;
-    var padStart = GitCommands.padStart;
+    var failure = GitUtils.failure;
+    var success = GitUtils.success;
+    var createProgress = GitUtils.createProgress;
+    var padStart = GitUtils.padStart;
     var join = require("grace/core/file_utils").FileUtils.join;
     var forEach = require("grace/core/utils").Utils.asyncForEach;
     var relative = require("grace/core/file_utils").FileUtils.relative;
@@ -53,7 +53,7 @@ define(function (require, exports, module) {
         );
     }
 
-    GitCommands.doCommit = function (ev, prov) {
+    exports.doCommit = function (ev, prov) {
         var commit = function (ans) {
             if (ans == "") return false;
             else if (!ans) return;
@@ -92,10 +92,10 @@ define(function (require, exports, module) {
         });
     };
     //force checkout
-    GitCommands.doRevertINDEX = function (ev, prov) {
+    exports.revertChanges = function (ev, prov) {
         doRevert(ev, prov, null);
     };
-    GitCommands.promptCommit = function (prov, message, cb) {
+    exports.promptCommit = function (prov, message, cb) {
         var values = [
             {
                 caption: "HEAD",
@@ -152,8 +152,8 @@ define(function (require, exports, module) {
         );
     };
 
-    GitCommands.doRevertCommit = function (ev, prov) {
-        GitCommands.promptCommit(prov, "Enter ref to checkout", function (ref) {
+    exports.checkoutRef = function (ev, prov) {
+        exports.promptCommit(prov, "Enter ref to checkout", function (ref) {
             doRevert(ev, prov, ref);
         });
     };
@@ -161,7 +161,7 @@ define(function (require, exports, module) {
     function doRevert(ev, prov, ref) {
         var progress = createProgress("Analyzing directory");
         var filepaths = ev.marked
-            ? ev.marked.map(ev.browser.childFilePath.bind(ev.browser))
+            ? ev.marked
             : ev.filepath
             ? [ev.filepath]
             : undefined;
@@ -206,7 +206,7 @@ define(function (require, exports, module) {
                             force: true,
                             noUpdateHead: true,
                         }).then(function () {
-                            ev.browser.reload();
+                            ev.fileview.reload();
                             progress.dismiss();
                             success();
                         }, progress.error);

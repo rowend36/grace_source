@@ -1,79 +1,71 @@
 define(function (require, exports, module) {
     //A very simple completer for css
-    var Docs = require("grace/docs/document").Docs;
-    var Utils = require("grace/core/utils").Utils;
-    var completions = ace.require("ace/ext/completions");
-    var ConfigEvents = require("grace/core/config").Config;
-    var appConfig = require("grace/core/config").Config.registerAll(
+    var Docs = require('grace/docs/document').Docs;
+    var Utils = require('grace/core/utils').Utils;
+    var completions = require('./basic_completion');
+    var ConfigEvents = require('grace/core/config').Config;
+    var appConfig = require('grace/core/config').Config.registerAll(
         {
             colors: {
-                presets: ["red", "blue", "orange"],
+                presets: ['red', 'blue', 'orange'],
             },
             enableColorCompletion: true,
         },
-        "autocompletion"
+        'intellisense'
     );
     var config = appConfig.colors;
-    require("grace/core/config").Config.registerInfo(
+    require('grace/core/config').Config.registerInfo(
         {
-            "!root":
-                "Allow completing with html colors as well as colors found in files",
+            '!root':
+                'Allow completing with html colors as well as colors found in files',
 
             presets:
-                "An Array of color presets. Best loaded as a separate file. Each item can either be an object of the form \n\
+                'An Array of color presets. Best loaded as a separate file. Each item can either be a valid hex color or an object of the form \n\
 {\n\
-    value:string, - The value inserted when selected\n\
-    caption?string, - The name in autocompletion menu\n\
-    color?:string?\n - The color used for preview\n\
-} or a plain string representing all of them",
+  value: string, - The value inserted when selected\n\
+  caption?: string, - The name in suggestion menu\n\
+  color?: string - The color used for preview\n\
+}',
         },
-        "autocompletion.colors"
+        'intellisense.colors'
     );
     var prefixes = [
-        "color:",
-        "background-color:",
-        "style.color=",
-        "style.backgroundColor=",
-        "background:",
-        "style.background=",
-        "#",
-        "rgb(",
-        "rgba(",
+        'color:',
+        'background-color:',
+        'style.color=',
+        'style.backgroundColor=',
+        'background:',
+        'style.background=',
+        '#',
+        'rgb(',
+        'rgba(',
     ];
     //what attrocity
     var regex = /rgba?\(\s*(\d*\.)?\d+\s*,\s*(\d*\.)?\d+\s*,\s*(\d*\.)?\d+(?:\s*,\s*(\d*\.)?\d+\s*)?\)|\#(?:[\da-f]{6,8}|[\da-f]{3,4})/g;
 
     function matchLine(prefix, line) {
         line = line
-            .replace(/^\s*|\s*$/g, "")
-            .replace(/\s+/g, " ")
-            .replace(/['"`]/g, "");
+            .replace(/^\s*|\s*$/g, '')
+            .replace(/\s+/g, ' ')
+            .replace(/['"`]/g, '');
         prefix =
             Utils.regEscape(prefix)
-                .replace(/\\#\\#/g, "\\s?.+\\s?")
-                .replace(/\W+/g, "\\s?$&\\s?") + "$";
+                .replace(/\\#\\#/g, '\\s?.+\\s?')
+                .replace(/\W+/g, '\\s?$&\\s?') + '$';
         try {
             return new RegExp(prefix).exec(line);
         } catch (e) {
-            require("grace/ui/notify").Notify.error("Invalid color regex");
+            require('grace/ui/notify').Notify.error('Invalid color regex');
             return false;
         }
     }
 
     function update() {
-        if (
-            exports.colorCompleter.registered !==
-            Boolean(appConfig.enableColorCompletion)
-        ) {
-            exports.colorCompleter.registered = Boolean(
-                appConfig.enableColorCompletion
-            );
-            if (appConfig.enableColorCompletion)
-                completions.addCompleter(exports.colorCompleter);
-            else completions.removeCompleter(exports.colorCompleter);
-        }
+        if (appConfig.enableColorCompletion)
+            completions.addCompleter(exports.colorCompleter);
+        else completions.removeCompleter(exports.colorCompleter);
     }
-    ConfigEvents.on("autocompletion", update);
+    ConfigEvents.on('intellisense', update);
     var registry = {};
 
     function uniq(arr) {
@@ -118,22 +110,19 @@ define(function (require, exports, module) {
         }
         return p.map(function (e) {
             return {
-                iconClass: " symbol-completion symbol-completion-color",
-                message: "color",
+                iconClass: ' symbol-completion symbol-completion-color',
+                message: 'color',
                 value: e.value || e,
                 completer: exports.colorCompleter,
-                color: e.color || (typeof e == "string" ? e : null),
+                color: e.color || (typeof e == 'string' ? e : null),
                 caption: (e.caption || e.value || e).substring(prefixOffset),
                 score: score,
-                // onRender: function(el,row,data){
-                //     $(el).prepend("<div style='background:"+data.color+";width:1em;margin:0.1em;float:left;height:1em;border-radius:2px'></div>");
-                // }
             };
         });
     }
-    var Autocomplete = ace.require("ace/autocomplete").Autocomplete;
+    var Autocomplete = require('ace!autocomplete').Autocomplete;
     exports.colorCompleter = {
-        name: "Color completer",
+        name: 'Color completer',
         registered: false,
         insertMatch: function (editor, data) {
             var completions = editor.completer.completions;
@@ -144,13 +133,13 @@ define(function (require, exports, module) {
                 if (suffix)
                     editor.execCommand(Autocomplete.$deleteSuffix, suffix);
             }
-            editor.execCommand("insertstring", data.value);
+            editor.execCommand('insertstring', data.value);
         },
-        filterPrefix: "",
+        filterPrefix: '',
         filterSuffixes: {
-            "#": "",
-            "rgba(": ")",
-            "rgb(": ")",
+            '#': '',
+            'rgba(': ')',
+            'rgb(': ')',
         },
         getCompletions: function (editor, session, pos, prefix, callback) {
             //check mode
@@ -163,7 +152,7 @@ define(function (require, exports, module) {
                     if (result) {
                         if (this.filterSuffixes.hasOwnProperty(result[0]))
                             this.filterPrefix = result[0];
-                        else this.filterPrefix = "";
+                        else this.filterPrefix = '';
                         return true;
                     }
                     return false;

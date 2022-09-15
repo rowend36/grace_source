@@ -1,4 +1,5 @@
 define(function(require, exports, module) {
+    /* globals $ */
     var TabRenderer = require("./tab_renderer").TabRenderer;
     var Utils = require("../core/utils").Utils;
 

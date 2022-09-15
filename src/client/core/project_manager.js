@@ -12,7 +12,7 @@ define(function (require, exports, module) {
       projectName: '',
       projectConfigFile: 'grace.json',
     },
-    'files'
+    'files',
   );
 
   Config.registerInfo(
@@ -25,7 +25,7 @@ define(function (require, exports, module) {
       },
       projectFileServer: 'no-user-config',
     },
-    'files'
+    'files',
   );
 
   var project = {
@@ -76,7 +76,7 @@ define(function (require, exports, module) {
         paths.resolve(project.rootDir, name),
         content,
         'utf8',
-        cb
+        cb,
       );
     },
 
@@ -85,19 +85,20 @@ define(function (require, exports, module) {
         project.rootDir = path;
         project.fileServer = fileServer;
         project.name =
-          name || path.length > 50 ? '...' + path.substring(-45) : path;
+          name || (path.length > 50 ? '...' + path.substring(-45) : path);
         appEvents.trigger('changeProject', {project: project});
         appEvents.trigger('renameProject');
         Config.putObj(
           'project',
           {rootDir: path, fileServer: fileServer.id},
-          'files'
         );
-        if (loadConfigsTask) loadConfigsTask.abort();
+        if (loadConfigsTask) loadConfigsTask.stop();
         require(['../ext/config/configs'], function (mod) {
-          old.forEach(mod.Configs.removeConfig);
-          old = [];
-          mod.Configs.commit();
+          if (old.length) {
+            old.forEach(mod.Configs.removeConfig);
+            old = [];
+            mod.Configs.commit();
+          } else appEvents.once('fullyLoaded', loadConfigs);
         });
       }
       Config.configure('projectName', project.name, 'files');
@@ -114,7 +115,7 @@ define(function (require, exports, module) {
     if (project.fileServer == e.server) {
       ProjectManager.openProject(
         ProjectManager.NO_PROJECT,
-        FileServers.$getDefaultServer()
+        FileServers.$getDefaultServer(),
       );
     }
   });
@@ -124,7 +125,7 @@ define(function (require, exports, module) {
       ProjectManager.openProject(
         data.rootDir || NO_PROJECT,
         FileServers.getFileServer(data.fileServer, true),
-        appConfig.projectName
+        appConfig.projectName,
       );
     });
   });
@@ -150,11 +151,15 @@ define(function (require, exports, module) {
     var removed = m.filter(Utils.notIn(old));
     var added = old.filter(Utils.notIn(m));
     old = m;
-    require(['../ext/config/configs', '../ext/json_ext'], function (mod1, mod) {
+    require([
+      '../ext/config/configs',
+      '../ext/json_ext',
+      '../ext/stop_signal',
+    ], function (mod1, mod, mod2) {
       if (!loadConfigsTask) {
         var loaded = [];
-        var abort = new Utils.AbortSignal();
-        var each = abort.control(function (path, i, next, cancel) {
+        var task = new mod2.StopSignal();
+        var each = task.control(function (path, i, next) {
           if (path !== null) {
             ProjectManager.getConfig(path, function (err, res) {
               if (!res) return;
@@ -174,17 +179,18 @@ define(function (require, exports, module) {
             next(); //might have added new configs
           }
         });
-        abort.notify(function (e) {
+        task.subscribe(function (e) {
+          //Don't execute any loaded files
           loadConfigsTask = null;
           if (e == 'timeout')
             debug.error('Timeout while loading project configuration');
         });
-        setTimeout(abort.abort.bind(abort, 'timeout'), 10000);
+        setTimeout(task.stop.bind(task, 'timeout'), 10000);
         loadConfigsTask = {
           toAdd: added,
           toRemove: removed,
-          abort: abort.abort,
-          resume: Utils.asyncForEach(added, each, abort.abort, 1, true),
+          stop: task.stop,
+          resume: Utils.asyncForEach(added, each, task.stop, 1, true),
         };
       } else {
         added = added.filter(Utils.notIn(loadConfigsTask.toAdd));

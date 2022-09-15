@@ -3,16 +3,18 @@ define(function (require, exports, module) {
         {
             iconsProvider: 'color_icons',
         },
-        'files'
+        'files',
     );
-    var ext = require('grace/core/file_utils').FileUtils.extname;
-
+    var extname = require('grace/core/file_utils').FileUtils.extname;
+    var ext = function (name) {
+        return extname(name.toLowerCase());
+    };
     var iconProviders = [];
     require('grace/core/config').Config.registerInfo(
         {
-            iconsProvider: iconProviders,
+            iconsProvider: {values: iconProviders},
         },
-        'files'
+        'files',
     );
     var nameToIconProvider = Object.create(null);
     exports.registerIconProvider = function (name, provider) {
@@ -30,7 +32,7 @@ define(function (require, exports, module) {
         Object.assign(
             exports.FileIcons,
             nameToIconProvider[appConfig.iconsProvider] ||
-                exports.DefaultIconProvider
+                exports.DefaultIconProvider,
         );
     }
     exports.FileIcons = {};
@@ -43,8 +45,8 @@ define(function (require, exports, module) {
                     type: new Schema.XMap(
                         Schema.IsString,
                         new Schema.XRegex(
-                            /(?:text-(?:dark|light)en-[0-4] )?(?:orange|red|yellow|blue|cyan|green|light-green|purple|amber|grey|blue-grey|pink|deep-purple|indigo|light-blue|teal|lime|deep-orange|brown|black|white)/
-                        )
+                            /(?:text-(?:dark|light)en-[0-4] )?(?:orange|red|yellow|blue|cyan|green|light-green|purple|amber|grey|blue-grey|pink|deep-purple|indigo|light-blue|teal|lime|deep-orange|brown|black|white)/,
+                        ),
                     ),
                     values: [
                         'text-lighten-1 blue',
@@ -56,7 +58,7 @@ define(function (require, exports, module) {
                     doc: 'Map file names and extensions to color classes.',
                 },
             },
-            'files'
+            'files',
         );
         var file_colors = {
             html: 'orange',
@@ -101,9 +103,11 @@ define(function (require, exports, module) {
         };
         function _class(name) {
             var n = appConfig.colors;
-            (name
-                ? n[name] || n[ext(name)] || file_colors[ext(name)] || ''
-                : '') + '-text';
+            return (
+                (name
+                    ? n[name] || n[ext(name)] || file_colors[ext(name)] || ''
+                    : '') + '-text'
+            );
         }
         var OldIcons = {
             renderHTML: function (icon, name, cls) {
@@ -251,7 +255,17 @@ define(function (require, exports, module) {
             eot: 'font',
             svg: 'source',
             woff: 'font',
+            md: 'markdown',
             woff2: 'font',
+        };
+        var _icon = function (name) {
+            return (
+                'url(libs/icons/files2x/file-' +
+                (allIcons.indexOf(ext(name)) > -1
+                    ? ext(name)
+                    : map[name] || map[ext(name)] || 'text') +
+                '@2x.png)'
+            );
         };
         var OldIcons = exports.DefaultIconProvider;
         var NewIcons = {
@@ -262,11 +276,9 @@ define(function (require, exports, module) {
                 return (
                     "<i class=' file2x " +
                     (cls || '') +
-                    "' style='background-image:url(libs/icons/files2x/file-" +
-                    (allIcons.indexOf(ext(name)) > -1
-                        ? ext(name)
-                        : map[name] || map[ext(name)] || 'text') +
-                    ".png)'></i>"
+                    "' style='background-image:" +
+                    _icon(name) +
+                    "'></i>"
                 );
             },
             renderEl: function (el, icon, name, cls) {
@@ -275,14 +287,7 @@ define(function (require, exports, module) {
                 }
                 el.addClass('file2x')
                     .addClass(cls || '')
-                    .css(
-                        'backgroundImage',
-                        'url(libs/icons/files2x/file-' +
-                            (allIcons.indexOf(ext(name)) > -1
-                                ? ext(name)
-                                : map[name] || map[ext(name)] || 'text') +
-                            '@2x.png)'
-                    )
+                    .css('backgroundImage', _icon(name))
                     .text('');
             },
         };

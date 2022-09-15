@@ -10,8 +10,9 @@ define(function (require, exports, module) {
     var pleaseCache = require("./cache_fs").createCacheFs;
     var Utils = require("grace/core/utils").Utils;
     var BaseFs = require("grace/core/base_fs").BaseFs;
-    require("./git_commands").GitCommands.browseCommit = function (ev, prov) {
-        require("./git_commands").GitCommands.promptCommit(
+    var gitPromptCommit = require('./git_commit').promptCommit;
+    exports.browseCommit = function (ev, prov) {
+        gitPromptCommit(
             prov,
             "Enter commit id/message",
             function (ref) {

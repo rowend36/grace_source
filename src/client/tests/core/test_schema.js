@@ -1,5 +1,6 @@
 define(function (require, exports, module) {
     var Schema = require('grace/core/schema').Schema;
+    require('grace/ext/parse_schema');
     var expect = require('chai').expect;
     var tests = [
         [

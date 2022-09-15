@@ -1,22 +1,28 @@
 define(function (require, exports, module) {
+  /* globals ace */
   var Utils = require('grace/core/utils').Utils;
   var getEditor = require('grace/setup/setup_editors').getEditor;
   var BaseClient = require('grace/ext/language/base_client').BaseClient;
+  var Range = require('ace!range').Range;
   var S = require('grace/ext/language/base_client').ClientUtils;
-  var modelist = ace.require('ace/ext/modelist');
-  var Docs = require('grace/docs/docs').Docs;
   //Reuse methods from TsClient
   var TsClient = require('grace/ext/language/ts/ts_client').TsClient;
   var getDoc = S.getDoc;
+  var vsLspProtocol = require('./libs/open_rpc_lsp').VSCodeLSP;
 
-  require('./libs/open_rpc_lsp');
-  var vsLsp = window.lspDeps.VSCodeLSP;
-  var CompletionTriggerKind = vsLsp.CompletionTriggerKind;
-  var CompletionItemKindMap = _MAP(vsLsp.CompletionItemKind);
-  var DiagnosticSeverity = vsLsp.DiagnosticSeverity;
-  var DiagnosticSeverityMap = _MAP(DiagnosticSeverity);
-  DiagnosticSeverityMap[DiagnosticSeverity.Information] = 'info';
-  DiagnosticSeverityMap[DiagnosticSeverity.Hint] = 'info';
+  var CompletionTriggerKind = vsLspProtocol.CompletionTriggerKind;
+
+  var CompletionItemKindMap = _MAP(vsLspProtocol.CompletionItemKind);
+  CompletionItemKindMap[vsLspProtocol.CompletionItemKind.Variable] = 'var';
+  CompletionItemKindMap[vsLspProtocol.CompletionItemKind.Constant] = 'const';
+  CompletionItemKindMap[vsLspProtocol.CompletionItemKind.TypeParameter] =
+    'type-parameter';
+  CompletionItemKindMap[vsLspProtocol.CompletionItemKind.EnumMember] =
+    'enum-member';
+
+  var DiagnosticSeverityMap = _MAP(vsLspProtocol.DiagnosticSeverity);
+  DiagnosticSeverityMap[vsLspProtocol.DiagnosticSeverity.Information] = 'info';
+  DiagnosticSeverityMap[vsLspProtocol.DiagnosticSeverity.Hint] = 'info';
 
   /**
    * @constructor
@@ -31,19 +37,16 @@ define(function (require, exports, module) {
           transformTsMessage.apply(transport, m);
         });
       },
+      terminate: function () {
+        transport.destroy();
+      },
     };
     this.provider = transport.provider;
-    this.queryTimeout = 10000;
   }
 
   LspClient.prototype = {
-    normalizeName: function (name) {
-      return name.startsWith('temp:')
-        ? getTempFileName(this, name)
-        : name.startsWith('file://')
-        ? name
-        : 'file://' + name;
-    },
+    queryTimeout: 10000,
+    sendFragments: false,
     $getPos: function (editor, pos) {
       return toLspPosition(pos || editor.getSelection().getCursor());
     },
@@ -53,11 +56,11 @@ define(function (require, exports, module) {
         refs: data.map(function (e) {
           name = name || e.name;
           return {
-            file: e.uri,
+            file: this.$unfixName(toFile(e.uri)),
             start: toAceLoc(null, e.range.start),
             end: toAceLoc(null, e.range.end),
           };
-        }),
+        }, this),
       };
       data.name = name;
       return data;
@@ -97,50 +100,45 @@ define(function (require, exports, module) {
           if (r) {
             callback(e, buildCompletions(r, self));
           } else callback(e);
-        }
+        },
       );
-    },
-    insertMatch: function (editor, match) {
-      console.log(match.data);
-      editor.execCommand('insertstring', match.data.label);
     },
     requestRenameLocations: function (editor, newName, cb) {
       if (newName === null) newName = 'temp';
+      var ts = this;
       this.send(
         'findRenameLocations',
         [getDoc(this, editor.session).name, this.$getPos(editor), newName],
         function (e, r) {
-          cb(e, r && toAceChanges(r));
-        }
+          cb(e, r && toAceChanges(ts, r));
+        },
       );
     },
     setupForRename: function (editor, newName, cb, data) {
       BaseClient.prototype.setupForRename.call(this, editor, newName, cb, null);
     },
     requestAnnotations: function (editor, cb) {
-      var session = editor.session;
-      this.send('getAnnotations', editor, Utils.noop);
-      this.once('annotate', function (ev) {
-        if (ev.session === session) cb(ev.data);
-      });
+      this.send('getAnnotations', editor, cb);
     },
-    onAnnotations: function (file, anno) {
+    // Called by lsp_transport
+    onAnnotations: function (uri, anno) {
+      var file = this.$unfixName(toFile(uri));
       var data = this.hasDoc(file);
-      if (!data || !data.doc) {
-        console.log('Ignored diagnostics for ', file);
-        if(file.startsWith('file://tmp/')){
-          this.releaseDoc(file);
-        }
-      }
-      //unused
-      else
+      if (data && data.doc) {
         this.trigger('annotate', {
           data: toAceAnnotations(data.doc, anno),
           session: data.doc,
         });
+      } else {
+        //unused
+        console.debug('Ignored diagnostics for ', file);
+        if (file.startsWith('temp:')) {
+          this.releaseDoc(file);
+        }
+      }
     },
-    genInfoHtml: function (value /*,from Completion, fromCursorActivity*/) {
-      return formatContents(value);
+    genInfoHtml: function (value, fromCompletion /*, fromCursorActivity*/) {
+      return formatContents(fromCompletion ? value : value.contents);
     },
     getCallPos: function (editor, pos, cb) {
       switch (editor.session.getModeName()) {
@@ -153,13 +151,18 @@ define(function (require, exports, module) {
         case 'python':
           return BaseClient.prototype.getCallPos.apply(this, arguments);
       }
-      return cb(null, true); //always update
+      return cb(null, {
+        activeIndex: this.cachedArgHints && this.cachedArgHints.activeIndex,
+        name: this.cachedArgHints && this.cachedArgHints.name,
+        start: pos, //always update whenever pos changes
+      });
     },
-    genArgHintHtml: function (args, argpos) {
-      var activeSignature = args.activeSignature || 0;
-      var e = args.signatures[activeSignature];
+    genArgHintHtml: function (args, activeIndex) {
+      var e = args.signatures[args.activeSignature || 0];
 
-      var selected = e.hasOwnProperty('activeParameter')
+      var selected = !isNaN(activeIndex)
+        ? activeIndex
+        : e.hasOwnProperty('activeParameter')
         ? e.activeParameter
         : args.activeParameter;
       var prefix = e.label;
@@ -174,21 +177,20 @@ define(function (require, exports, module) {
           var suffix = prefix.slice(start + label.length);
           prefix = prefix.slice(0, start);
           html.push(
-            this.ui.createToken({text: active, type: 'parameter'}, 'active')
+            this.ui.createToken({text: active, type: 'parameterName'}, 'active'),
           );
           html.push(suffix);
         }
         if (e.parameters[selected].documentation) {
           html.push(
             '</br>',
-            formatContents(e.parameters[selected].documentation)
+            formatContents(e.parameters[selected].documentation),
           );
         }
       }
       html.unshift(prefix);
       return html.join('');
     },
-
     format: function (value, opts, cb, info) {
       var ts = this;
       var data, session, text, hasData, filterResults;
@@ -205,9 +207,9 @@ define(function (require, exports, module) {
               mode = opts.mode || ts.provider.modes[0];
             }
             data = ts.addDoc(
-              'file://' + Utils.genId('x') + '.' + getExtension(mode),
+              Utils.genID('x') + '.' + getExtension(mode),
               //Don't add the session yet
-              session ? S.docValue({doc: session}) : text
+              session ? S.docValue({doc: session}) : text,
             );
           }
           var partial = info && info.isPartialFormat;
@@ -222,7 +224,7 @@ define(function (require, exports, module) {
           ts.send(
             partial ? 'rangeFormatting' : 'formatting',
             [data.name, opts, partial && toLspRange(info.range)],
-            n
+            n,
           );
         },
         function (n, e, r) {
@@ -233,18 +235,18 @@ define(function (require, exports, module) {
           }
           var _temp = {};
           _temp[data.name] = r;
-          var changes = toAceChanges({changes: _temp}).refs;
+          var changes = toAceChanges(ts, {changes: _temp}).refs;
           if (filterResults) {
-            var range = Range.from(info.range.start, info.range.end);
+            var range = Range.fromPoints(info.range.start, info.range.end);
             changes = changes.filter(function (e) {
               return range.itersects(e);
             });
           }
-          S.applyChanges(ts, changes, null, n);
+          S.applyChanges(ts, changes, null, n.bind(null, null));
         },
         true,
         function (e, results) {
-          if (!hasData) this.removeDoc(data.name);
+          if (data && !hasData) ts.removeDoc(data.name);
           return cb(e, null, !e && !hasData);
         },
       ]);
@@ -273,25 +275,8 @@ define(function (require, exports, module) {
       character: pos.column,
     };
   };
-
-  //Most Language Service Providers have problems
-  //dealing with non-local files, but can handle
-  //non-existent local files all right
-  function getTempFileName(ts, name) {
-    var doc = Docs.forPath(name);
-    if (!doc) return '';
-    if (doc.$lspName) {
-      return doc.$lspName;
-    }
-    var t = doc.session.getModeName();
-    if (!t || t == 'text') return '';
-    var ext = getExtension(t);
-    return (ext ? name.replace('temp:', 'file:///tmp/') + '.' : '') + ext;
-  }
-  function getExtension(mode) {
-    var m = modelist.modesByName[mode];
-    if (!m) return '';
-    return m.extensions ? m.extensions.split('|').shift() : '';
+  function toFile(uri) {
+    return decodeURIComponent(uri.replace('file://', ''));
   }
   function toAceLoc(session, position) {
     return {
@@ -299,7 +284,7 @@ define(function (require, exports, module) {
       column: position.character,
     };
   }
-  function toAceChanges(edits) {
+  function toAceChanges(ts, edits) {
     var changes = edits.changes;
     var refs = [];
     for (var uri in changes) {
@@ -309,7 +294,7 @@ define(function (require, exports, module) {
           start: toAceLoc(null, e.range.start),
           end: toAceLoc(null, e.range.end),
           text: e.newText,
-          file: uri,
+          file: ts.$unfixName(toFile(uri)),
         });
       }
     }
@@ -327,7 +312,7 @@ define(function (require, exports, module) {
           data: e,
           message: CompletionItemKindMap[e.kind],
           iconClass: ts.ui.iconClass(
-            e.kind ? CompletionItemKindMap[e.kind] : 'unknown'
+            e.kind ? CompletionItemKindMap[e.kind] : 'unknown',
           ),
           docHTML: e.description ? ts.getInfoHtml(e.description) : undefined,
           score: MAX - (parseInt(e.sortText) || 0),
@@ -340,7 +325,10 @@ define(function (require, exports, module) {
 
   function formatContents(contents) {
     if (Array.isArray(contents)) {
-      return contents.map(c => formatContents(c) + '\n\n').join('');
+      return contents
+        .map(c => formatContents(c))
+        .filter(Boolean)
+        .join('\n');
     } else if (typeof contents === 'string') {
       return contents;
     } else {
@@ -368,16 +356,18 @@ define(function (require, exports, module) {
   dependencies and is likely to be more often used, it makes sense for LspClient
   to mixin TsClient rather than the other way round.*/
   function transformTsMessage(data, cb) {
+    if (!this.provider) return cb({message: 'Transport has closed'});
     var ts = this.provider.instance;
-    var timeout = ts.queryTimeout;
-    var languageId = this.provider.languageId;
+    var timeout = ts && ts.queryTimeout;
+    var languageId = this.provider.languageId || this.provider.modes[0]; //todo infer based on file
+    var uri = 'file://' + data.args[0]; // add this here since jumpstack is shared
     switch (data.type) {
       case 'addDoc':
         return this.notify(
           'textDocument/didOpen',
           {
             textDocument: {
-              uri: data.args[0],
+              uri: uri,
               languageId: languageId,
               text: data.args[1],
               version: data.args[2],
@@ -386,14 +376,14 @@ define(function (require, exports, module) {
           function (err) {
             if (err) cb(err);
             else cb && cb(null, data.args[2]);
-          }
+          },
         );
       case 'updateDoc':
         return this.notify(
           'textDocument/didChange',
           {
             textDocument: {
-              uri: data.args[0],
+              uri: uri,
               version: data.args[2],
               languageId: languageId,
             },
@@ -402,24 +392,24 @@ define(function (require, exports, module) {
           function (err) {
             if (err) cb(err);
             else cb && cb(null, data.args[2]);
-          }
+          },
         );
       case 'delDoc':
         return this.notify(
           'textDocument/didClose',
           {
             textDocument: {
-              uri: data.args[0],
+              uri: uri,
             },
           },
-          cb
+          cb,
         );
       case 'getCompletions':
         return this.request(
           'textDocument/completion',
           {
             textDocument: {
-              uri: data.args[0],
+              uri: uri,
             },
             position: data.args[1],
             context: {
@@ -429,12 +419,14 @@ define(function (require, exports, module) {
           },
           timeout,
           function (err, items) {
+            console.log('Got completions');
+            console.log(err, items);
             if (err) cb(err);
             else {
               items = !items || Array.isArray(items) ? items : items.items;
-              cb(null, items);
+              cb(null, null);
             }
-          }
+          },
         );
       case 'getCompletionEntryDetails':
         return this.request(
@@ -445,7 +437,7 @@ define(function (require, exports, module) {
             if (!err) {
               cb(err, result.documentation);
             } else cb(err);
-          }
+          },
         );
       case 'getQuickInfoAtPosition':
         var method = 'textDocument/hover';
@@ -461,36 +453,36 @@ define(function (require, exports, module) {
         return this.request(
           method,
           {
-            textDocument: {uri: data.args[0]},
+            textDocument: {uri: uri},
             position: data.args[1],
           },
           timeout,
-          cb
+          cb,
         );
       case 'findRenameLocations':
         return this.request(
           'textDocument/rename',
           {
-            textDocument: {uri: data.args[0]},
+            textDocument: {uri: uri},
             position: data.args[1],
             newName: data.args[2],
           },
           timeout,
           function (err, res) {
             cb(err, res);
-          }
+          },
         );
       case 'rangeFormatting':
       case 'formatting':
         return this.request(
           'textDocument/' + data.type,
           {
-            textDocument: {uri: data.args[0]},
+            textDocument: {uri: uri},
             options: data.args[1],
             range: data.args[2],
           },
           timeout,
-          cb
+          cb,
         );
       case 'getAnnotations':
       //The changed documents cause publishAnnotations

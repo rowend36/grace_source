@@ -26,10 +26,9 @@ define(function (require, exports, module) {
     //pagesize is infinite, pageStart is 0
     this.cache = new FastCache(
       new RecyclerViewCache(this.createFileItem.bind(this), null),
-      true
+      true,
     );
     this.renderer = renderer || new RecyclerRenderer();
-    this.renderer.beforeRender = this.onBeforeRender.bind(this);
     FileBrowser.call(this, id, rootDir, fileServer, noReload);
   }
   Utils.inherits(RecyclerStub, FileBrowser);
@@ -51,7 +50,10 @@ define(function (require, exports, module) {
     this.scrollElement.css('height', '0px');
     this.root.addClass('fileview-recycler');
     this.cache.container = this.root[0];
-    if (this.renderer) this.renderer.views = [];
+    if (this.renderer) {
+      this.renderer.views = [];
+      this.renderer.beforeRender = this.onBeforeRender.bind(this);
+    }
   };
   RecyclerStub.prototype.pageSize = 1000;
   RecyclerStub.prototype.destroy = function () {
@@ -61,6 +63,7 @@ define(function (require, exports, module) {
     this.cache = null;
     this.superClass.destroy.apply(this, arguments);
   };
+  RecyclerStub.prototype.scrollPastEnd = true;
   RecyclerStub.prototype.onBeforeRender = function () {
     var scroll;
     if (this.scroller && this.renderer.height > this.renderer.viewport.y * 2)
@@ -68,25 +71,16 @@ define(function (require, exports, module) {
     // this.renderer.invalidate(Infinity);
     // if(this.debugRect)this.debugRect.update();
     // else if(!this.parentStub)this.debugRect = require("grace/ui/recycler").ViewportVisualizer.create(this.root[0],this.renderer);
-    this.root.css(
-      'height',
+    var height =
       this.paddingTop +
-        this.renderer.height +
-        this.paddingBottom +
-        window.innerHeight / 2 +
-        'px'
-    );
-    this.scrollElement.css(
-      'height',
-      this.paddingTop +
-        this.renderer.height +
-        this.paddingBottom +
-        window.innerHeight / 3 +
-        'px'
-    );
-    this.bottomElement &&
+      this.renderer.height +
+      this.paddingBottom +
+      (this.scrollPastEnd ? window.innerHeight / 3 : 0);
+    this.root.css('height', height + 'px');
+    this.scrollElement.css('height', height + 'px');
+    if (this.bottomElement)
       this.bottomElement.css('top', this.renderer.height + 'px');
-    this.backButton &&
+    if (this.backButton)
       this.backButton.css('top', this.paddingTop - this.itemHeight + 'px');
     if (scroll && ScrollSaver.getScroll(this.scroller) != scroll._5sum) {
       this.ignoreScroll = true;
@@ -127,9 +121,7 @@ define(function (require, exports, module) {
     return this.childViews[i];
   };
   RecyclerStub.prototype.closeInlineDialog = function () {
-    if (this.inlineDialogStub) this.inlineDialogStub.removeClass('destroyed');
-    if (this.inlineDialog) this.inlineDialog.detach();
-    this.inlineDialog = this.inlineDialogStub = null;
+    this.superClass.closeInlineDialog.call(this);
     if (this.inlineDialogViewHolder) {
       this.renderer.unregister(this.inlineDialogViewHolder);
       this.inlineDialogViewHolder = null;
@@ -155,7 +147,7 @@ define(function (require, exports, module) {
         },
         offset: this.backButton ? this.itemHeight : 0,
         compute: function () {
-          return getHeight(this.view, this) - this.offset;
+          return (this.height = getHeight(this.view, this) - this.offset);
         },
         detach: function () {
           this.visible = false;
@@ -186,37 +178,38 @@ define(function (require, exports, module) {
   };
   RecyclerStub.prototype.createTreeView = function () {
     var stub = this;
+    stub.renderer.detach();
     stub.tree = new RecyclerNestedBrowser(
       stub.root,
       stub.rootDir,
       stub.fileServer,
-      true
+      true,
+      stub.renderer,
     );
     stub.tree.cache = stub.cache.back || stub.cache;
     stub.tree.cache.container = stub.tree.root[0];
-    stub.renderer.detach();
   };
 
   function getHeight($el, item) {
-    //hack for wrong height
     var height = $el.height();
     if (height == 0 && !(!item.visible || item.hidden)) {
+      //hack for wrong height
       return 54;
     }
     return height;
   }
 
-  function FileItemHolder(browser) {
+  function FileItemHolder(parent) {
     RecyclerViewHolder.apply(this, [
-      browser.cache,
-      browser.renderer,
-      browser.itemHeight,
+      parent.cache,
+      parent.renderer,
+      parent.itemHeight,
     ]);
     this.boundView = false;
     this.attrs = {};
     this.classes = [];
     this.widget = null;
-    this.browser = browser;
+    this.parent = parent;
   }
   Utils.inherits(FileItemHolder, RecyclerViewHolder);
   /*Overrides*/
@@ -237,7 +230,7 @@ define(function (require, exports, module) {
     viewport,
     index,
     insertBefore,
-    restack
+    restack,
   ) {
     if (this.widget) {
       this.widget.css('top', this.y + (this.hidden ? 0 : this.height) + 'px');
@@ -245,22 +238,22 @@ define(function (require, exports, module) {
         var next = this.widget[0].nextElementSibling;
         if (insertBefore && next != insertBefore) {
           stats.insert++;
-          this.browser.root[0].insertBefore(this.widget[0], insertBefore);
+          this.parent.root[0].insertBefore(this.widget[0], insertBefore);
         } else if (
           next &&
           !insertBefore &&
           index != this.renderer.renderlist.length - 1
         ) {
           stats.append++;
-          this.browser.root[0].appendChild(this.widget[0]);
+          this.parent.root[0].appendChild(this.widget[0]);
         }
-        arguments[2] = this.widget[0];
+        arguments[2] = this.widget[0]; //insertBefore
       }
     }
     if (this.boundView && !this.view && !this.hidden) {
       this.boundView.removeClass('destroyed');
       this.view = this.boundView;
-      var cbs = this.browser.nestedViews;
+      var cbs = this.parent.nestedViews;
       //override for buggy typeicon
       var filename = this.attr('filename');
       if (isDirectory(filename)) {
@@ -269,27 +262,27 @@ define(function (require, exports, module) {
             Icons.renderEl(
               this.view.find('.type-icon'),
               'folder_open',
-              filename
+              filename,
             );
           } else
             Icons.renderEl(
               this.view.find('.type-icon'),
               'folder_close',
-              filename
+              filename,
             );
         } else Icons.renderEl(this.view.find('.type-icon'), 'folder', filename);
       }
       if (this.widget) arguments[2] = this.widget[0];
-      arguments[3] = true;
+      arguments[3] = true; //restack
     }
     RecyclerViewHolder.prototype.render.apply(this, arguments);
   };
   /*Not related to #unbind but called by RecyclerViewHolder#render*/
   FileItemHolder.prototype.bindView = function () {
     var view = this.view;
-    var filename = this.browser.names[this.index];
+    var filename = this.parent.names[this.index];
 
-    this.browser.superClass.renderView.apply(this.browser, [
+    this.parent.superClass.renderView.apply(this.parent, [
       this.index,
       this.view,
     ]);
@@ -302,7 +295,7 @@ define(function (require, exports, module) {
       view.addClass(this.classes[i]);
     }
     if (isDirectory(filename)) {
-      var cbs = this.browser.nestedViews;
+      var cbs = this.parent.nestedViews;
       if (cbs) {
         if (cbs[filename] && !cbs[filename].renderer.hidden) {
           Icons.renderEl(view.find('.type-icon'), 'folder_open', filename);
@@ -342,32 +335,34 @@ define(function (require, exports, module) {
     }
     this.boundView = null;
   };
-  FileItemHolder.prototype.after = function (el) {
-    var view = document.createElement('div');
-    view.innerHTML = el;
-    view = view.children[0];
+  //Used for creating inline dialogs
+  FileItemHolder.prototype.after = function (html) {
+    var view = $(html)[0];
     view.style.position = 'absolute';
     view.style.top = this.y + this.height + 'px';
     var insertBefore = this.view && this.view[0].nextElementSibling;
     if (insertBefore) {
       stats.insert++;
-      this.browser.root[0].insertBefore(view, insertBefore);
+      this.parent.root[0].insertBefore(view, insertBefore);
     } else {
       stats.append++;
-      this.browser.root[0].appendChild(view);
+      this.parent.root[0].appendChild(view);
     }
     this.widget = $(view);
     this.widget.before = function () {
       return this;
     };
     var self = this;
-    this.widget.detach = function () {
-      view.parentElement.removeChild(view);
+    this.widget.remove = function () {
+      $(view).remove();
       self.widget = null;
       self.renderer.invalidate(self);
     };
     this.renderer.invalidate(self);
     return this;
+  };
+  FileItemHolder.prototype.next = function () {
+    return this.widget;
   };
   FileItemHolder.prototype.attr = function (text, value) {
     if (arguments.length === 1) {
@@ -381,9 +376,6 @@ define(function (require, exports, module) {
       }
       this.attrs[text] = value;
     }
-  };
-  FileItemHolder.prototype.next = function () {
-    return this.widget;
   };
   FileItemHolder.prototype.addClass = function (text) {
     if (this.view) {
@@ -420,7 +412,7 @@ define(function (require, exports, module) {
   RecyclerNavBehaviour.prototype = {
     getPrev: function (/*current, root, dir, $default*/) {
       var element = this.stub.parentStub.getElement(
-        this.stub.parentStub.filename(this.stub.rootDir)
+        this.stub.parentStub.filename(this.stub.rootDir),
       );
       if (!element) return null;
       if (!element.view) {
@@ -489,49 +481,43 @@ define(function (require, exports, module) {
         return this.stub ? 'none' : 'block';
     };
 */
-  function RecyclerNestedBrowser(
+  /** @constructor */
+  function RecyclerNestedBrowser() {
+    /*
     id,
     rootDir,
     fileServer,
-    noReload
-    /*,renderer = null*/
-  ) {
-    this.nestedViews = {};
-    if (arguments.length === 3) noReload = true;
-    if (noReload && typeof noReload == 'object') {
-      this.setParent(noReload);
-    }
-    RecyclerStub.apply(this, arguments);
+    noReload,
+    renderer*/
+    NestedBrowser.apply(this, arguments);
   }
   Utils.inherits(RecyclerNestedBrowser, RecyclerStub, NestedBrowser);
   RecyclerNestedBrowser.prototype.superNestedBrowser = RecyclerStub.prototype;
   RecyclerNestedBrowser.prototype.mixinNestedBrowser = NestedBrowser.prototype;
-  RecyclerNestedBrowser.prototype.onChildRender = function () {
-    this.root.css(
-      'height',
-      this.paddingTop + this.renderer.height + this.paddingBottom + 'px'
-    );
+
+  RecyclerNestedBrowser.prototype.getOffsetTop = function () {
+    var topParent = this;
+    while (topParent.getParent()) {
+      topParent = topParent.getParent();
+    }
+    //Force rendering
+    topParent.renderer.compute();
+    if (topParent.renderer.changes) topParent.renderer.render();
+    var top = topParent.root[0].getBoundingClientRect().top;
+    var parent = this;
+    while (parent !== topParent) {
+      top += parent.renderer.y;
+      parent = parent.getParent();
+    }
+    return top;
   };
   RecyclerNestedBrowser.prototype.scrollItemIntoView = function (
     filename,
-    updatePage
+    updatePage,
   ) {
-    var self = this;
-    var i = this.names.indexOf(filename);
-    if (i < 0 && !isDirectory(filename)) {
-      filename += '/';
-      i = this.names.indexOf(filename);
-    }
-    if (i < 0) return 'Not Child';
-
-    var pageStart = Math.floor(i / this.pageSize) * this.pageSize;
-    if (pageStart != this.pageStart && updatePage) {
-      self.pageStart = pageStart;
-      self.updateVisibleItems(true);
-      self.updateBottomElements();
-    } else self.pageStart = pageStart;
-    var top = this.getItemTop(i);
-    //because we can't accurately get screenTop without knowing scroll
+    var top = this.showItemAndGetTop(filename, updatePage);
+    if (top === false) return 'Not child';
+    //Because the view might not be rendered, we can't accurately get screenTop
     var rootTop = this.getOffsetTop();
     var finalTop = rootTop + top;
     var scrollParent = this.root[0];
@@ -539,7 +525,7 @@ define(function (require, exports, module) {
     do {
       var overY = $(scrollParent).css('overflow');
       //Assumption 1: there is only one scrollable parent.
-      //Assumption 2: that parent is always on screen2
+      //Assumption 2: that parent is always on screen hence getBoundingCR is correct
       //Assumption 3: scroll parent is at least 200pixels tall
       if (overY != 'hidden' && overY != 'visible') {
         var rect = scrollParent.getBoundingClientRect();
@@ -563,27 +549,13 @@ define(function (require, exports, module) {
     } while (scrollParent);
     if (scrollParent) {
       var baseTop = screenTop + sTop;
-      var baseBottom = baseTop + cHeight;
+      var baseBottom = baseTop + Math.min(window.innerHeight - 56, cHeight);
       if (finalTop < baseTop + 100 || finalTop > baseBottom - 100) {
         var targetTop = finalTop - cHeight / 2 - this.itemHeight;
         scrollParent.scrollTop = targetTop;
       }
     }
-    scrollParent = this.root[0];
-    var finalLeft = scrollParent.getBoundingClientRect().left;
-    do {
-      if (scrollParent.scrollWidth > scrollParent.clientWidth) {
-        if (scrollParent.scrollWidth - scrollParent.scrollLeft > finalLeft) {
-          break;
-        } else {
-          //nested scroll
-        }
-      }
-      scrollParent = scrollParent.parentElement;
-    } while (scrollParent);
-    if (scrollParent) {
-      scrollParent.scrollLeft += finalLeft;
-    }
+    this.scrollToRight();
   };
   RecyclerNestedBrowser.prototype.expandFolder = function (name, callback) {
     var el = this.getElement(name);
@@ -613,16 +585,14 @@ define(function (require, exports, module) {
         this.childFilePath(name),
         this.fileServer,
         this,
-        renderer
+        renderer,
       );
       child[0].navBehaviour = new RecyclerNavBehaviour(this.nestedViews[name]);
       //renderer.owner = this.nestedViews[name];
       this.nestedViews[name].cache = this.cache.clone(
-        this.nestedViews[name].root[0]
+        this.nestedViews[name].root[0],
       );
-      this.nestedViews[name].renderer.onBeforeRender = this.onChildRender.bind(
-        this.nestedViews[name]
-      );
+      this.nestedViews[name].scrollPastEnd = false;
       this.nestedViews[name].reload(false, callback2);
     } else {
       this.nestedViews[name].stub.show();
@@ -630,16 +600,6 @@ define(function (require, exports, module) {
       if (callback) setImmediate(callback2);
       else callback2();
     }
-  };
-  RecyclerNestedBrowser.prototype.getOffsetTop = function () {
-    var top = 0;
-    var parent = this;
-    while (parent.getParent()) {
-      top += parent.renderer.y;
-      parent = parent.getParent();
-    }
-    top += parent.root[0].getBoundingClientRect().top;
-    return top;
   };
   RecyclerNestedBrowser.prototype.clearNestedBrowsers = function () {
     for (var i in this.nestedViews) {

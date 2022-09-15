@@ -56,11 +56,6 @@ define(function (require, exports, module) {
     var debugCompletions = false;
 
     TernServer.prototype = Object.assign(Object.create(BaseClient.prototype), {
-        name: 'ternClient',
-        normalizeName: function (name) {
-            if (name[0] == '/') return name.substring(1);
-            return name;
-        },
         getCompletions: function (editor, session, pos, prefix, callback) {
             getCompletions(this, editor, session, pos, prefix, callback);
         },
@@ -142,7 +137,7 @@ define(function (require, exports, module) {
                             };
                         });
                     cb(error, data);
-                }
+                },
             );
         },
         request: function (editor, query, c, pos, forcePushChangedfile) {
@@ -153,7 +148,7 @@ define(function (require, exports, module) {
                 doc,
                 query,
                 pos,
-                forcePushChangedfile
+                forcePushChangedfile,
             );
             this.server.request(request, function (error, data) {
                 if (!error && self.options.responseFilter)
@@ -162,13 +157,12 @@ define(function (require, exports, module) {
                         query,
                         request,
                         error,
-                        data
+                        data,
                     );
                 c(error, data);
             });
         },
         requestArgHints: function (editor, start, cb) {
-            var ts = this;
             this.request(
                 editor,
                 {
@@ -189,20 +183,20 @@ define(function (require, exports, module) {
                                 .toLowerCase()
                                 .indexOf('no type found at') === -1
                         ) {
-                            return ts.ui.showError(editor, error);
+                            return cb(error);
                         }
                         return;
                     }
                     if (!data.type || !/^fn\(/.test(data.type)) {
-                        return;
+                        return cb(null, null);
                     }
-                    cb({
+                    cb(null, {
                         type: parseFnType(data.type),
                         name: data.exprName || data.name || 'fn',
                         guess: data.guess,
                         comments: data.doc, //added by morgan- include comments with arg hints
                     });
-                }
+                },
             );
         },
         requestDefinition: function (editor, cb, varName) {
@@ -227,7 +221,7 @@ define(function (require, exports, module) {
                             url: data.url,
                         });
                     } else cb(null);
-                }
+                },
             );
         },
         setupForRename: function (editor, newName, cb, data) {
@@ -237,7 +231,7 @@ define(function (require, exports, module) {
                 editor,
                 newName,
                 cb,
-                null
+                null,
             );
         },
         requestRenameLocations: function (editor, newName, cb) {
@@ -251,18 +245,14 @@ define(function (require, exports, module) {
                     fullDocs: true,
                 },
                 function (error, data) {
-                    var isAsync = false;
                     if (data && data.changes) {
                         data.changes.forEach(function (e) {
                             e.start = toAceLoc(e.start);
                             e.end = toAceLoc(e.end);
-                            if (!ts.docs[e.file]) {
-                                isAsync = true;
-                            }
                         });
                     }
                     cb(error, data && {refs: data.changes});
-                }
+                },
             );
         },
         sendDoc: function (doc, cb) {
@@ -280,7 +270,7 @@ define(function (require, exports, module) {
                     if (error) debug.error(error);
                     else doc.changed = null;
                     if (cb) cb();
-                }
+                },
             );
         },
         releaseDoc: function (name) {
@@ -401,7 +391,7 @@ define(function (require, exports, module) {
                 if (query.start != null)
                     query.start = Pos(
                         query.start.line - -offsetLines,
-                        query.start.ch
+                        query.start.ch,
                     );
                 query.end = Pos(query.end.line - offsetLines, query.end.ch);
             } else {
@@ -418,7 +408,7 @@ define(function (require, exports, module) {
         }
         for (var name in ts.docs) {
             var cur = ts.docs[name];
-            if (cur.changed && cur != doc) {
+            if (cur.changed && cur != doc && !doc.fragOnly) {
                 files.push({
                     type: 'full',
                     name: cur.name,
@@ -523,7 +513,8 @@ define(function (require, exports, module) {
                 if (debugCompletions)
                     debug.timeEnd('get completions from tern server');
                 if (error) {
-                    return ts.ui.showError(editor, error);
+                    ts.ui.showError(editor, error);
+                    return callback();
                 }
                 var SCORE = data.isProperty
                     ? BaseClient.PRIORITY_HIGH
@@ -533,7 +524,7 @@ define(function (require, exports, module) {
                         iconClass: ts.ui.iconClass(
                             item.guess
                                 ? 'guess'
-                                : typeToIcon(item.type, data.isProperty)
+                                : typeToIcon(item.type, data.isProperty),
                         ),
                         doc: item.doc,
                         type: item.type,
@@ -553,7 +544,7 @@ define(function (require, exports, module) {
                 });
                 callback(null, ternCompletions);
                 if (debugCompletions) debug.groupEnd(groupName);
-            }
+            },
         );
     }
 
@@ -619,7 +610,7 @@ define(function (require, exports, module) {
         if (tok.type.indexOf('storage.type') !== -1) return false; // could be 'function', which is start of an anon fn
         var nextTok = editor.session.getTokenAt(
             editor.getSelectionRange().end.row,
-            tok.start + tok.value.length + 1
+            tok.start + tok.value.length + 1,
         );
         if (!nextTok || nextTok.value !== '(') return false;
         return true;
@@ -730,7 +721,7 @@ define(function (require, exports, module) {
                 var endBracketIdx = paramStr.indexOf(']');
                 if (endBracketIdx === -1) {
                     debug.error(
-                        "failed to parse parameter name; Found starting '[' but missing closing ']'"
+                        "failed to parse parameter name; Found starting '[' but missing closing ']'",
                     );
                     continue; //go to next
                 }
@@ -1096,7 +1087,7 @@ define(function (require, exports, module) {
                                     cls +
                                     'jsdoc-tag">' +
                                     m[0].trim() +
-                                    '</span> '
+                                    '</span> ',
                             );
                         }
                     } catch (ex) {
@@ -1119,7 +1110,7 @@ define(function (require, exports, module) {
                                     cls +
                                     'type">' +
                                     m[0].trim() +
-                                    '</span> '
+                                    '</span> ',
                             );
                         }
                     } catch (ex) {
@@ -1151,7 +1142,7 @@ define(function (require, exports, module) {
                                     withoutProtocol +
                                     '" target="_blank">' +
                                     text +
-                                    ' </a>'
+                                    ' </a>',
                             );
                         }
                         str = str
@@ -1256,7 +1247,7 @@ define(function (require, exports, module) {
                     type: 'req',
                     body: body,
                 },
-                c
+                c,
             );
         };
         this.restart = function (ts) {

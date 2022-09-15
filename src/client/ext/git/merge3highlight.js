@@ -1,8 +1,8 @@
 define(function (require, exports, module) {
     //of an ace extension
-    var Annotations = ace.require('ace/annotations').Annotations;
-    var EditSession = ace.require('ace/edit_session').EditSession;
-    var config = ace.require('ace/config');
+    var Annotations = require('ace!annotations').Annotations;
+    var EditSession = require('ace!edit_session').EditSession;
+    var config = require('ace!config');
     var options = require('grace/core/config').Config.registerAll({}, 'git');
     require('grace/core/config').Config.on('git', update);
     var Docs = require('grace/docs/docs').Docs;
@@ -16,6 +16,7 @@ define(function (require, exports, module) {
     }
 
     function Merge3Worker() {
+        Merge3Worker.super(this);
         this.isQueued = false;
         this.$triggerUpdate = this.triggerUpdate.bind(this);
         this.$annotate = require('grace/core/utils').Utils.debounce(
@@ -175,7 +176,7 @@ define(function (require, exports, module) {
             value: false,
         },
     });
-    ace.require('ace/lib/dom').importCssString(
+    require('ace!lib/dom').importCssString(
         '\
 .ace_editor .ace_merge.ace_arrows.ace_ours{\
     color: red;\
@@ -189,5 +190,5 @@ define(function (require, exports, module) {
         'merge3highlight.css',
     );
     update();
-    require('./git_commands').GitCommands.highlightMerge3 = update;
+    exports.highlightMerge3 = update;
 });

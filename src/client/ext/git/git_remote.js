@@ -1,12 +1,12 @@
 //Git Commands Branching
 define(function (require, exports, module) {
     /*globals $*/
-    var GitCommands = require('./git_commands').GitCommands;
+    var GitUtils = require('./git_utils').GitUtils;
     var ItemList = require('grace/ui/itemlist').ItemList;
-    var testUrl = GitCommands.testUrl;
-    var testPlain = GitCommands.testPlain;
-    var success = GitCommands.success;
-    var failure = GitCommands.failure;
+    var testUrl = GitUtils.testUrl;
+    var testPlain = GitUtils.testPlain;
+    var success = GitUtils.success;
+    var failure = GitUtils.failure;
     var Notify = require('grace/ui/notify').Notify;
     var Utils = require('grace/core/utils').Utils;
     var remoteList;
@@ -23,7 +23,7 @@ define(function (require, exports, module) {
                     remoteList.$el.modal('close');
                 };
                 remoteList.$add_new = function () {
-                    GitCommands.addRemote(ev, prov, function () {
+                    exports.addRemote(ev, prov, function () {
                         manageRemotes(ev, prov);
                     });
                 };
@@ -31,7 +31,7 @@ define(function (require, exports, module) {
                     remoteList.$el.modal('close');
                 };
                 remoteList.$edit = function () {
-                    GitCommands.addRemote(
+                    exports.addRemote(
                         ev,
                         prov,
                         function () {
@@ -42,7 +42,7 @@ define(function (require, exports, module) {
                 };
                 remoteList.$delete = function () {
                     if (remoteList.selectedItem)
-                        GitCommands.deleteRemote(
+                        exports.deleteRemote(
                             ev,
                             prov,
                             function () {
@@ -98,7 +98,7 @@ define(function (require, exports, module) {
         }
         prov.listRemotes().then(showModal);
     }
-    GitCommands.addRemote = function (ev, prov, done, item) {
+    exports.addRemote = function (ev, prov, done, item) {
         Notify.modal({
             header: 'Add Remote',
             form: [
@@ -143,11 +143,11 @@ define(function (require, exports, module) {
             footers: ['Cancel', 'Save'],
         });
     };
-    GitCommands.deleteRemote = function (ev, prov, done, item) {
+    exports.deleteRemote = function (ev, prov, done, item) {
         Notify.ask('Proceed to delete remote ' + item.remote, function () {
             prov.deleteRemote(item).then(done || success, failure);
         });
     };
 
-    GitCommands.manageRemotes = manageRemotes;
+    exports.manageRemotes = manageRemotes;
 }); /*_EndDefine*/

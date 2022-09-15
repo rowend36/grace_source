@@ -3,9 +3,8 @@ define(function (require, exports, module) {
     //Class for validating json objects
     //Using serializable objects
     var Utils = require('./utils').Utils;
-    var RuleParser = require('./parser').RuleParser;
-    var TreeListener = require('./parser').TreeListener;
 
+    /** @constructor*/
     function XObject(schemas) {
         this.schemas = schemas;
     }
@@ -26,6 +25,7 @@ define(function (require, exports, module) {
         return false;
     };
 
+    /** @constructor*/
     function XMap(keys, values) {
         this.keys = keys;
         this.values = values;
@@ -44,6 +44,7 @@ define(function (require, exports, module) {
             }
         }
     };
+    /** @constructor*/
     var XEnum = function (values) {
         this.values = values;
     };
@@ -57,6 +58,7 @@ define(function (require, exports, module) {
             : false;
     };
 
+    /** @constructor*/
     var XNot = function (schema, message) {
         this.schema = schema;
         this.message = message;
@@ -66,6 +68,7 @@ define(function (require, exports, module) {
         return this.message || 'Cannot be ' + value;
     };
 
+    /** @constructor*/
     var XArray = function (type) {
         this.schema = type;
     };
@@ -85,6 +88,8 @@ define(function (require, exports, module) {
         }
         return false;
     };
+
+    /** @constructor*/
     var XOneOf = function (schemas) {
         this.schemas = schemas;
     };
@@ -97,7 +102,9 @@ define(function (require, exports, module) {
         });
         if (!passed) return errors;
     };
+    
     //Only valid in the context of an object
+    /** @constructor*/
     var XOptional = function (schema) {
         this.schema = schema;
     };
@@ -114,6 +121,8 @@ define(function (require, exports, module) {
         return this.schemas.some((schema) => schema.validate(v));
     };*/
 
+    
+    /** @constructor*/
     function XValidIf(func, name) {
         this.name = name;
         this.validate = function (value) {
@@ -142,6 +151,8 @@ define(function (require, exports, module) {
             return Utils.parseTime(value, true) !== false;
         }),
     ]);
+    
+    /** @constructor*/
     function XList(schema) {
         this.schema = schema;
     }
@@ -175,7 +186,6 @@ define(function (require, exports, module) {
             } catch (e) {
                 return e.message;
             }
-            return false;
         },
     };
     var IsKey = new XValidIf(function (value) {
@@ -188,14 +198,16 @@ define(function (require, exports, module) {
         )
             return true;
     }, 'valid keystring');
-    var modelist = ace.require('ace/ext/modelist');
+    var modelist = require('ace!ext/modelist');
     var IsMode = new XValidIf(function (mode) {
         return modelist.modesByName[mode];
     }, 'a language mode');
+    
+    /** @constructor*/
     var XRegex = function (regex, name) {
         XRegex.super(this, [
             function (value) {
-                return this.regex.test(value);
+                return regex.test(value);
             },
             name,
         ]);
@@ -203,157 +215,12 @@ define(function (require, exports, module) {
     Utils.inherits(XRegex, XValidIf);
 
     var IsFilename = new XRegex(/[\w-~\(\)\/]+/);
-    //Thanks to 200 extra lines for Jsonext, we can write a parser in 150 lines,
-    //Is that gain?, I think so
-    var syntax = {
-        start: {
-            enter: 'SCHEMA',
-        },
-        SCHEMA: {
-            //multiple rules separated by slash
-            enter: 'SINGLE_RULE',
-            exit: 'or',
-        },
-        or: {
-            maybe: '|',
-        },
-        '|': {
-            token: '|',
-            enter: 'SCHEMA',
-        },
-        SINGLE_RULE: {
-            select: ['TYPE', 'any', 'sub_rule', '?', '!', '['],
-        },
-        sub_rule: {
-            token: '<',
-            enter: 'SCHEMA',
-            exit: '>',
-        },
-        TYPE: {
-            re: /\w+/,
-            maybe: 'sub_rule',
-        },
-        '[': {
-            token: '[',
-            enter: 'LIST',
-            exit: ']',
-        },
-        LIST: {
-            re: /[^\]]*/,
-        },
-        ']': ']',
-        any: {
-            rules: ['<', '>'],
-        },
-        '<': '<',
-        '>': '>',
-        '?': {
-            token: '?',
-            enter: 'SINGLE_RULE',
-        },
-        '!': {
-            token: '!',
-            enter: 'SINGLE_RULE',
-        },
-    };
-    var parser = new RuleParser();
-    parser.rules = parser.parseRules(syntax);
-    var parseNodes = function (right, left) {
-        switch (left.type) {
-            case '<':
-            case '>':
-            case '[':
-            case ']':
-            case 'sub_rule':
-                return right;
-            case '?':
-                return new XOptional(right);
-            case '!':
-                return new XNot(right);
-            case '|':
-                if (right.constructor == XOneOf) {
-                    return right;
-                }
-                return new XOneOf([right]);
-            case 'LIST':
-                return new XEnum(left.text.split(','));
-            case 'TYPE':
-                var schema;
-                switch (left.text) {
-                    case 'null':
-                        schema = IsNull;
-                        break;
-                    case 'boolean':
-                        schema = IsBoolean;
-                        break;
-                    case 'string':
-                        schema = IsString;
-                        break;
-                    case 'number':
-                        schema = IsNumber;
-                        break;
-                    case 'array':
-                        schema = new XArray(right || Any);
-                        break;
-                    case 'url':
-                        schema = IsUrl;
-                        break;
-                    case 'filename':
-                        schema = IsFilename;
-                        break;
-                    case 'object':
-                        schema = IsObject;
-                        break;
-                    case 'mode':
-                        schema = IsMode;
-                        break;
-                    case 'time':
-                    case 'size':
-                        schema = IsTime;
-                        break;
-                    case 'list':
-                        schema = new XList(right || IsString);
-                        break;
-                    default:
-                        throw new Error('Invalid Schema: ' + left.text);
-                }
-                if (right && !schema.schema) {
-                    throw new Error(
-                        'Invalid Schema: ' + left.text + ' cannot have type'
-                    );
-                }
-                return schema;
-            case 'SINGLE_RULE':
-                if (right && right.constructor === XOneOf) {
-                    right.schemas.push(left.schema);
-                    return right;
-                }
-                return left.schema;
-            case 'SCHEMA':
-                return left.schema;
-            default:
-                throw new Error('Parser validate state');
-        }
-    };
-    var createSchema = new TreeListener();
-    createSchema.onParse = function (node) {
-        switch (node.type) {
-            case 'SINGLE_RULE':
-                if (node.text == '<>') {
-                    node.schema = Any;
-                    break;
-                }
-            /*fall through*/
-            case 'SCHEMA':
-                node.schema = node.children.reduceRight(parseNodes, null);
-        }
-    };
-    parser.listener = createSchema;
 
-    var Schema = {
+    var api = {
         /**
          * Get schema from a value. Used when you fail to configure type of config.
          * @related {require('./config/namespaces')~inferSchema}
+         * @returns {Schema}
          */
         fromValue: function (value) {
             //For strings, type is just one thing,
@@ -365,52 +232,14 @@ define(function (require, exports, module) {
             //Plain works well since, mostly for null and undefined values.
             if (!IsPlain.validate(value)) return IsPlain;
             if (Array.isArray(value)) {
-                return new XArray(Schema.fromValue(value[0]));
+                return new XArray(IsPlain);
             }
             return IsObject;
         },
-        /**
-         * Get schema from a regex like syntax
-         * of the form
-         *   "<boolean>,<array> or <number...>" - appropriate type
-         *   "array<type_string>" - XArray(type)
-         *   "[value1,value2...]" - XEnum
-         *   <type_string|type_string> - XOneOf
-         *   {[string]:type_string} - XObject
-         *   ["type_string"] - XArray
-         */
-        parse: function parse(value) {
-            if (!value) throw new Error('Invalid Schema: cannot be empty');
-            if (typeof value == 'string') {
-                parser.setState({
-                    text: value,
-                });
-                TreeListener.call(createSchema); //reset
-                parser.walk();
-                return createSchema.getContext().children[0].schema;
-            }
-            if (typeof value == 'object') {
-                //a schema
-                if (typeof value.validate == 'function') return value;
-                if (value.constructor == RegExp) {
-                    return new XRegex(value, value.name || value);
-                }
-                if (Array.isArray(value)) {
-                    if (value.length > 1)
-                        throw new Error(
-                            'Invalid Schema: Array schema must have only one value'
-                        );
-                    return new XArray(
-                        value.length ? Schema.parse(value[0]) : Any
-                    );
-                }
-                var schemas = {};
-                for (var i in value) {
-                    schemas[i] = Schema.parse(value[i]);
-                }
-                return new XObject(schemas);
-            }
-            throw new Error('Invalid Schema ' + value);
+        parse: function () {
+            throw new Error(
+                'Must require grace/ext/parse_schema to use this feature.',
+            );
         },
         XObject: XObject,
         XArray: XArray,
@@ -419,6 +248,7 @@ define(function (require, exports, module) {
         XValidIf: XValidIf,
         XRegex: XRegex,
         XNot: XNot,
+        XList: XList,
         XEnum: XEnum,
         XMap: XMap,
         NotNull: NotNull,
@@ -436,11 +266,11 @@ define(function (require, exports, module) {
         IsNull: IsNull,
         Any: Any,
     };
-    for (var i in Schema) {
-        if (i[0] == 'X') Schema[i].prototype.name = i;
-        else if (typeof Schema[i] != 'function')
-            Schema[i].name =
-                Schema[i].name || i.replace('Is', '').toLowerCase();
+    for (var i in api) {
+        if (i[0] == 'X') api[i].prototype.name = i;
+        else if (typeof api[i] != 'function')
+            api[i].name =
+                api[i].name || i.replace('Is', '').toLowerCase();
     }
-    exports.Schema = Schema;
+    exports.Schema = api;
 });

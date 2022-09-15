@@ -1,5 +1,5 @@
 define(function(require,exports,module) {
-    var Editors = require("grace/editor/editors").Editors;
+    var Actions = require("grace/core/actions").Actions;
     var defaultProvider = function(editor, range) {
         var begin = range ? range.start.row : 0;
         var end = range ? range.end.row : Infinity;
@@ -53,8 +53,8 @@ define(function(require,exports,module) {
         };
         fix();
     };
-    Editors.addCommands({
-        name: "fix missing semicolons",
+    Actions.addAction({
+        name: "Fix missing semicolons",
         exec: fixMissingSemicolons,
         isAvailable: function(editor) {
             return editor.session.getMode().getMissingColons ||

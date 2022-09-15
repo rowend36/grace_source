@@ -4,19 +4,23 @@
   } else if (typeof exports === 'object') {
     module.exports = factory(require());
   } else {
-    root.AceDiffUtils = factory(root);
+    factory((root.AceDiffUtils = {}));
   }
 })(this, function (exports) {
+  'use strict';
   var Range = ace.require('ace/range').Range;
+  var LineWidgets = ace.require('ace/line_widgets').LineWidgets;
   var dmp;
 
   var DIFF_EQUAL = 0;
   var DIFF_DELETE = -1;
   var DIFF_INSERT = 1;
-  var EDITOR_RIGHT = 'right'; //added
-  var EDITOR_LEFT = 'left'; //removed
+  var EDITOR_LEFT = 'left'; //origin
+  var EDITOR_RIGHT = 'right'; //edit
+  var WIDGET_INLINE = 'diff-inline';
+  var WIDGET_OFFSET = 'diff-offset';
 
-  //getDiff,getChunk: copied from codemirror merge.js
+  //getChunksFromCharDiff: copied from codemirror merge.js
   var Pos = function (line, ch) {
     if (!this) return new Pos(line, ch);
     this.line = line || 0;
@@ -28,67 +32,89 @@
       };
     };
   };
-
+  function resetDiffs(pair, min) {
+    pair.$i = pair.$i || 0;
+    if (++pair.$i > min) {
+      pair.$i = 0;
+      pair.$cachedDiffs = null;
+    }
+  }
   /*globals diff_match_patch*/
-  function getDiffs(text1, text2, options, ctx, allowLine) {
+  // var _updateDiff = profileFunc('updateDiff', updateDiff);
+  // var _getCharDiff = profileFunc('getCharDiff', getCharDiff);
+  // var _getLineDiff = profileFunc('getLineDiff', getLineDiff);
+  function diff(acediff, pair, clean) {
+    var ses1 = acediff.panes[pair.left].ace.getSession();
+    var ses2 = acediff.panes[pair.right].ace.getSession();
+    if (pair.swapped) {
+      var temp = ses1;
+      (ses1 = ses2), (ses2 = temp);
+    }
+    var text1 = ses1.getValue();
+    var text2 = ses2.getValue();
+    //frequency of resets is based on size
+    resetDiffs(
+      pair,
+      clean === true
+        ? 0
+        : text1.length + text2.length < 100000
+        ? 5
+        : text1.length + text2.length > 1000000
+        ? 50
+        : 25
+    );
+    var needsRawDiffs = acediff.options.showInlineDiffs;
+    var ignoreWhitespace = acediff.options.ignoreWhitespace;
+    var useLineDiff =
+      !needsRawDiffs &&
+      //Don't use lineDiff for very long documents since the algorithm has a maximum number of unique lines in a diff.
+      ses1.getLength() + ses2.getLength() < 30000;
     if (!dmp) dmp = new diff_match_patch();
-    // var tag = ctx.savedDiffs ? "cached " : "clean ";
-    if (allowLine && !options.showInlineDiffs) {
-      if (options.ignoreWhitespace) {
+
+    // var tag = pair.$cachedDiffs ? "cached " : "clean ";
+    var DIFF_RIGHT = pair.swapped ? DIFF_DELETE : DIFF_INSERT;
+    if (useLineDiff) {
+      if (ignoreWhitespace) {
         text1 = text1.replace(/^( |\t)*|( |\t)*$/gm, '');
         text2 = text2.replace(/^( |\t)*|( |\t)*$/gm, '');
       }
-      ctx.savedDiffs = ctx.savedDiffs
-        ? updateDiff(text1, text2, ctx.swapped, ctx.savedDiffs, getLineDiff)
-        : getLineDiff(text1, text2, false, ctx.swapped);
-      return getChunksFromLineDiff(ctx.savedDiffs);
+      pair.$cachedDiffs = pair.$cachedDiffs
+        ? updateDiff(text1, text2, pair.$cachedDiffs, getLineDiff)
+        : getLineDiff(text1, text2);
+      pair.diffs = getChunksFromLineDiff(pair.$cachedDiffs, DIFF_RIGHT);
     } else {
-      if (ctx.savedDiffs) {
-        var updated = updateDiff(
-          text1,
-          text2,
-          ctx.swapped,
-          ctx.savedDiffs,
-          getCharDiff
-        );
-        cleanUpLines(updated);
-        ctx.savedDiffs = updated;
-      } else ctx.savedDiffs = getCharDiff(text1, text2, false, ctx.swapped);
-      if (options.showInlineDiffs) {
-        ctx.rawDiffs = ctx.savedDiffs;
+      var updated = pair.$cachedDiffs
+        ? updateDiff(text1, text2, pair.$cachedDiffs, getCharDiff)
+        : getCharDiff(text1, text2);
+      cleanUpLines(updated);
+      pair.$cachedDiffs = updated;
+      if (showInlineDiffs) {
+        pair.rawDiffs = updated;
       }
-      return getChunksFromCharDiff(
-        options.ignoreWhitespace
-          ? filterWhiteSpace(ctx.savedDiffs)
-          : ctx.savedDiffs
+      pair.diffs = getChunksFromCharDiff(
+        ignoreWhitespace
+          ? filterWhiteSpace(pair.$cachedDiffs)
+          : pair.$cachedDiffs,
+        DIFF_RIGHT
       );
     }
   }
 
-  function getLineDiff(text1, text2, ignoreWhitespace, swap) {
+  function getLineDiff(text1, text2) {
     // if (!/\n$/.test(text1))
     text1 += '\n';
     // if (!/\n$/.test(text2))
     text2 += '\n';
-    if (ignoreWhitespace) {
-      text1 = text1.replace(/^( |\t)*|( |\t)*$/gm, '');
-      text2 = text2.replace(/^( |\t)*|( |\t)*$/gm, '');
-    }
     var a = dmp.diff_linesToChars_(text1, text2);
     var lineText1 = a.chars1;
     var lineText2 = a.chars2;
     var lineArray = a.lineArray;
     var diff = dmp.diff_main(lineText1, lineText2, false);
     dmp.diff_charsToLines_(diff, lineArray);
-    if (swap) {
-      for (var i = 0; i < diff.length; ++i) {
-        diff[i][0] = -diff[i][0];
-      }
-    }
     return diff;
   }
 
-  function getChunksFromLineDiff(diff) {
+  function getChunksFromLineDiff(diff, DIFF_RIGHT) {
     /*
         returns output of the form
         [{
@@ -107,7 +133,7 @@
     };
     var last = null;
     diff.forEach(function (chunk, i) {
-      var obj = transformDiff(chunk, offset, last);
+      var obj = transformDiff(chunk, offset, last, DIFF_RIGHT);
       if (obj) {
         if (last) {
           mergeDiff(last, obj);
@@ -120,7 +146,7 @@
     return diffs;
   }
 
-  function transformDiff(chunk, offset, last) {
+  function transformDiff(chunk, offset, last, DIFF_RIGHT) {
     /*returns output of the form
         {
             leftStartLine: offset
@@ -128,7 +154,6 @@
             rightStartLine: offset
             rightEndLine: offset
             chunks: text
-            trailinglines: number
         }
         */
     var trailinglines = offset.trailinglines;
@@ -153,7 +178,7 @@
         //(prepended to next line)
         if (/^\n+$/.test(text)) {
           var type =
-            trailinglines[0] == DIFF_INSERT ? EDITOR_RIGHT : EDITOR_LEFT;
+            trailinglines[0] == DIFF_RIGHT ? EDITOR_RIGHT : EDITOR_LEFT;
           obj = {
             leftStartLine: offset.left,
             leftEndLine: offset.left,
@@ -175,7 +200,7 @@
     if (endsWithNewline) {
       var countNewlines = /\n+$/.exec(text)[0].length;
       if (countNewlines > 1) {
-        if (trailinglines) console.warn('Unexpected trailing empty lines');
+        if (trailinglines) console.warn('Unexpected trailing empty lines common to both origins');
         trailinglines = [chunkType, countNewlines - 1];
       }
     }
@@ -187,8 +212,8 @@
       rightEndLine: offset.right,
       chunks: text.split('\n'),
     };
-    obj[chunkType == DIFF_INSERT ? 'rightEndLine' : 'leftEndLine'] += numlines;
-    offset[chunkType == DIFF_INSERT ? 'right' : 'left'] += numlines;
+    obj[chunkType == DIFF_RIGHT ? 'rightEndLine' : 'leftEndLine'] += numlines;
+    offset[chunkType == DIFF_RIGHT ? 'right' : 'left'] += numlines;
     offset.trailinglines = trailinglines;
     return obj;
   }
@@ -200,18 +225,11 @@
     dest.rightEndLine = Math.max(dest.rightEndLine, src.rightEndLine);
   }
 
-  function getCharDiff(a, b, ignoreWhitespace, swap, rawDiffs) {
-    var diff = rawDiffs || dmp.diff_main(a, b);
-    cleanUpLines(diff);
-    if (swap) {
-      for (var i = 0; i < diff.length; ++i) {
-        diff[i][0] = -diff[i][0];
-      }
-    }
-    return diff;
+  function getCharDiff(a, b) {
+    return dmp.diff_main(a, b);
   }
 
-  function getChunksFromCharDiff(diff) {
+  function getChunksFromCharDiff(diff, DIFF_RIGHT) {
     var chunks = [];
     if (!diff.length) return chunks;
     var startRight = 0,
@@ -221,6 +239,7 @@
     for (var i = 0, p = diff.length; i < p; ++i) {
       var part = diff[i],
         tp = part[0];
+        
       if (tp == DIFF_EQUAL) {
         var startOff = left.ch || right.ch ? 1 : 0;
         var cleanFromRight = right.line + startOff,
@@ -242,7 +261,7 @@
           startLeft = cleanToLeft;
         }
       } else {
-        moveOver(tp == DIFF_INSERT ? right : left, part[1]);
+        moveOver(tp == DIFF_RIGHT ? right : left, part[1]);
       }
     }
     if (startRight <= right.line || startLeft <= left.line)
@@ -269,15 +288,17 @@
     if (other) other.ch = (at ? 0 : other.ch) + (str.length - at);
     return out;
   }
-
+  
+  //Does not filter all whitespace; e.g beginning of a line that was preceded by a change. Yet to debug why such things mess up the chunks.
   function filterWhiteSpace(diff) {
-    var SPACE = /[^ \t]/;
+    var TEXT = /[^ \t]/;
     diff = diff.slice(0);
     for (var i = 0; i < diff.length; ++i) {
       var part = diff[i];
-      if (!SPACE.test(part[1])) {
+      if (!TEXT.test(part[1])) {
         diff.splice(i--, 1);
       } else if (i && diff[i - 1][0] == part[0]) {
+        //merge with previous equal chunk
         diff.splice(i--, 1);
         diff[i] = [diff[i][0], diff[i][1] + part[1]];
       }
@@ -332,8 +353,8 @@
   }
 
   var LAST_EQUAL = 0;
-  var STOP_REMOVE = 1;
-  var STOP_INSERT = 2;
+  var ORIGIN_IDX = 1;
+  var EDIT_IDX = 2;
   var UNCHANGED = 3;
   function _unChangedHead(text1, text2, diffs, len) {
     var start1 = 0,
@@ -415,10 +436,10 @@
         }
       }
       if (type >= 0) {
-        data[STOP_INSERT] -= textL;
+        data[EDIT_IDX] -= textL;
       }
       if (type <= 0) {
-        data[STOP_REMOVE] -= textL;
+        data[ORIGIN_IDX] -= textL;
       }
     }
     diffs.splice(i + 1);
@@ -437,21 +458,17 @@
         }
       }
       if (type >= 0) {
-        data[STOP_INSERT] += textL;
+        data[EDIT_IDX] += textL;
       }
       if (type <= 0) {
-        data[STOP_REMOVE] += textL;
+        data[ORIGIN_IDX] += textL;
       }
     }
     diffs.splice(0, i);
     data[LAST_EQUAL] = i;
   }
 
-  function updateDiff(a, b, swapped, diffs, diff) {
-    if (swapped) {
-      var t = a;
-      (a = b), (b = t);
-    }
+  function updateDiff(a, b, diffs, getDiff) {
     var len = diffs.length;
     //Find the extent of the change
     var headT = _unChangedHead(a, b, diffs, len);
@@ -467,21 +484,17 @@
     //Find nearby equal rows that are small enough to be affected by the change
     var lenChange = Math.max(
       100,
-      tailT[STOP_REMOVE] -
-        headT[STOP_REMOVE] +
-        (tailT[STOP_INSERT] - headT[STOP_INSERT])
+      tailT[ORIGIN_IDX] -
+        headT[ORIGIN_IDX] +
+        (tailT[EDIT_IDX] - headT[EDIT_IDX])
     );
     trimChangeHead(head, lenChange, headT);
     trimChangeTail(tail, lenChange, tailT);
 
     //rediff changed section
-    a = a.substring(headT[STOP_REMOVE], tailT[STOP_REMOVE]);
-    b = b.substring(headT[STOP_INSERT], tailT[STOP_INSERT]);
-    if (swapped) {
-      var t2 = b;
-      (b = a), (a = t2);
-    }
-    var mid = diff(a, b, false, swapped);
+    a = a.substring(headT[ORIGIN_IDX], tailT[ORIGIN_IDX]);
+    b = b.substring(headT[EDIT_IDX], tailT[EDIT_IDX]);
+    var mid = getDiff(a, b);
 
     //merge adjacent equal chunks
     if (head.length) {
@@ -499,20 +512,32 @@
   }
 
   function inlineMarker(acediff, side, line, from, toLine, to, fade, removed) {
-    var editor = acediff.editors[side];
-    var session = editor && editor.ace.getSession();
+    var pane = acediff.panes[side];
+    var session = pane && pane.ace.getSession();
     if (!session) return false;
-    acediff.editors[side].markers.push(
+    if (to === 0 && toLine > to + 1) {
+      toLine--;
+      to = Infinity;
+    }
+    acediff.panes[side].markers.push(
       session.addMarker(
         new Range(line, from, toLine, to),
-        acediff.options.classes[
-          removed === acediff.swapped ? 'inlineAdded' : 'inlineRemoved'
-        ] + (fade ? ' fading' : ''),
+        acediff.options.classes[removed ? 'inlineRemoved' : 'inlineAdded'] +
+          (fade ? ' fading' : ''),
         'text',
         false
       )
     );
     return true;
+  }
+
+  var removeMarker = function (marker) {
+    this.removeMarker(marker);
+  };
+
+  function clearDiffMarkers(pane) {
+    pane.markers.forEach(removeMarker, pane.ace.getSession());
+    pane.markers = [];
   }
   // note that this and everything else in this script uses 0-indexed row numbers
   // function endOfLineClean(diff, i) {
@@ -563,17 +588,17 @@
     return true;
   }
 
-  function showInlineDiffs(acediff, left, right, diffs) {
-    var pos = {};
-    pos[left] = new Pos(0, 0);
-    pos[right] = new Pos(0, 0);
-
+  function showInlineDiffs(acediff, pair) {
+    var diffs = pair.rawDiffs;
+    var leftPos = new Pos(0, 0);
+    var rightPos = new Pos(0, 0);
+    var DIFF_RIGHT = pair.swapped ? DIFF_DELETE : DIFF_INSERT;
     //Stream States:
     var RESET = 1, // yet to see a diff
       PENDING = 2, // one side is ok, waiting to confirm the other side
-      FAILED = 4, // has seen a diff too long to be shown inline
+      PAUSED = 4, // has seen a diff too long to be shown inline
       MAX_LENGTH = 10; // maximum length of diffs that can span a full line
-    // var FAILING = PENDING | FAILED;
+    // var FAILING = PENDING | PAUSED;
     var state = RESET;
     var marker, hasFullLine, start, startCh, offLeft, offRight;
     for (var i = 0, len = diffs.length; i < len; i++) {
@@ -585,24 +610,24 @@
           inlineMarker.apply(null, marker);
           state ^= PENDING;
         }
-        start = pos[left].line;
-        startCh = pos[left].ch;
+        start = leftPos.line;
+        startCh = leftPos.ch;
         offLeft = startOfLineClean(diffs, i) ? 1 : 0;
-        moveOver(pos[left], text, null, pos[right]);
+        moveOver(leftPos, text, null, rightPos);
         offRight = endOfLineClean(diffs, i) ? 1 : 0;
-        hasFullLine = pos[left].line - start + offLeft + offRight > 1;
-        if (hasFullLine && state & FAILED) {
+        hasFullLine = leftPos.line - start + offLeft + offRight > 1;
+        if (hasFullLine && state & PAUSED) {
           state = RESET;
         }
         continue;
       }
-      var side = type == DIFF_DELETE ? left : right;
-      start = pos[side].line;
-      startCh = pos[side].ch;
+      var pos = type == DIFF_RIGHT ? rightPos : leftPos;
+      start = pos.line;
+      startCh = pos.ch;
       offLeft = startOfLineClean(diffs, i) ? 1 : 0;
-      moveOver(pos[side], text);
+      moveOver(pos, text);
       offRight = endOfLineClean(diffs, i) ? 1 : 0;
-      hasFullLine = pos[side].line - start + offLeft + offRight > 1;
+      hasFullLine = pos.line - start + offLeft + offRight > 1;
 
       if (!hasFullLine || text.length < MAX_LENGTH) {
         if (state & PENDING) {
@@ -610,11 +635,11 @@
           state ^= PENDING;
           inlineMarker(
             acediff,
-            side,
+            type == DIFF_RIGHT ? pair.right : pair.left,
             start,
             startCh,
-            pos[side].line,
-            pos[side].ch,
+            pos.line - (offRight ? 1 : 0),
+            pos.ch,
             false,
             type == DIFF_DELETE
           );
@@ -622,26 +647,26 @@
           state |= PENDING;
           marker = [
             acediff,
-            side,
+            type == DIFF_RIGHT ? pair.right : pair.left,
             start,
             startCh,
-            pos[side].line,
-            pos[side].ch,
+            pos.line - (offRight ? 1 : 0),
+            pos.ch,
             false,
             type == DIFF_DELETE,
           ];
         }
       } else {
-        state = FAILED;
+        state = PAUSED;
         continue;
-        /* Show the first line if at least one side passed. Ugly.
-        if (state ^ FAILED) {
+        /* Show the first line if at least one side passed. Ugly and visually confusing.
+        if (state ^ PAUSED) {
             if (state & PENDING) {
                 state ^= PENDING;
                 inlineMarker.apply(null, marker);
                 inlineMarker(acediff, side, start, startCh, start, Infinity, true);
             }
-            else { //if(pos[side].ch!==0 && !offRight) {
+            else { //if(pos.ch!==0 && !offRight) {
                 state = FAILING;
                 marker = [acediff, side, start, startCh, start, Infinity, true];
             }
@@ -649,19 +674,111 @@
       }
     }
   }
+  //Binary search through an array of line diffs
+  //Impressive performance of less than 1ms
+  function binarySearch(diffs, row, TYPE, invert) {
+    var startLine = TYPE(invert, 'StartLine');
+    var endLine = TYPE(invert, 'EndLine');
+    var recursionHead = 0;
+    var first = 0;
+    var last = diffs.length - 1;
+    while (first <= last) {
+      if (++recursionHead > 1000) {
+        //Forgotten why this happens
+        throw new Error('Loop Limit Exceeded');
+      }
+      var mid = (first + last) >> 1;
+      if (diffs[mid][startLine] > row) last = mid - 1;
+      else if (diffs[mid][endLine] <= row) first = mid + 1;
+      else return mid;
+    }
+    //use ABOVE to get first
+    return -(first + 1);
+  }
+  function ABOVE(line) {
+    return -line - 2;
+  }
 
-  function findPrevDiff(chunks, start, isOrig) {
+  function updateScrollOffset(pane) {
+    var top = pane.scrollOffset * (pane.ace.renderer.lineHeight || 14);
+    if (pane.scrollMargin.top !== top) {
+      pane.scrollMargin.top = top;
+      pane.ace.renderer.updateScrollMargins();
+    }
+  }
+
+  function addLineWidget(pane, line, start, end, other) {
+    var session = pane.ace.session;
+    if (!pane.lineWidgets) {
+      pane.lineWidgets = [];
+    }
+    if (!session.widgetManager) {
+      session.widgetManager = new LineWidgets(session);
+      session.widgetManager.editor = pane.ace;
+    }
+    var no;
+    if (other) {
+      var screenStart = other.documentToScreenRow(start, 0);
+      var screenEnd = other.documentToScreenRow(end - 1, Infinity);
+      no = screenEnd - screenStart + 1;
+    } else no = end - start;
+
+    if (no < 1) return;
+    if (line < 1) {
+      //no multiple widgets supported
+      pane.scrollOffset = no;
+      //Setting scroll margin triggers scroll if there is a session
+      pane.ignoreScroll = true;
+      updateScrollOffset(pane);
+      pane.ignoreScroll = false;
+      session.topLineWidget = {
+        row: -1,
+        rowCount: no,
+        coverGutter: false,
+        type: WIDGET_OFFSET,
+        start: start,
+        end: end,
+      };
+      return;
+    }
+    var w = {
+      row: line - 1,
+      rowCount: no,
+      fixedWidth: false,
+      coverGutter: false,
+      type: WIDGET_INLINE,
+      start: start,
+      end: end,
+    };
+    pane.lineWidgets.push(w);
+    session.widgetManager.addLineWidget(w);
+    return w;
+  }
+
+  function clearLineWidgets(pane) {
+    pane.scrollOffset = 0; //call updatescrollOffset after.
+
+    if (!pane.lineWidgets) return;
+
+    for (var i = 0; i < pane.lineWidgets.length; i++) {
+      pane.ace.session.widgetManager.removeLineWidget(pane.lineWidgets[i]);
+    }
+    pane.ace.session.topLineWidget = null;
+    pane.lineWidgets = [];
+  }
+
+  function findPrevDiff(chunks, start, isLeft) {
     for (var i = chunks.length - 1; i >= 0; i--) {
       var chunk = chunks[i];
-      var to = (isOrig ? chunk.leftEndLine : chunk.rightEndLine) - 1;
+      var to = (isLeft ? chunk.leftEndLine : chunk.rightEndLine) - 1;
       if (to < start) return to;
     }
   }
 
-  function findNextDiff(chunks, start, isOrig) {
+  function findNextDiff(chunks, start, isLeft) {
     for (var i = 0; i < chunks.length; i++) {
       var chunk = chunks[i];
-      var from = isOrig ? chunk.leftStartLine : chunk.rightStartLine;
+      var from = isLeft ? chunk.leftStartLine : chunk.rightStartLine;
       if (from > start) return from;
     }
   }
@@ -669,18 +786,18 @@
   function goNearbyDiff(acediff, editor, dir) {
     var found = null,
       pairs = acediff.pairs,
-      editors = acediff.editors;
+      panes = acediff.panes;
     var line = editor.getCursorPosition().row;
     for (var i = 0; i < pairs.length; i++) {
       var diff = pairs[i].diffs,
-        isOrig = editor == editors[pairs[i].left].ace;
-      if (!isOrig && editor != editors[pairs[i].right].ace) {
+        isLeft = editor == panes[pairs[i].left].ace;
+      if (!isLeft && editor != panes[pairs[i].right].ace) {
         continue;
       }
       var pos =
         dir < 0
-          ? findPrevDiff(diff, line, isOrig)
-          : findNextDiff(diff, line, isOrig);
+          ? findPrevDiff(diff, line, isLeft)
+          : findNextDiff(diff, line, isLeft);
 
       if (
         pos != null &&
@@ -692,9 +809,64 @@
     else return false;
   }
 
+  function setupEditor(acediff, side) {
+    var ace = acediff.panes[side].ace;
+    if (!acediff.$commands) {
+      acediff.$commands = {
+        nextDiff: {
+          name: 'Go next diff',
+          exec: function (editor) {
+            acediff.goNextDiff(editor);
+          },
+          readOnly: true,
+          bindKey: 'Ctrl-Shift-N',
+        },
+        prevDiff: {
+          name: 'Go previous diff',
+          exec: function (editor) {
+            acediff.goPrevDiff(editor);
+          },
+          readOnly: true,
+          bindKey: 'Ctrl-Shift-P',
+        },
+      };
+      if (acediff.swap)
+        acediff.$commands.swapDiffOrigin = {
+          name: 'Swap diff origin',
+          exec: function () {
+            acediff.swap();
+          },
+          readOnly: true,
+        };
+    }
+    var commands = acediff.$commands;
+    var options = getOption(acediff, side, 'options');
+    if (options) {
+      ace.setOptions(options);
+    }
+    var mode = getOption(acediff, side, 'mode');
+    if (mode) {
+      ace.getSession().setMode(mode);
+    }
+    var editable = getOption(acediff, side, 'editable');
+    if (editable) {
+      ace.setReadOnly(!editable);
+    }
+    var theme = getOption(acediff, side, 'theme');
+    if (theme) {
+      ace.setTheme(theme);
+    }
+    // if the data is being supplied by an option, set the editor values now
+    var content = acediff.options[side].content;
+    if (content) {
+      ace.setValue(acediff.options[side].content, -1); //put cursor at start
+    }
+    for (var i in commands) ace.commands.addCommand(commands[i]);
+  }
+
   function getOption(acediff, side, option) {
     var opt = acediff.options[option];
-    if (acediff.options[side][option] !== undefined) {
+    if (acediff.options[side] && acediff.options[side][option] !== undefined) {
       opt = acediff.options[side][option];
     }
     return opt;
@@ -779,10 +951,10 @@
     if (typeof target !== 'object' && !jQuery.isFunction(target)) {
       target = {};
     }
-    if (length === i) {
-      target = this;
-      --i;
-    }
+    // if (length === i) {
+    //   target = this;
+    //   --i;
+    // }
     for (i; i < length; i++) {
       if ((options = arguments[i]) !== null) {
         for (name in options) {
@@ -830,11 +1002,18 @@
       }
     };
   }
+  exports.diff = diff;
   exports.extend = extend;
   exports.getOption = getOption;
+  exports.setupEditor = setupEditor;
   exports.goNearbyDiff = goNearbyDiff;
+  exports.clearLineWidgets = clearLineWidgets;
+  exports.addLineWidget = addLineWidget;
+  exports.updateScrollOffset = updateScrollOffset;
+  exports.ABOVE = ABOVE;
+  exports.binarySearch = binarySearch;
+  exports.clearDiffMarkers = clearDiffMarkers;
   exports.showInlineDiffs = showInlineDiffs;
-  exports.getDiffs = getDiffs;
   exports.throttle = throttle;
   exports.EDITOR_LEFT = EDITOR_LEFT;
   exports.EDITOR_RIGHT = EDITOR_RIGHT;
@@ -844,6 +1023,6 @@
   exports.LTR = 'ltr';
   exports.RTL = 'rtl';
   exports.SVG_NS = 'http://www.w3.org/2000/svg';
-  exports.WIDGET_INLINE = 'diff-inline';
-  exports.WIDGET_OFFSET = 'diff-offset';
+  exports.WIDGET_INLINE = WIDGET_INLINE;
+  exports.WIDGET_OFFSET = WIDGET_OFFSET;
 });

@@ -1,7 +1,7 @@
 define(function (require, exports, module) {
   'use strict';
   var Utils = require('../core/utils').Utils;
-  var modelist = ace.require('ace/ext/modelist');
+  var modelist = require('ace!ext/modelist');
   var Doc = require('./document').Doc;
   var Docs = require('./docs_base').Docs;
   var Config = require('../core/config').Config;
@@ -11,7 +11,7 @@ define(function (require, exports, module) {
       keepDocumentsOnClose: true,
       autoCloseDocs: true, //used by fileutils.opendoc
     },
-    'documents'
+    'documents',
   );
   Config.registerInfo({
     defaultMode: {
@@ -25,82 +25,86 @@ define(function (require, exports, module) {
   var getPersistentRef = require('./mixin_docs_persist').getPersistentRef;
   var Tabs = require('../setup/setup_tab_host').DocsTab;
   var stashDoc = require('./mixin_docs_persist').stashDoc;
-  var restoreStash = require('./mixin_docs_persist').restoreStash;
+  var $checkInit = require('./mixin_docs_persist').$checkInit;
   var persist = require('./mixin_docs_persist').persist;
-  var fromJSON = require('./mixin_docs_persist').fromJSON;
+  var loadDocs = require('./mixin_docs_persist').loadDocs;
   var appEvents = require('../core/app_events').AppEvents;
+  var Notify = require('../ui/notify').Notify;
   var debug = console;
+
+  var tabRef = getPersistentRef('tabs');
+  var finishedLoad = false;
+  exports.initialize = function () {
+    Tabs.registerPopulator('m', Docs);
+    appEvents.on('changeTab', function (e) {
+      if (Docs.has(e.tab)) {
+        var doc = Docs.get(e.tab);
+        if (!doc.hasRef(tabRef)) {
+          openDoc(null, doc, null, {select: false, save: false});
+        }
+      }
+    });
+    loadDocs(Tabs.activeStore.get(), function afterLoad() {
+      finishedLoad = true;
+      Tabs.recreate();
+      if (Tabs.numTabs() < 1) {
+        openDoc('welcome', 'Welcome To Grace Editor', {
+          select: false, //In case the active tab later gets loaded
+          autoClose: true,
+        });
+        Tabs.updateActive();
+      }
+      appEvents.triggerForever('documentsLoaded'); //put here for convenience should be in persist
+    });
+    //Render any tabs that have been loaded.
+    //The active tab hint passed tries to ensure the
+    //active tab is loaded synchronously.
+    if (!finishedLoad && Docs.numDocs() > 0) Tabs.recreate();
+  };
+  appEvents.on('loadDoc', function (ev) {
+    if (Tabs.isSavedTab(ev.doc.id)) {
+      openDoc('', ev.doc, {select: false, isLoading: true, save: false});
+      if (finishedLoad) Tabs.recreate();
+    }
+  });
   appEvents.on('renameDoc', function (ev) {
     var id = ev.doc.id;
     Tabs.setName(id, Docs.getName(id));
   });
-  var finishedLoad = false;
 
-  appEvents.on('loadDoc', function (ev) {
-    if (Tabs.isSavedTab(ev.doc.id)) {
-      openDoc('', ev.doc, {select: false, noSave: true});
-      if (finishedLoad) Tabs.recreate();
+  appEvents.on('closeTab', function (ev) {
+    var doc = Docs.get(ev.tab);
+    if (!doc) return;
+    if (doc.dirty) {
+      ev.stopPropagation();
+      ev.await('close-without-saving-' + doc.saveRev, function (resume) {
+        Notify.ask(
+          Docs.getName(doc.id) + ' has unsaved changes. Close without saving?',
+          resume,
+        );
+      });
     }
   });
-  exports.initialize = function () {
-    Tabs.registerPopulator('m', Docs);
-    fromJSON(null, Tabs.active, function () {
-      if (Tabs.numTabs() < 1) {
-        openDoc('welcome', 'Welcome To Grace Editor', {
-          select: false,
-          autoClose: true,
-        });
-      }
-      appEvents.triggerForever('documentsLoaded');
-      Tabs.recreate();
-      finishedLoad = true;
-    });
-
-    //Render any tabs that have been loaded.
-    //The active tab hint passed tries to ensure the
-    //active tab is loaded synchronously.
-    if (Docs.numDocs() > 0) Tabs.recreate();
-  };
-  var tabRef = getPersistentRef('tabs');
   exports.closeSession = function (session) {
     var doc = Docs.forSession(session);
-    doc.closeSession(session);
+    if (doc) doc.closeSession(session);
   };
   exports.closeDoc = function (docId, keepUndos) {
     var doc = Docs.get(docId);
     if (!doc) return;
+    if (keepUndos === undefined)
+      keepUndos =
+        doc.hasRef(tabRef) &&
+        Config.forPath(doc.getSavePath(), 'documents', 'keepDocumentsOnClose');
+    if (keepUndos) stashDoc(docId);
     if (doc.hasRef(tabRef)) {
-      if (keepUndos === undefined)
-        keepUndos = Config.forPath(
-          doc.getSavePath(),
-          'documents',
-          'keepDocumentsOnClose'
-        );
-      if (keepUndos) {
-        stashDoc(docId);
-      }
       doc.unref(tabRef);
       try {
         appEvents.trigger('closeDoc', {doc: doc}, true);
       } catch (e) {
         debug.error(e);
       }
-      doc.session.getDocument().off('change', doc.onChange);
-      doc.session.off("changeMode'", doc.syncMode);
     }
-  };
-
-  //Tabs
-  exports.addTabAnnotation = function (id, anno) {
-    Tabs.addAnnotation(id, anno);
-  };
-  exports.removeTabAnnotation = function (id, anno) {
-    Tabs.removeAnnotation(id, anno);
-  };
-  exports.autoMode = function (path) {
-    var mode = Config.forPath(path, 'documents', 'defaultMode');
-    if (mode === 'auto') return modelist.getModeForPath(path || '').mode;
-    else if (mode.indexOf('/') < 0) return 'ace/mode/' + mode;
   };
   function openDoc(name, content /*:string|Doc*/, path /*:string?*/, opts) {
     var mode,
@@ -115,28 +119,24 @@ define(function (require, exports, module) {
       if (opts.mode) mode = opts.mode;
       autoClose = opts.autoClose;
       if (opts.hasOwnProperty('select')) select = opts.select;
-      save = !opts.noSave;
+      save = !opts.isLoading;
     }
     var doc;
-    //use cases in searchtab openDoc(,doc,path)
-    //main use openDoc(,doc,path,mode)
-    //filebrowser openDoc(n,c,p)
+    //main use openDoc(name,doc,path,opts)
+    //filebrowser openDoc(name,content,path)
     if (content && typeof content == 'object') {
       doc = content;
       content = undefined;
       path = doc.getSavePath();
       if (!doc.options.mode) {
         mode = exports.autoMode(path || name || '');
-        if (mode.name != 'text') doc.session.setMode(mode);
+        if (mode != 'ace/mode/text') doc.session.setMode(mode);
       }
     } else {
       if (!mode) mode = exports.autoMode(path || name || '');
       doc = new Doc(content, path, mode);
     }
-    if (!doc.session.$undoManager) {
-      //Can happen if document is still being loaded
-      doc.session.setUndoManager(new ace.UndoManager());
-    }
+
     if (opts && opts.fileServer) {
       doc.fileServer = opts.fileServer;
     }
@@ -156,21 +156,7 @@ define(function (require, exports, module) {
     }
     if (save) persist();
     if (!doc.hasRef(tabRef)) {
-      if (!Tabs.isSavedTab(doc.id)) if (path) restoreStash(path, doc);
-      doc.onChange = Doc.prototype.onChange.bind(doc);
-      doc.syncMode = Doc.prototype.syncMode.bind(doc);
-      doc.session.getDocument().on('change', doc.onChange);
-      doc.session.on('changeMode', doc.syncMode);
-      doc.session.once('destroy', function (e, session) {
-        session.off('changeMode', doc.syncMode);
-        if (doc.hasRef(tabRef)) {
-          Utils.assert(
-            doc.session !== session,
-            'Destroying session while doc is still open'
-          );
-          doc.session.on('changeMode', doc.syncMode);
-        }
-      });
+      $checkInit(doc);
       doc.ref(tabRef);
       //the doc must be already bound for this event to be handled correctly
       appEvents.trigger('openDoc', {doc: doc});
@@ -193,11 +179,9 @@ define(function (require, exports, module) {
       });
       grp.once('change', clear, doc.session);
       grp.once('changeSelection', clear, doc.session.selection);
-      grp.once('changeTab', clear);
+      grp.once('changeTab', clear); //This should depend on whether the tab is a new tab
       grp.on('closeDoc', function (e) {
-        if (e.doc == doc) {
-          clear();
-        }
+        if (e.doc == doc) clear();
       });
       //Used by filebrowser when opening multiple docs
       doc.$removeAutoClose = clear;
@@ -205,16 +189,29 @@ define(function (require, exports, module) {
     return doc.id;
   }
   exports.openDoc = openDoc;
+  exports.autoMode = function (path) {
+    var mode = Config.forPath(path, 'documents', 'defaultMode');
+    if (mode === 'auto') return modelist.getModeForPath(path || '').mode;
+    else if (mode.indexOf('/') < 0) return 'ace/mode/' + mode;
+    else return mode;
+  };
+
+  //Tabs
+  exports.addTabAnnotation = function (id, anno) {
+    Tabs.addAnnotation(id, anno);
+  };
+  exports.removeTabAnnotation = function (id, anno) {
+    Tabs.removeAnnotation(id, anno);
+  };
 
   //TabHolder interface
-  //Docs.getName
-
+  //Docs_base implements Docs.getName
   exports.getAnnotations = function (id) {
     return Tabs.getAnnotations(id);
   };
   exports.canDiscard = function (id) {
     //If not loaded in this session, we can safely discard
-    return !$isPending(id);
+    return finishedLoad && !$isPending(id);
   };
   exports.getInfo = function (id) {
     if (!Docs.has(id)) return null;

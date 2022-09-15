@@ -1,9 +1,6 @@
 define(function (require, exports, module) {
   'use strict';
-  //cyclic dependency
-  // var Editors = require('grace/editor/editors').Editors;
-  var Editor = ace.require('ace/editor').Editor;
-  var config = ace.require('ace/config');
+  var Editors = require('grace/editor/editors').Editors;
   function onAfterExec_Beautify(e) {
     var editor = e.editor;
     if (e.command.name === 'insertstring' && e.args === '}') {
@@ -38,14 +35,12 @@ define(function (require, exports, module) {
       }
     }
   }
-  // Editors.addOptions({
-  config.defineOptions(Editor.prototype, 'editor', {
-    autoBeautify: {
-      set: function (val) {
-        if (val) this.commands.on('afterExec', onAfterExec_Beautify);
-        else this.commands.off('afterExec', onAfterExec_Beautify);
-      },
-      value: false,
+
+  Editors.getSettingsEditor().addOption('autoBeautify', {
+    set: function (val) {
+      if (val) this.commands.on('afterExec', onAfterExec_Beautify);
+      else this.commands.off('afterExec', onAfterExec_Beautify);
     },
+    value: false,
   });
 });

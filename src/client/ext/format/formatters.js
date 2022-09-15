@@ -1,18 +1,15 @@
 define(function (require, exports, module) {
   var formatters = new (require('grace/core/registry').Registry)(
     'format',
-    'formatting'
+    'formatting',
   );
   require('grace/core/config').Config.registerInfo(
     {
       '!root': 'Configure how your code is formatted.',
-      defaultProvider: {
-        doc:
-          'Map language modes to their default formatters. Uses resource comtext.',
-        values: formatters.names,
-      },
+      defaultProvider:
+        'Map language modes to their default formatters. Uses resource context.',
     },
-    'formatting'
+    'formatting',
   );
 
   /**
@@ -52,9 +49,9 @@ define(function (require, exports, module) {
     if (data && data.editor) data.editor.autoIndent();
     cb(value);
   });
-  exports.getFormatter = function (mode) {
+  exports.getFormatter = function (mode, path) {
     //Check for configured formatter
-    var m = formatters.getForMode(mode);
+    var m = formatters.getForPath(path, mode);
     if (m) return m.format.bind(m);
   };
   exports.getFormatterByName = formatters.getByName;

@@ -1,5 +1,6 @@
 define(function (require, exports, module) {
-    /*globals $*/
+    'use strict';
+    /* globals $ */
     var DocsTab = require('grace/setup/setup_tab_host').DocsTab;
     var FileUtils = require('grace/core/file_utils').FileUtils;
     var appEvents = require('grace/core/app_events').AppEvents;
@@ -9,35 +10,117 @@ define(function (require, exports, module) {
     var FocusManager = require('grace/ui/focus_manager').FocusManager;
     var Editors = require('grace/editor/editors').Editors;
     var getTabWindow = require('grace/ext/ui/tab_window').getTabWindow;
-    var MainMenu = require('grace/setup/setup_main_menu').MainMenu;
+    var Actions = require('grace/core/actions').Actions;
     var getActiveDoc = require('grace/setup/setup_editors').getActiveDoc;
-    var focusEditor = require('grace/editor/host_editor').focusEditor;
+    var setActiveEditor = require('grace/editor/host_editor').setActiveEditor;
     var Splits = require('grace/ui/split_manager').SplitManager;
-    var DBStorage = require('grace/ext/storage/databasestorage').DBStorage;
+    var DBStorage = require('grace/ext/storage/db_storage').DBStorage;
     require('grace/ext/fileview/setup_fileview');
 
     var diffRef = Docs.getPersistentRef('diffs');
+    //Pane/Document handling
+    /**
+     * @type {(e:any)=> e is Doc} isDoc
+     */
+    function isDoc(e) {
+        return typeof e.getSavePath === 'function';
+    }
+    /**
+     * Release references to a document so it can be garbaged.
+     * @param {string} id
+     * @param {string} tabId
+     */
+    function releaseDoc(id, tabId) {
+        var a = registry[id];
+        if (!a) return;
+        Utils.removeFrom(a, tabId);
+        if (/**@type string[] */ (registry[id]).length == 0) {
+            registry[id] = undefined;
+            Docs.get(id).unref(diffRef);
+        }
+    }
+    /**
+     * Acquire reference to a doc so it is not garbaged.
+     * @param {string} id
+     * @param {string} tabId
+     */
+    function keepDoc(id, tabId) {
+        var a = registry[id];
+        if (!a) a = registry[id] = [];
+        else Utils.removeFrom(a, tabId);
+        /**@type string[] */ (registry[id]).push(tabId);
+        if (Storage.hasItem(tabId) && Docs.has(id)) {
+            Docs.get(id).ref(diffRef);
+        }
+    }
+    /**
+     * @typedef {"ours"|"theirs"|"origin"} Side
+     * @typedef {{[side in Side]?:string|Doc} & {[id:string]:Object}} Panes
+     */
+    /**
+     * Destroy a diffView's data.
+     * @param {Panes} panes
+     * @param {string} tabId
+     */
+    function destroyTab(panes, tabId) {
+        ['theirs', 'origin', 'ours'].forEach(function (i) {
+            if (!panes[i]) return;
+            if (isDoc(panes[i])) {
+                Docs.closeSession(panes[panes[i].id]);
+                panes[panes[i].id] = undefined;
+                releaseDoc(panes[i].id, tabId);
+            } else if (typeof panes[i] === 'object') {
+                panes[i].destroy();
+            }
+        });
+    }
+    /**
+     * Get the ids that are referenced by a diff view.
+     * @param {Panes} panes
+     */
+    function getDocIds(panes) {
+        return ['theirs', 'origin', 'ours']
+            .map(function (e) {
+                return (
+                    panes[e] &&
+                    isDoc(panes[e]) &&
+                    Docs.has(panes[e].id) &&
+                    panes[e].id
+                );
+            })
+            .filter(Boolean);
+    }
+    /**
+     * Get a session or string for the pane.
+     * @param {Panes} panes
+     * @param {Side} side
+     */
+    function getView(panes, side) {
+        var pane = panes[side];
+        if (isDoc(pane)) {
+            return panes[pane.id] || (panes[pane.id] = pane.cloneSession(true));
+        }
+        return pane;
+    }
 
-    function doDiffInline(tabId, data, filename, doc, newWindow) {
-        doc.ref(diffRef);
-        require(['css!./libs/diff', './libs/ace-inline-diff'], function (
-            css,
-            AceInlineDiff
+    /**
+     * @param {string} tabId
+     * @param {Panes} panes
+     * @param {boolean} asNewWindow
+     */
+    function doDiffInline(tabId, panes, asNewWindow) {
+        require(['./libs/ace-inline-diff', 'css!./libs/ace-diff'], function (
+            AceInlineDiff,
         ) {
             function close() {
-                Storage.removeItem(tabId);
-                differ.destroy();
+                if (Storage.hasItem(tabId)) Storage.removeItem(tabId);
+                diffView.destroy();
                 Editors.closeEditor(editor);
-                Docs.closeSession(session);
-                doc.unref(diffRef);
-                if (typeof data != 'string') {
-                    data.destroy();
-                }
+                destroyTab(panes, tabId);
             }
-            if (Array.isArray(data)) data = data[0];
-            if (data.session) data = data.session;
-            //editor.createeditor creates inside a container
+            //Editors.createeditor creates inside a container
             var editor = Editors.createEditor(new DocumentFragment(), true);
+            editor.isDiffEditor = true;
             editor.container.remove();
             var view = {
                 element: editor.container,
@@ -46,59 +129,62 @@ define(function (require, exports, module) {
                     //allow splits and shit
                     editor.viewPager = host.viewPager;
                     editor.hostEditor = host;
-                    focusEditor(editor);
-                    differ.startUpdate();
-                    differ.resize();
+                    setActiveEditor(editor);
+                    FocusManager.focusIfKeyboard(editor.textInput.getElement());
+                    diffView.startUpdate();
+                    diffView.resize();
                 },
                 onExit: function () {
                     editor.viewPager = null;
                     editor.renderer.freeze();
-                    differ.stopUpdate();
+                    diffView.stopUpdate();
                 },
             };
 
-            getTabWindow(
-                tabId,
-                filename,
-                null,
-                close,
-                newWindow ? doc.id || undefined : undefined,
-                view
+            getTabWindow(tabId, null, null, close, asNewWindow, view);
+            var diffView = AceInlineDiff.diff(
+                editor,
+                getView(panes, 'origin'),
+                getView(panes, 'ours'),
+                {
+                    editable: true, //!doc.isReadOnly(),
+                    showInlineDiffs: true,
+                    onClick:
+                        typeof getView(panes, 'origin') === 'string'
+                            ? 'copy'
+                            : 'swap',
+                },
             );
-            var session = doc.cloneSession();
-            editor.setSession(session);
-            editor.isDiffEditor = true;
-            var differ = AceInlineDiff.diff(editor, data, {
-                editable: true, //!doc.isReadOnly(),
-                showInlineDiffs: true,
-                onClick: data.getValue ? 'swap' : 'copy',
-            });
             editor.execCommand('foldToLevel1');
-            differ.goNextDiff(editor);
-            if (newWindow) view.setActive();
-            else view.onExit();
+            diffView.goNextDiff(editor);
+            if (asNewWindow) {
+                view.setActive();
+            } else {
+                view.onExit();
+                DocsTab.updateActive();
+            }
         });
     }
 
-    function doDiff2(tabId, data, filename, doc, newWindow) {
-        doc.ref(diffRef);
-        require(['css!./libs/diff', './libs/ace-diff3'], function (css, AceDiff) {
-            function close() {
-                Storage.removeItem(tabId);
-                differ.destroy();
-                editors.forEach(Editors.closeEditor);
-                Docs.closeSession(session); //just in case
-                doc.unref(diffRef);
-            }
-            var isThree = false;
-            if (!Array.isArray(data)) {
-                data = [data];
-            } else isThree = data.length == 2;
-            data = data.map(function (value) {
-                //if given a editor or a doc
-                return value.session || value;
-            });
+    /**
+     * @param {string} tabId
+     * @param {Panes} panes
+     * @param {boolean} asNewWindow
+     */
+    function doDiff2(tabId, panes, asNewWindow) {
+        require(['css!./libs/ace-diff', './libs/ace-diff'], function (
+            css,
+            AceDiff,
+        ) {
+            /**@type {Array<Editor>}*/
             var editors = [];
+            function close() {
+                if (Storage.hasItem(tabId)) Storage.removeItem(tabId);
+                diffView.destroy();
+                editors.forEach(Editors.closeEditor);
+                destroyTab(panes, tabId);
+            }
+
             var view = {
                 element: document.createElement('div'),
                 onEnter: function (host) {
@@ -106,249 +192,297 @@ define(function (require, exports, module) {
                         e.renderer.unfreeze();
                         e.hostEditor = host;
                     });
-                    var active = differ.editors[differ.activePane].ace;
-                    focusEditor(active);
+                    var active = diffView.getEditors()[diffView.activePane];
+                    setActiveEditor(active);
                     FocusManager.focusIfKeyboard(active.textInput.getElement());
-                    //differ.startUpdate();
-                    //differ.resize();
+                    //diffView.startUpdate();
+                    //diffView.resize();
                 },
                 onExit: function () {
                     editors.forEach(function (e) {
                         e.renderer.freeze();
                         e.hostEditor = null;
                     });
-                    //differ.stopUpdate();
+                    //diffView.stopUpdate();
                 },
             };
-            getTabWindow(
-                tabId,
-                filename,
-                null,
-                close,
-                newWindow ? doc.id || undefined : undefined,
-                view
-            );
+            getTabWindow(tabId, null, null, close, asNewWindow, view);
             view.element.className = 'tab-window';
-            //theirs|origin
-            editors[0] = Editors.createEditor(view.element, true);
-            //origin|ours
-            editors[1] = Editors.createEditor(
-                Splits.add($(editors[0].container), 'horizontal'),
-                true
-            );
-            if (isThree) {
-                //ours
-                editors[2] = Editors.createEditor(
-                    Splits.add($(editors[1].container), 'horizontal'),
-                    true
+            /** @type Array<Side> tabs */
+            var tabs = ['origin', 'ours'];
+            if (panes.theirs) tabs.unshift('theirs');
+
+            tabs.forEach(function (e, i) {
+                var editor = Editors.createEditor(
+                    i == 0
+                        ? view.element
+                        : Splits.add($(editors[i - 1].container), 'horizontal'),
                 );
-            }
-            var session = doc.cloneSession();
-            editors[isThree ? 2 : 1].setSession(session);
-            data.forEach(function (value, i) {
+                editor.isDiffEditor = true;
+                var value = getView(panes, e);
                 if (value.getValue) {
-                    editors[i].setSession(value);
+                    editor.setSession(value);
                 } else {
-                    editors[i].setValue(value || '');
-                    editors[i].setReadOnly(true);
+                    editor.setValue(value);
+                    editor.setReadOnly(true);
                 }
+                editors[i] = editor;
             });
-            editors.forEach(function(e){
-               e.isDiffEditor = true; 
-            });
-            var differ = new AceDiff({
+            var diffView = new AceDiff({
                 left: {
                     editor: editors[0],
                 },
                 right: {
-                    editor: editors[isThree ? 2 : 1],
-                    editable: true,
+                    editor: editors[2] || editors[1],
                 },
-                center: isThree && {
+                center: editors[2] && {
                     editor: editors[1],
                 },
                 showConnectors: false,
                 showCopyArrows: false,
                 showInlineDiffs: true,
             });
-            if (newWindow) view.setActive();
-            else view.onExit();
+            if (asNewWindow) {
+                view.setActive();
+            } else {
+                view.onExit();
+                DocsTab.updateActive();
+            }
         });
     }
+    /**
+     * @typedef DiffItem
+     * @property {string} type
+     * @property {string} caption
+     * @property {any} data
+     * @property {string[]} ids
+     * @property {boolean} useInlineDiff
+     */
+    /**
+     * Get the name of a diff view from the item
+     * @param {DiffItem} item
+     * @returns {string}
+     */
+    function getItemName(item) {
+        /** @type {Doc}*/
+        var doc = Docs.get(item.ids[item.ids.length - 1]);
+        var path;
 
-    var DIFF_FACTORY = 'diffs-';
-
-    function safeGetName(doc) {
-        return doc.getSavePath()
-            ? FileUtils.filename(doc.getSavePath())
-            : doc.id;
+        return doc
+            ? (path = doc.getSavePath())
+                ? FileUtils.filename(path)
+                : doc.id
+            : item.caption;
     }
-    function createDiffView(type, doc, data, inline) {
+    /**
+     * @param {string} type
+     * @param {any} data
+     * @param {boolean} useInlineDiff
+     */
+    function createDiffView(type, data, useInlineDiff) {
+        var tabId = Utils.genID('d');
         FileUtils.postChannel(
-            DIFF_FACTORY + type,
-            doc,
+            'diffs-' + type,
             data,
-            function (views, caption, data) {
-                var tabId = Utils.genID('d');
-                if (doc) {
-                    Storage.createItem(tabId, {
-                        type: type,
-                        caption: caption,
-                        data: data,
-                        docId: doc.id,
-                        inline: inline,
-                    });
-                }
-                (inline ? doDiffInline : doDiff2)(
-                    tabId,
-                    views,
-                    safeGetName(doc),
-                    doc,
-                    true
-                );
-            }
+            function (panes, caption, data) {
+                if (!panes) return;
+                Utils.assert(data, 'Failed to provide persistence data.');
+                Storage.createItem(tabId, {
+                    type: type,
+                    caption: caption,
+                    data: data,
+                    ids: getDocIds(panes),
+                    useInlineDiff: useInlineDiff,
+                });
+
+                getDocIds(panes).forEach(function (e) {
+                    keepDoc(e, tabId);
+                });
+                (useInlineDiff ? doDiffInline : doDiff2)(tabId, panes, true);
+            },
         );
+        return tabId;
     }
-    function loadDiffView(tabId, info) {
-        var doc = Docs.get(info.docId);
-        doc.ref(diffRef); //do this early before the document is destroyed
+    /**
+     * @param {string} tabId
+     * @param {DiffItem} item
+     */
+    function loadDiffView(tabId, item) {
         FileUtils.postChannel(
-            DIFF_FACTORY + info.type,
-            doc,
-            info.data,
+            'diffs-' + item.type,
+            item.data,
             function (res, caption, data) {
+                var removed = !res
+                    ? item.ids
+                    : item.ids.filter(Utils.notIn(getDocIds(res)));
+                removed.forEach(function (e) {
+                    releaseDoc(e, tabId);
+                });
                 if (res === null) {
-                    doc.unref(diffRef);
                     return Storage.removeItem(tabId);
                 }
-                if (caption != info.caption || data != info.data) {
-                    info.caption = caption;
-                    info.data = data;
-                    Storage.setItem(tabId, info, true);
+                if (caption != item.caption || data != item.data) {
+                    if (!data) throw new Error('Failed to provide data!!!');
+                    item.caption = caption;
+                    item.data = data;
+                    Storage.setItem(tabId, item);
                 }
-                (info.inline ? doDiffInline : doDiff2)(
+                (item.useInlineDiff ? doDiffInline : doDiff2)(
                     tabId,
                     res,
-                    safeGetName(doc),
-                    doc,
-                    false
+                    false,
                 );
-            }
+            },
         );
     }
-    function onMenuClick(handlerID, isInline) {
+    /**
+     * @typedef {(data:any,cb:(res:Panes|null,caption?:string,data?:any)=>void)=>void}  DiffFactory
+     * @param {string} name
+     * @param {DiffFactory} onLoadDiff
+     */
+    function registerDiffFactory(name, onLoadDiff) {
+        FileUtils.ownChannel('diffs-' + name, onLoadDiff);
+    }
+
+    var onMenuClick = function () {
         var doc = getActiveDoc();
         if (!doc) return;
-        createDiffView(handlerID, doc, null, isInline);
-    }
-    function addToDiffMenu(id, caption, getRes, update) {
-        var data = {
-            '!update': update && [].concat(update),
-        };
-        data[id + '-diffInline'] = {
-            caption: 'Inline diff from ' + caption,
-            onclick: onMenuClick.bind(null, id, true),
-            sortIndex: 150,
-        };
-        data[id + '-diff2'] = {
-            caption: '2-way diff from ' + caption,
-            onclick: onMenuClick.bind(null, id, !true),
-        };
+        createDiffView(this.type, doc, this.useInlineDiff);
+    };
+
+    Actions.addAction({
+        icon: 'swap_horiz',
+        caption: 'Diff',
+        subTree: {},
+    });
+    /**
+     * @param {string} id
+     * @param {string} caption
+     * @param {DiffFactory} getRes
+     * @param {()=>boolean} [isAvailable]
+     */
+    function addToDiffMenu(id, caption, getRes, isAvailable) {
         registerDiffFactory(id, getRes);
-        MainMenu.extendOption('diff', {
-            icon: 'swap_horiz',
-            caption: 'Diff',
-            subTree: data,
-        });
-    }
-    function registerDiffFactory(name, onLoadDiff) {
-        FileUtils.ownChannel(DIFF_FACTORY + name, onLoadDiff);
+        Actions.addActions(
+            [
+                {
+                    name: 'inlineDiff-' + id,
+                    type: id,
+                    caption: 'Inline diff from ' + caption,
+                    handle: onMenuClick,
+                    useInlineDiff: true,
+                    sortIndex: 1000,
+                },
+                {
+                    name: 'diff-' + id,
+                    type: id,
+                    caption: '2-way diff from ' + caption,
+                    handle: onMenuClick,
+                },
+            ],
+            {
+                '!update':
+                    isAvailable &&
+                    function (self, update) {
+                        update(this.name, isAvailable() ? this : null);
+                    },
+                showIn: 'actionbar.diff',
+            },
+        );
     }
 
     //Diff from oldest state
-    addToDiffMenu('oldest', 'oldest state', function (doc, data, cb) {
+    addToDiffMenu('oldest', 'oldest state', function (data, cb) {
+        var doc = typeof data == 'string' ? Docs.get(data) : data;
+        if (!doc) return cb(null);
         var newDoc = doc.fork(true);
         newDoc.abortChanges();
-        cb(newDoc, 'OLDEST', null);
+        cb({origin: newDoc, ours: doc}, 'OLDEST', doc.id);
     });
 
     //Diff from last save
     addToDiffMenu(
-        '!disk',
+        'disk',
         'last save',
-        function (doc, data, cb) {
+        function (data, cb) {
+            var doc = typeof data == 'string' ? Docs.get(data) : data;
+            if (!doc) return cb(null);
             var server = doc.getFileServer();
             var encoding = doc.getEncoding();
             server.readFile(doc.getSavePath(), encoding, function (err, res) {
                 if (err) return cb(null);
-                cb(res, 'DISK', null);
+                cb({origin: res, ours: doc}, 'DISK', doc.id);
             });
         },
-        [
-            function (self, update) {
-                var doc = getActiveDoc();
-                return update(
-                    'disk-diffInline',
-                    !doc || doc.isTemp() ? null : self['!disk-diffInline']
-                );
-            },
-            function (self, update) {
-                var doc = getActiveDoc();
-                return update(
-                    'disk-diff2',
-                    !doc || doc.isTemp() ? null : self['!disk-diff2']
-                );
-            },
-        ]
+        function () {
+            return getActiveDoc() && !getActiveDoc().isTemp();
+        },
     );
 
     //Diff from another file
-    addToDiffMenu('file', 'other file', function (doc, data, cb) {
-        var saved;
-        if (!data) {
+    addToDiffMenu('file', 'other file', function (data, cb) {
+        var frozenEvent;
+        var doc = data.getValue ? data : Docs.get(data.doc);
+        if (!doc) return cb(null);
+        if (data !== doc) frozenEvent = data;
+        if (!frozenEvent) {
             Fileviews.pickFile('Select File', function (ev) {
                 ev.preventDefault();
                 ev.stopPropagation();
-                saved = ev;
+                frozenEvent = Fileviews.freezeEvent(ev);
+                frozenEvent.doc = doc.id;
                 FileUtils.getDocFromEvent(ev, load, true, true);
             });
         } else {
-            saved = Fileviews.unfreezeEvent(data);
-            FileUtils.getDocFromEvent(saved, load, true, true);
+            var ev = Fileviews.unfreezeEvent(frozenEvent);
+            FileUtils.getDocFromEvent(ev, load, true, true);
         }
 
-        function load(res, err) {
+        function load(err, res) {
             if (err) {
-                cb(null);
-                return console.error(err);
+                console.error(err);
+                return cb(null);
             }
-            cb(res, 'DISK', data || Fileviews.freezeEvent(saved));
+            cb({origin: res, ours: doc}, 'DISK', frozenEvent);
         }
     });
+    /**
+     * @type {{
+         getItem: (id:string)=>DiffItem,
+         createItem: (id:string,item:DiffItem)=>void,
+         setItem: (id:string,item:DiffItem)=>void
+         hasItem: (id:string)=>boolean,
+         removeItem: (id:string)=>void,
+         load: any
+     }} Storage
+     */
     var Storage = new DBStorage('diff');
 
-    var pending = {};
+    /** @type {Record<string,string[]|undefined>} registry*/
+    var registry = Object.create(null);
     DocsTab.registerPopulator('d', {
         getName: function (id) {
-            //should not be called since
-            //we provide name in getTabWindow
-            var data = Storage.getItem(id);
-            return data && Docs.getName(data.docId);
+            var item = Storage.getItem(id);
+            return item && getItemName(item);
         },
         canDiscard: function (id) {
-            return !pending[id];
+            for (var i in registry) {
+                var waiting = registry[i];
+                if (waiting && waiting.indexOf(id) > -1) return false;
+            }
+            return true;
         },
         getInfo: function (id) {
-            var data = Storage.getItem(id);
+            var item = Storage.getItem(id);
             return (
                 "<span class='red-text'>" +
-                (data.caption.length < 15
-                    ? data.caption
+                (item.caption.length < 15
+                    ? item.caption
                     : '...' +
-                      data.caption.substring(data.caption.length - 15)) +
+                      item.caption.substring(item.caption.length - 15)) +
                 '</span>' +
                 "<span class='right green-text'>" +
-                Docs.getName(data.docId) +
+                getItemName(item) +
                 '</span>'
             );
         },
@@ -356,25 +490,48 @@ define(function (require, exports, module) {
     });
 
     Storage.load(
-        function onLoadItem(tabId, info) {
-            if (Docs.has(info.docId)) {
-                loadDiffView(tabId, info);
-            } else if (Docs.canDiscard(info.docId)) {
-                Storage.removeItem(tabId);
-            } else pending[info.docId] = tabId;
+        function onLoadItem(tabId, item) {
+            var discard = item.ids.some(function (e) {
+                if (!Docs.has(e) && Docs.canDiscard(e)) return true;
+            });
+            if (discard) return Storage.removeItem(tabId);
+            var waiting = item.ids.filter(function (id) {
+                keepDoc(id, tabId);
+                return !Docs.has(id);
+            });
+            if (waiting.length < 1) loadDiffView(tabId, item);
         },
-        null, //on lost item - Docs cleanup after themselves
-        null, //on no item
-        DocsTab.recreate.bind(DocsTab)
+        null, //on lost item - Docs cleanup after themselves without refs
+        null, //on no item, nothing to do.
+        DocsTab.recreate.bind(DocsTab),
     );
     appEvents.on('loadDoc', function (e) {
-        if (pending[e.doc.id]) {
-            var data = Storage.getItem(pending[e.doc.id]);
-            pending[e.doc.id] = false;
-            loadDiffView(pending[e.doc.id], data);
-        }
+        var waiting = registry[e.doc.id];
+        if (!waiting) return;
+        e.doc.ref(diffRef);
+        waiting.forEach(function (tabId) {
+            var item = Storage.getItem(tabId);
+            if (item.ids.filter(Docs.has).length === item.ids.length)
+                loadDiffView(tabId, item);
+        });
     });
-
+    appEvents.on('documentsLoaded', function () {
+        var r = false;
+        for (var i in registry) {
+            var waitingTabs = registry[i];
+            if (waitingTabs && !Docs.has(i) && Docs.canDiscard(i)) {
+                registry[i] = undefined;
+                waitingTabs.forEach(function (tabId) {
+                    if (Storage.hasItem(tabId)) {
+                        console.log('Discarding tab ' + tabId);
+                        Storage.removeItem(tabId);
+                    }
+                });
+                r = true;
+            }
+        }
+        if (r) DocsTab.recreate();
+    });
     exports.registerDiffFactory = registerDiffFactory;
     exports.addToDiffMenu = addToDiffMenu;
     exports.createDiffView = createDiffView;

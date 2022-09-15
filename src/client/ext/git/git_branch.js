@@ -1,13 +1,13 @@
 //Git Commands Branching
 define(function (require, exports, module) {
-    var GitCommands = require('./git_commands').GitCommands;
-    var createProgress = GitCommands.createProgress;
-    var padStart = GitCommands.padStart;
-    var success = GitCommands.success;
-    var failure = GitCommands.failure;
+    var GitUtils = require('./git_utils').GitUtils;
+    var createProgress = GitUtils.createProgress;
+    var padStart = GitUtils.padStart;
+    var success = GitUtils.success;
+    var failure = GitUtils.failure;
     var gitConfig = require('grace/core/config').Config.registerAll({}, 'git');
     var checkBox = require('grace/ui/ui_utils').styleCheckbox;
-    var testPlain = GitCommands.testPlain;
+    var testPlain = GitUtils.testPlain;
     var configure = require('grace/core/config').Config.configure;
     var Notify = require('grace/ui/notify').Notify;
 
@@ -42,18 +42,18 @@ define(function (require, exports, module) {
             }, failure)
             .finally(progress.dismiss);
     }
-    GitCommands.switchBranch = function (ev, prov) {
+    exports.switchBranch = function (ev, prov) {
         pickBranch(prov, function (item, isCurrent) {
             if (isCurrent) {
                 return;
             }
             gotoRef(prov, item, false, function () {
-                ev.browser.reload();
+                ev.fileview.reload();
             });
             return true;
         });
     };
-    GitCommands.switchBranchNoCheckout = function (ev, prov) {
+    exports.switchBranchNoCheckout = function (ev, prov) {
         pickBranch(prov, function (item, isCurrent) {
             if (isCurrent) {
                 return;
@@ -63,7 +63,7 @@ define(function (require, exports, module) {
         });
     };
 
-    GitCommands.deleteBranch = function (ev, prov) {
+    exports.deleteBranch = function (ev, prov) {
         pickBranch(prov, function (item, isCurrent) {
             if (isCurrent) {
                 return;
@@ -91,7 +91,7 @@ define(function (require, exports, module) {
             return true;
         });
     };
-    GitCommands.createBranch = function (ev, prov) {
+    exports.createBranch = function (ev, prov) {
         Notify.modal({
             header: 'Create Branch',
             large: true,

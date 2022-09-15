@@ -1,8 +1,8 @@
 define(function (require, exports, module) {
     var FileUtils = require('grace/core/file_utils').FileUtils;
+    var Actions = require('grace/core/actions').Actions;
     var FocusManager = require('grace/ui/focus_manager').FocusManager;
     var Utils = require('grace/core/utils').Utils;
-    var appEvents = require('grace/core/app_events').AppEvents;
     var Editors = require('grace/editor/editors').Editors;
     var Mods = require('grace/ext/editor/mods').Mods;
     var MultiClipboard = require('./multi_clipboard').MultiClipboard;
@@ -151,16 +151,16 @@ define(function (require, exports, module) {
         }
     }
 
-    function initEditor(e) {
+    Editors.onEach(function initEditor(editor) {
         //hack to get native clipboard content
-        e.editor.commands.on('exec', function (e) {
+        editor.commands.on('exec', function (e) {
             if (e.command.name == 'cut' || e.command.name == 'copy') {
                 clipboard.set(e.editor.getCopyText(), true);
             } else if (e.command.name == 'paste') {
                 clipboard.set(e.args.text, true);
             }
         });
-        e.editor.on('menuClick', function (e, editor) {
+        editor.on('menuClick', function (e, editor) {
             switch (e.action) {
                 case 'copy':
                 case 'cut':
@@ -177,13 +177,7 @@ define(function (require, exports, module) {
             }
             e.preventDefault();
         });
-    }
-    Editors.forEach(function (editor) {
-        initEditor({
-            editor: editor,
-        });
     });
-    appEvents.on('createEditor', initEditor);
     var MAX_CLIP_SIZE = Utils.parseSize('950kb');
 
     function trimClip(clip) {
@@ -213,9 +207,9 @@ define(function (require, exports, module) {
     }, 40);
 
     var clipboardList;
-    Editors.addCommands([
+    Actions.addActions([
         {
-            name: 'openClipboard',
+            name: 'softClipboardOpen',
             bindKey: {
                 win: 'Ctrl-Shift-V',
                 mac: 'Command-Shift-V',
@@ -252,7 +246,7 @@ define(function (require, exports, module) {
             ),
         },
         {
-            name: 'pushIntoClipboard',
+            name: 'softClipboardCopy',
             bindKey: {
                 win: 'Ctrl-Alt-C',
                 mac: 'Command-Alt-C',
@@ -265,24 +259,37 @@ define(function (require, exports, module) {
             },
         },
         {
-            name: 'pasteFromClipboard',
+            name: 'softClipboardCut',
+            bindKey: {
+                win: 'Ctrl-Alt-X',
+                mac: 'Command-Alt-X'
+            },
+            exec: function(editor){
+                editor.execCommand('softClipboardCopy');
+                editor.execCommand('cut');
+            }
+        },
+        {
+            name: 'softClipboardPaste',
             bindKey: {
                 win: 'Ctrl-Alt-V',
                 mac: 'Command-Alt-V',
             },
             exec: function (editor, args) {
                 var ranges = editor.selection.getAllRanges();
+                //Cut empty text only if one range has a something selected.
                 var allowEmpty = !ranges.some(function (e) {
                     return !e.isEmpty();
                 });
                 var pos = ranges.length - 1;
                 editor.forEachSelection(function () {
                     var text = clipboard._clip[pos] || clipboard._clip[0] || '';
-                    if (args && args.swap) {
+                    if (args && args.remove) {
                         clipboard.delete(pos);
-                        var newText = editor.getSelectedText();
-                        if (newText || allowEmpty)
-                            clipboard._clip.splice(pos, 0, newText || '');
+                        if(args.replace){
+                            var newText = editor.getSelectedText();
+                            if (newText || allowEmpty) clipboard._clip.splice(pos, 0, newText || '');
+                        } else pos++;
                     }
                     pos--;
                     editor.insert(text, true);
@@ -291,29 +298,27 @@ define(function (require, exports, module) {
             },
         },
         {
-            name: 'swapIntoClipboard',
+            name: 'softClipboardPop',
             bindKey: {
-                win: 'Ctrl-Alt-X',
-                mac: 'Command-Alt-X',
+                win: 'Ctrl-Alt-Y',
+                mac: 'Command-Alt-Y',
             },
             exec: function (editor) {
-                editor.execCommand('pasteFromClipboard', {
-                    swap: true,
-                });
+                clipboard.delete(0);
+                clipboard.set(clipboard._clip[0]);
             },
         },
     ]);
-    var copyFilePath = {
-        caption: 'Copy File Path',
-        onclick: function (ev) {
+    Actions.addAction({
+        caption: 'Copy file path',
+        showIn: ['editor', 'fileview.file', 'fileview.folder'],
+        handle: function (ev) {
             ev.preventDefault();
-            var marked = ev.marked
-                ? ev.marked.map(ev.browser.childFilePath, ev.browser)
-                : null;
-            if (!marked && !ev.filepath) return;
-            if (ev.browser.getParent) {
+            var marked = ev.marked;
+            if (!ev.marked && !ev.filepath) return;
+            if (ev.fileview && ev.fileview.getParent) {
                 var root = false;
-                var a = ev.browser.getParent();
+                var a = ev.fileview.getParent();
                 while (a && a.rootDir) {
                     root = a.rootDir;
                     a = a.getParent();
@@ -331,11 +336,7 @@ define(function (require, exports, module) {
                 ? marked.join(',')
                 : ev.filepath || ev.rootDir);
         },
-    };
-    FileUtils.registerOption(
-        ['file', 'folder'],
-        'copy-file-path',
-        copyFilePath
-    );
+    });
+
     savedClip = null;
 }); /*_EndDefine*/

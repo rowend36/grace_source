@@ -8,28 +8,27 @@ define(function (require, exports, module) {
    * code without loading it, e.g setting fileview options.
    */
   var EventsEmitter = require('./events_emitter').EventsEmitter;
+  /** @type {EventsEmitter & Any} */
   var channels = new EventsEmitter();
   //Don't warn for unknown channels
   channels.frozenEvents = false;
   channels.handlers = {};
-
   exports.Channels = {
     ownChannel: function (channel, owner) {
       if (channels.handlers[channel]) {
         throw 'Channel ' + channel + ' already has owner';
       }
       channels.handlers[channel] = owner;
-      channels.triggerForever(channel + '-loaded');
+      channels.triggerForever(channel);
     },
     channelHasPending: function (id) {
       return (
-        channels._eventRegistry[id + '-loaded'] &&
-        channels._eventRegistry[id + '-loaded'] !== true
+        channels._eventRegistry[id] &&
+        channels._eventRegistry[id] !== true
       );
     },
-
     postChannel: function (channel, arg1, arg2, arg3, arg4) {
-      channels.once(channel + '-loaded', function () {
+      channels.once(channel, function () {
         var handler = channels.handlers[channel];
         handler.call(null, arg1, arg2, arg3, arg4);
       });

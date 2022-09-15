@@ -4,7 +4,16 @@ define(function (require, exports, module) {
     var Utils = require('grace/core/utils').Utils;
     var FileUtils = require('grace/core/file_utils').FileUtils;
     var appEvents = require('grace/core/app_events').AppEvents;
-    var completions = ace.require('ace/ext/completions');
+    var configEvents = require('grace/core/config').Config;
+    var BaseClientProps = require('./base_client').BaseClient.prototype;
+    var StopSignal = require('grace/ext/stop_signal').StopSignal;
+    var appConfig = require('grace/core/config').Config.registerAll(
+        {
+            functionHintTrigger: '(),',
+        },
+        'intellisense',
+    );
+
     var loadConfig = require('grace/core/config').Config.registerAll(
         {
             maxFileLoadSize: '5mb',
@@ -13,9 +22,55 @@ define(function (require, exports, module) {
             preloadConfigs: [],
             neverAllowLoad: ['**/node_modules/**/*{[!d],[!.]d}.[tj]s'],
         },
-        'autocompletion'
+        'intellisense',
     );
-    require('grace/core/config').Config.on('autocompletion', function (e) {
+    require('grace/core/config').Config.registerInfo(
+        {
+            '!root': 'Setup intellisense services.',
+            maxSingleFileSize: {
+                type: 'size',
+                doc:
+                    'Prevent editor from hanging by stopping it from loading large files',
+            },
+            preloadConfigs: {
+                doc:
+                    "Configure how files should be preloaded into the editor for intellisense. Preloading improves completions and when used with restricting options like neverAllowLoad, enableTagGathering,etc gives you better control over memory usage. Format:\n\
+{\n\
+    extensions: Array<String> - the file extensions to load eg ['js','ts'],\n\
+    completer: ?Array<String> - the name of the completer. Must be one or more of 'ternClient','tsClient'(ie typescript), 'tagsClient' or any registered language service provider name. Defaults to all.\n\
+    rootDir: ?String - the filepath to resolve relative paths from. Defaults to current project directory.\n\
+    loadEagerly: Array<String> - the list of files to load. Filepaths can contain wildcards. Note: The files are loaded in directory order.\n\
+    exclude: ?Array<String> - Files to exclude ie files that should be ignored in loadEagerly list \n\
+}\n\
+Note: When multiple configs are specified, they are loaded in the order they are specified..  Users can interactively generate a config file using the Project menu option>Generate loader",
+                type: [
+                    {
+                        extensions: 'array<filename>',
+                        completer: '?array<[ternClient,tsClient,tagsClient]>',
+                        rootDir: '?string',
+                        loadEagerly: 'array<string>',
+                        exclude: '?array<string>',
+                    },
+                ],
+            },
+            functionHintTrigger: {
+                type: 'string|null',
+                doc:
+                    'Characters that should trigger function hint tooltip. Specifying null means all characters.',
+            },
+            maxFileLoadSize: {
+                type: 'size',
+                doc: 'The maximum total size of files to load into memory',
+            },
+            preloadTimeout: {
+                type: 'time',
+                doc:
+                    'On startup, the maximum amount of time to spend load files into memory. Prevents background loading from disrupting editor user interface.',
+            },
+        },
+        'intellisense',
+    );
+    require('grace/core/config').Config.on('intellisense', function (e) {
         switch (e.config) {
             case 'maxFileLoadSize':
                 fileLoader.opts.maxSize =
@@ -29,7 +84,7 @@ define(function (require, exports, module) {
                 break;
             case 'maxFileLoadSize':
                 fileLoader.opts.maxSize = Utils.parseSize(
-                    loadConfig.maxFileLoadSize
+                    loadConfig.maxFileLoadSize,
                 );
                 break;
             case 'preloadConfigs':
@@ -44,6 +99,7 @@ define(function (require, exports, module) {
     var hover = require('./services/hover');
     var commands = require('./services/commands');
     var lint = require('./services/lint');
+    var completion = require('./services/completion');
     var format = require('grace/ext/format/formatters');
     var Docs = require('grace/docs/docs').Docs;
     var debug = console;
@@ -57,10 +113,6 @@ define(function (require, exports, module) {
         maxSize: Utils.parseSize(loadConfig.maxFileLoadSize),
     });
 
-    //the lsp true - current completionProvider
-    //        object - any completer
-    //        falsy(default)  - true and Tags
-    //Todo move tag management to a separate file
     var activeOp;
     //cleans docs every 30mins, to contain memory leaks
     //especially with workers
@@ -72,7 +124,11 @@ define(function (require, exports, module) {
             appEvents.trigger('trimServerMemory');
         }
     }, Utils.parseSize('30mins'));
-
+    
+    //the lsp true - current completionProvider
+    //        object - any completer
+    //        falsy(default)  - true and Tags
+    //Todo move tag management to a separate file
     //A lot of excessive work being done
     //to make tasks run in parallel
     //unforunately, does not yet handle servers being destroyed
@@ -88,11 +144,11 @@ define(function (require, exports, module) {
         var currentTask = {mask: 1, lsps: {}};
         if (activeOp) {
             currentTask = Object.assign({}, activeOp.data);
-            activeOp.abort('Aborted for New Task');
+            activeOp.stop('Aborted for New Task');
         }
-        var currentOp = new Utils.AbortSignal();
+        var currentOp = new StopSignal();
         activeOp = currentOp;
-        currentOp.notify(debug.log.bind(debug));
+        currentOp.subscribe(debug.log.bind(debug));
 
         //Load files into the active completer
         lsp = lsp || getEditor().getMainCompleter();
@@ -135,7 +191,7 @@ define(function (require, exports, module) {
         var normalize = FileUtils.normalize;
         var loadFile = Utils.delay(
             currentOp.control(fileLoader.loadFile.bind(fileLoader)),
-            70
+            70,
         );
 
         //This line is one of the reasons why we have to manage memory
@@ -144,9 +200,9 @@ define(function (require, exports, module) {
         if (timeout > 0) {
             setTimeout(
                 currentOp.control(function () {
-                    currentOp.abort('Timed Out');
+                    currentOp.stop('Timed Out');
                 }),
-                timeout
+                timeout,
             );
         }
         //For each config file
@@ -166,14 +222,14 @@ define(function (require, exports, module) {
                 var commonRoot = normalize(
                     FileUtils.join(
                         '/',
-                        FileUtils.resolve(defaultRoot, config.rootDir || '')
-                    )
+                        FileUtils.resolve(defaultRoot, config.rootDir || ''),
+                    ),
                 );
 
                 var extensionRe = new RegExp(
                     '\\.' +
                         config.extensions.map(Utils.regEscape).join('$|\\.') +
-                        '$'
+                        '$',
                 );
                 //TODO fix: Possible wrong results with brace expand
                 //Basically {/j,b}/* with /sdcard/  as commonRoot will be read as /sdcard/j,/sdcard/b instead of /j/,/sdcard/b
@@ -181,17 +237,18 @@ define(function (require, exports, module) {
                     config.exclude &&
                     FileUtils.globToRegex(
                         config.exclude.map(
-                            FileUtils.resolve.bind(null, commonRoot)
-                        )
+                            FileUtils.resolve.bind(null, commonRoot),
+                        ),
                     );
                 var loadEagerly = config.loadEagerly.map(
-                    FileUtils.resolve.bind(null, commonRoot)
+                    FileUtils.resolve.bind(null, commonRoot),
                 );
 
                 var params = FileUtils.globToWalkParams(loadEagerly);
                 var walkerRoot = params.root;
                 var dirmatch = params.canMatch;
                 var matches = params.matches;
+                console.log(params);
                 //walk has its own way of handling abort
                 var setStopped = FileUtils.walk({
                     dir: walkerRoot,
@@ -206,7 +263,7 @@ define(function (require, exports, module) {
                         if (excludeRe && excludeRe.test(fullpath)) return false;
                         if (!matches.test(fullpath)) return false;
                         var willLoad = toLoad.filter(
-                            notAlreadyLoaded.bind(null, fullpath)
+                            notAlreadyLoaded.bind(null, fullpath),
                         );
                         //.filter(notDestroyed);
                         if (willLoad.length < 0) return next();
@@ -223,23 +280,23 @@ define(function (require, exports, module) {
                                 (err.reason == 'size' || err.reason == 'count')
                             ) {
                                 //stop loading files
-                                currentOp.abort();
+                                currentOp.stop();
                             }
                             next(); //load next file
                         });
                     },
                     finish: function () {
-                        currentOp.unNotify(setStopped);
+                        currentOp.unsubscribe(setStopped);
                         next();
                     },
                     failOnError: false,
                 });
-                currentOp.notify(setStopped);
+                currentOp.subscribe(setStopped);
             },
             function () {
                 console.debug(
                     'Server Load',
-                    Utils.toSize(fileLoader.getSize().size)
+                    Utils.toSize(fileLoader.getSize().size),
                 );
                 currentOp.clear();
                 if (currentOp == activeOp) {
@@ -250,18 +307,22 @@ define(function (require, exports, module) {
             },
             0,
             false,
-            true
+            true,
         );
     };
+    appEvents.on('reloadProject', function (e) {
+        e.await(null, loadFiles);
+    });
+    
     function readFile(name, cb) {
         var doc = require('grace/setup/setup_editors').getActiveDoc();
         var server = doc ? doc.getFileServer() : FileUtils.getFileServer();
-        if (!name.startsWith('/')) name = '/' + name;
+        if (name[0] !== '/') name = '/' + name;
         if (api.$neverAllowLoad && api.$neverAllowLoad.test(name)) {
             cb(
                 FileUtils.createError({
                     code: 'ENOENT',
-                })
+                }),
             );
         } else fileLoader.loadFile(name, server, cb);
     }
@@ -271,19 +332,14 @@ define(function (require, exports, module) {
         if (doc) return doc.getPath();
         return 'current';
     }
-    appEvents.on('reloadProject', function (e) {
-        e.await(null, loadFiles);
-    });
-    appEvents.on('showDocInfo', function (e) {
-        var editor = require('grace/setup/setup_editors').getEditor();
-        var instance = editor.getMainCompleter();
-        e.data['Completion Providers'] =
-            editor.completers &&
-            editor.completers.map(function (e) {
-                return e.name || e.constructor.name;
-            });
-        e.data['Loaded Documents'] = instance ? Object.keys(instance.docs) : '';
-    });
+    function updateBaseClient() {
+        BaseClientProps.maxSize = Utils.parseSize(appConfig.maxSingleFileSize);
+        BaseClientProps.functionHintTrigger = appConfig.functionHintTrigger;
+    }
+    configEvents.on('intellisense', updateBaseClient);
+
+    updateBaseClient();
+
     var api = (exports.ServerHost = {
         loadAutocompleteFiles: function (cb, lsp) {
             appEvents.on('fullyLoaded', loadFiles.bind(null, cb, lsp));
@@ -292,19 +348,20 @@ define(function (require, exports, module) {
         readFile: readFile,
         getFileName: getFileName,
         normalize: FileUtils.normalize,
-        $neverAllowLoad: null,
+        $neverAllowLoad: /^$/,
         $fileLoader: fileLoader,
         $watchMemory: watchMemory,
         registerProvider: function (provider) {
+            console.log('Registering ',provider.name);
             if (provider.hasCompletions)
-                completions.addCompletionProvider(provider, provider.modes);
+                completion.registerCompletionProvider(provider);
             if (provider.hasArgHints) hover.registerHoverProvider(provider);
             if (provider.hasAnnotations) lint.registerLintProvider(provider);
             if (provider.hasFormatting) format.registerFormatter(provider);
             commands.registerProvider(provider);
         },
         unregisterProvider: function (provider) {
-            completions.removeCompletionProvider(provider, provider.modes);
+            completion.unregisterCompletionProvider(provider);
             hover.unregisterHoverProvider(provider);
             lint.unregisterLintProvider(provider);
             commands.unregisterProvider(provider);
@@ -313,11 +370,11 @@ define(function (require, exports, module) {
         toggleProvider: function (provider, modes, value) {
             this.unregisterProvider(provider);
             if (value) {
-                this.registerProvider(provider, modes);
+                this.registerProvider(provider);
             }
         },
         $stopLoad: function () {
-            activeOp && activeOp.abort();
+            activeOp && activeOp.stop();
         },
     });
 });

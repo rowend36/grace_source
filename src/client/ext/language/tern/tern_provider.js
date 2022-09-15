@@ -16,10 +16,9 @@ define(function (require, exports, module) {
       ternPlugins: 'doc_comment',
       useWebWorkerForTern: false,
     },
-    'autocompletion.tern'
+    'intellisense.tern',
   );
-  var BaseProvider = require('grace/ext/language/base_provider')
-    .BaseProvider;
+  var BaseProvider = require('grace/ext/language/base_provider').BaseProvider;
   require('grace/core/config').Config.registerInfo(
     {
       enableTern: 'Use ternjs engine for javascript.',
@@ -32,14 +31,14 @@ define(function (require, exports, module) {
         type: 'number',
       },
     },
-    'autocompletion.tern'
+    'intellisense.tern',
   );
 
   var restart = Utils.delay(function () {
     updateOptions();
   }, 1000);
 
-  configEvents.on('autocompletion.tern', function (e) {
+  configEvents.on('intellisense.tern', function (e) {
     switch (e.config) {
       case 'ternDefsInbuilt':
       case 'ternPlugins':
@@ -57,16 +56,15 @@ define(function (require, exports, module) {
   var TERN = new BaseProvider('ternClient', ['javascript', 'html']);
   TERN.init = function (editor, callback) {
     var ternOptions = this.options || {};
-    var reuse =
-      editor.ternClient || (ternOptions.shared !== false && this.instance);
+    var reuse = editor.ternClient || this.instance;
     if (reuse) {
       return this.attachToEditor(editor, reuse, callback);
     }
     require(['./tern_client'], function (mod) {
       if (!ternOptions.workerScript) {
         ternOptions.workerScript = FileUtils.resolve(
-          module.uri,
-          './libs/tern_worker'
+          FileUtils.dirname(module.uri),
+          './libs/tern_worker.js',
         );
       }
       if (ternOptions.useWorker === false) {
@@ -75,18 +73,16 @@ define(function (require, exports, module) {
 
       function inner() {
         if (editor.ternClient) return callback(editor.ternClient);
-        var aceTs = new mod.TernServer(ternOptions);
-        if (ternOptions.shared !== false) {
-          if (!TERN.instance) {
-            TERN.instance = aceTs;
-            loadDefs();
-            loadFiles(null, aceTs);
-            Docs.forEach(function (doc) {
-              TERN.addDocToInstance(doc);
-            });
-          }
+        if (!TERN.instance) {
+          var aceTs = new mod.TernServer(ternOptions);
+          TERN.instance = aceTs;
+          loadDefs();
+          loadFiles(null, aceTs);
+          Docs.forEach(function (doc) {
+            TERN.addDocToInstance(doc);
+          });
         }
-        return TERN.attachToEditor(editor, aceTs, callback);
+        return TERN.attachToEditor(editor, TERN.instance, callback);
       }
     });
   };
@@ -151,7 +147,7 @@ define(function (require, exports, module) {
     function fail(e) {
       debug.error(e);
       require('grace/ui/notify').Notify.error(
-        'Unable to add defs from ' + path
+        'Unable to add defs from ' + path,
       );
       cb && cb(e);
     }

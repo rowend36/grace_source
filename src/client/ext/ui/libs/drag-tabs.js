@@ -1,4 +1,5 @@
 define(function(require,exports,module){
+    /* globals $ */
 	var Utils = require("grace/core/utils").Utils;
 	var EventsEmitter = require("grace/core/events_emitter").EventsEmitter;
     var domMatches = function(el, sel) {

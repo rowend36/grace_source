@@ -5,31 +5,52 @@ define(function (require, exports, module) {
   var Docs = require('grace/docs/docs').Docs;
   var appEvents = require('grace/core/app_events').AppEvents;
   var Provider = require('grace/core/registry').Provider;
+  /**
+    A language provider provides a language plugin on demand delaying loading of potentially heavy resources. They are designed to be lightweight providing just the information needed to register capabilities.
+    
+   * @typedef{{
+      name: string,
+      init?: (editor,cb)=>void,
+      destroy?: any,//unused
+      options?:object
+      embeddable: boolean,//can be used in embedded modes eg only eg actually :) a javascript completer in html file
+      hasKeyWords: boolean,//completes keywords ie disables keyword completer
+      hasText: boolean,//completes random text ie disables text completer
+      hasStrings: boolean,//completes strings <unused>
+      priority: 0,
+     }} Provider
+   */
+  /**
+   * @constructor
+   */
   function BaseProvider(name, modes) {
     BaseProvider.super(this, [name, modes]);
+    this.options = Object.assign({}, this.options);
   }
   Utils.inherits(BaseProvider, Provider);
 
-  /**
-   * @function
+
+  /** @function
    * @param {Editor} editor
    * @param {Function} cb
    * Create a client for this editor and invoke the callback with the instance.
    * Implementations should call attachToEditor to prevent memory leaks.
-   * Warning: this method can be called multiple times.
-   *
+   * Warning: this method will be called multiple times.
    */
   BaseProvider.prototype.init = Utils.noop;
   BaseProvider.prototype.attachToEditor = function (editor, instance, cb) {
-    if (editor[this.name]) cb(editor[this.name]);
+    var name = this.name;
+    if (!editor) return cb(instance);
+    if (editor[name]) return cb(editor[name]);
     var self = this;
-    var name = instance.name;
     var grp = Utils.groupEvents();
     editor[this.name] = instance;
-    if (instance.once) {
+    if (instance.on) {
+      //Instance is an EventsEmitter
       grp.once(
         'destroy',
         function () {
+          editor.completers && Utils.removeFrom(editor.completers, instance);
           if (editor[name] == instance) editor[name] = null;
         },
         instance,
@@ -38,9 +59,10 @@ define(function (require, exports, module) {
     grp.once(
       'destroy',
       function () {
+        editor.completers && Utils.removeFrom(editor.completers, instance);
         if (editor[name] == instance) editor[name] = null;
         if (instance !== self.instance) {
-          self.destroy(instance);
+          self.destroyInstance(instance);
         }
       },
       editor,
@@ -53,7 +75,7 @@ define(function (require, exports, module) {
    * When when no instance is passed, release all
    * internal memory.
    */
-  BaseProvider.prototype.destroy = function (instance) {
+  BaseProvider.prototype.destroyInstance = function (instance) {
     if (!instance) {
       if (!this.instance) return;
       instance = this.instance;
@@ -61,10 +83,6 @@ define(function (require, exports, module) {
     } else if (instance == this.instance) {
       this.instance = null;
     }
-    for (var i in instance.docs) {
-      instance.closeDoc(i);
-    }
-    instance.trigger('destroy');
     instance.destroy();
   };
 
@@ -84,6 +102,16 @@ define(function (require, exports, module) {
   BaseProvider.prototype.isEnabled = function () {
     return true;
   };
+  /**
+   * Implement the format provider interface.
+   */
+  BaseProvider.prototype.format = function (o, opts, cb, info) {
+    var args = arguments;
+    this.init(info && info.editor, function (i) {
+      if (i) i.format.apply(i, args);
+      else cb();
+    });
+  };
   //used by BaseClient.js
   BaseProvider.prototype.options = ServerHost;
 
@@ -101,8 +129,7 @@ define(function (require, exports, module) {
 
   //Provider has .updateAnnotations
   BaseProvider.prototype.hasAnnotations = false;
-  
-  
+
   //Provider has .jumpToDef, .jumpBack and .markPos
   BaseProvider.prototype.hasDefinitions = true;
   //Provider has .showType
@@ -114,12 +141,12 @@ define(function (require, exports, module) {
 
   //Set to true if instance has .updateArgHints
   BaseProvider.prototype.hasArgHints = false;
-  
+
   //Set to true if instance has .format
   BaseProvider.prototype.hasFormatting = false;
 
-
   //Common setup methods
+  BaseProvider.prototype.$addDocumentsOnRestart = false;
   BaseProvider.addDocumentsOnOpen = function (provider) {
     if (!provider) throw 'Missing argument provider';
     appEvents.on(
@@ -135,8 +162,8 @@ define(function (require, exports, module) {
     appEvents.on(
       'pauseAutocomplete',
       function () {
-        ServerHost.toggleProvider(this, ['javascript', 'html'], false);
-        this.destroy();
+        ServerHost.toggleProvider(this, this.modes, false);
+        this.destroyInstance();
       }.bind(provider),
     );
     appEvents.on(

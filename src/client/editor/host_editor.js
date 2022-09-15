@@ -8,10 +8,11 @@ define(function (require, exports, module) {
     var currentHost = null;
     var settings = Editors.getSettingsEditor();
 
-    function focusEditor(editor) {
+    function setActiveEditor(editor) {
         if (editor === activeEditor) {
             return;
         }
+        if (!editor.session) throw new Error('Cannot focus closed editor');
         var host = editor.hostEditor;
         if (!host) {
             if (editor === currentHost) {
@@ -44,13 +45,11 @@ define(function (require, exports, module) {
         }
     });
 
-    function onCreateEditor(e) {
-        var editor = e.editor;
-        editor.$setActive = focusEditor.bind(null, editor);
+    Editors.onEach(function trackActive(editor) {
+        editor.$setActive = setActiveEditor.bind(null, editor);
         editor.on('mousedown', editor.$setActive);
-    }
-    appEvents.on('createEditor', onCreateEditor);
-    exports.focusEditor = focusEditor;
+    });
+    exports.setActiveEditor = setActiveEditor;
     exports.$getActiveEditor = function () {
         return activeEditor;
     };

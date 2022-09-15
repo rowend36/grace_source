@@ -4,6 +4,7 @@ define(function (require, exports, module) {
     var Utils = require('grace/core/utils').Utils;
     var Schema = require('grace/core/schema').Schema;
     var Docs = require('grace/docs/docs').Docs;
+    var StopSignal = require('grace/ext/stop_signal').StopSignal;
     var ConfigEvents = require('grace/core/config').Config;
     var config = require('grace/core/config').Config.registerAll(
         {
@@ -25,7 +26,7 @@ define(function (require, exports, module) {
             ],
             enableFileCompletion: true,
         },
-        'autocompletion.fileCompletion'
+        'intellisense.fileCompletion'
     );
     require('grace/core/config').Config.registerInfo(
         {
@@ -70,10 +71,10 @@ define(function (require, exports, module) {
                 ],
             },
         },
-        'autocompletion.fileCompletion'
+        'intellisense.fileCompletion'
     );
-    var Autocomplete = ace.require('ace/autocomplete').Autocomplete;
-    var completions = ace.require('ace/ext/completions');
+    var Autocomplete = require('ace!autocomplete').Autocomplete;
+    var completions = require('./basic_completion');
     var IS_GLOB = /\*\?\\}/;
     var parsedRules;
     function parseRule(e) {
@@ -272,7 +273,7 @@ define(function (require, exports, module) {
         function addGlobEntries(glob, fs, cb) {
             var params = FileUtils.globToWalkParams(glob);
             var root = params.root;
-            abort.notify(
+            task.subscribe(
                 FileUtils.walk({
                     dir: params.root,
                     fs: fs,
@@ -297,12 +298,12 @@ define(function (require, exports, module) {
         // A lot of ops can be sped up if we had a means to watch files
         // but I'm not even going there. Let fs provider deal with caching.
         var found = 0;
-        var abort = new Utils.AbortSignal();
+        var task = new StopSignal();
         var baseScore = folderName ? 500 : filename ? 300 : 250;
         var last;//Need this since tasks are done in parallel
         function forEachRoot(entry, i, next, cancel) {
             last = i;
-            next = abort.control(next, cancel);
+            next = task.control(next, cancel);
             var dir = entry[0];
             var fs = entry[1];
             if (IS_GLOB.test(dir)) {
@@ -324,7 +325,7 @@ define(function (require, exports, module) {
                                 return score;
                             })
                         );
-                        if (found >= config.maxMatches) abort.abort();
+                        if (found >= config.maxMatches) task.stop();
                     }
                     next(); //allow abort to clean up
                 });
@@ -344,7 +345,7 @@ define(function (require, exports, module) {
         resume(true);
     }
 
-    ConfigEvents.on('autocompletion.fileCompletion', function (ev) {
+    ConfigEvents.on('intellisense.fileCompletion', function (ev) {
         if (ev.config === 'rules') {
             parsedRules = null;
         } else if (ev.config === 'enableFileCompletion') update();

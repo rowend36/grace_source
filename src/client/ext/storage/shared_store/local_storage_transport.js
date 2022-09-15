@@ -1,7 +1,7 @@
 define(function (require, exports, module) {
-  "use strict";
-  var storage = require("grace/core/config").storage;
-  var noop = require("grace/core/utils").Utils.noop;
+  'use strict';
+  var storage = require('grace/core/config').storage;
+  var noop = require('grace/core/utils').Utils.noop;
 
   function LSTransport(store, key) {
     this._key = key;
@@ -34,13 +34,13 @@ define(function (require, exports, module) {
                 this.store.onRemoteNode(this.store.parseNode(ev.newValue));
               }
             }.bind(this);
-          window.addEventListener("storage", this.$onStorage);
+          window.addEventListener('storage', this.$onStorage);
         }
       : noop;
   LSTransport.prototype.disconnect =
     storage instanceof Storage
       ? function () {
-          window.removeEventListener("storage", this.$onStorage);
+          window.removeEventListener('storage', this.$onStorage);
           this.$onStorage = null;
         }
       : noop;

@@ -12,15 +12,19 @@ module.exports = function (handleArg) {
     counter.increment();
     var args = req.body.args;
     if (!args) {
+      counter.increment();
       handleArg(req.body, function (e, r) {
         if (e) doError(e, res);
-        else results = r;
+        else {
+          results = r;
+          counter.decrement();
+        }
       });
     } else {
       results = [];
       args.forEach(function (arg, i) {
         counter.increment();
-        handleArg(function (err, res) {
+        handleArg(arg, function (err, res) {
           results[i] = {e: err && err.code, r: res};
           counter.decrement();
         });

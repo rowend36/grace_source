@@ -1,7 +1,8 @@
 define(function (require, exports, module) {
     //runtime class
     var storage = require('./config').storage;
-
+    var cyclicRequire = require;
+    
     function hasFailures(id) {
         return storage.getItem('breakpoint-' + id);
     }
@@ -20,10 +21,9 @@ define(function (require, exports, module) {
 
     function removeBreakpoint(id) {
         storage.removeItem('breakpoint-' + id);
-        cyclicRequire('./utils').Utils.removeFrom(ids, id);
+        require('./utils').Utils.removeFrom(ids, id);
     }
     var ids = [];
-    var cyclicRequire = require;
     exports.Recovery = {
         setBreakpoint: setBreakpoint,
         breakpoint: function (id, handle, timeout) {
@@ -51,7 +51,7 @@ define(function (require, exports, module) {
         hasFailures: hasFailures,
         defaultHandler: function (id, stack) {
             cyclicRequire('../ui/notify').Notify.prompt(
-                'Crash detected? Clear data?',
+                'Crash detected? Clear application data?',
                 function () {
                     storage.clear();
                 }
@@ -59,7 +59,7 @@ define(function (require, exports, module) {
         },
         clearData: function (id, namespace) {
             return function () {
-                cyclicRequire('./config').Config.configure(
+                require('./config').Config.configure(
                     id,
                     undefined,
                     namespace

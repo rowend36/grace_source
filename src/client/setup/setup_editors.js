@@ -1,59 +1,18 @@
 define(function (require, exports, module) {
     var appEvents = require('../core/app_events').AppEvents;
     var Docs = require('../docs/docs').Docs;
+    var after = require('../core/depend').after;
     var DocsTab = require('./setup_tab_host').DocsTab;
     var Editors = require('../editor/editors').Editors;
-    var focusEditor = require('../editor/host_editor').focusEditor;
+    var setActiveEditor = require('../editor/host_editor').setActiveEditor;
     var getActiveEditor = require('../editor/host_editor').$getActiveEditor;
     var getMainEditor = Editors.$getEditor;
     var rootView = require('./setup_root').rootView;
-    var setTheme = require('../themes/themes').setTheme;
-    var swapTab = require('./setup_tab_host').swapTab;
-    var View = require('../ui/view').View;
-    var noop = require('../core/utils').Utils.noop;
-    var FocusManager = require('../ui/focus_manager').FocusManager;
-    var emmetExt = ace.require('ace/ext/emmet');
-    var AutoComplete = ace.require('ace/autocomplete').Autocomplete;
+    var appEvents = require('../core/app_events').AppEvents;
+    var Annotations = require('ace!annotations').Annotations;
     require('../editor/editor_fonts');
-
-    //Add some commands
-    Editors.addCommands({
-        name: 'swapTabs',
-        bindKey: {
-            win: 'Alt-Tab',
-            mac: 'Command-Alt-N',
-        },
-        exec: swapTab,
-    });
-    Editors.addCommands(require('../ext/format/format').FormatCommands);
-    Editors.addCommands(require('../docs/document_commands').DocumentCommands);
-
-    //Setup plugins
-    emmetExt.load = require('../core/depend').after(function (cb) {
-        require(['../libs/js/emmet'], function (em) {
-            console.log(em, window.emmet);
-            emmetExt.setCore(em);
-            cb();
-        });
-    });
-    //TODO make emmet keybindings configurable
-    emmetExt.isSupportedMode = noop;
-
-    var doBlur = AutoComplete.prototype.blurListener;
-    AutoComplete.prototype.blurListener = function () {
-        if (
-            FocusManager.activeElement ==
-            getActiveEditor().textInput.getElement()
-        )
-            return;
-        doBlur.apply(this, arguments);
-    };
-    appEvents.on('keyboardChanged', function (ev) {
-        if (ev.isTrusted && !ev.visible) {
-            var a = AutoComplete.for(getActiveEditor());
-            if (a.activated) a.detach();
-        }
-    });
+    // var setTheme = require('../themes/themes').setTheme;
+    var View = require('../ui/view').View;
 
     //Editor View
     var editorView = new View();
@@ -63,8 +22,23 @@ define(function (require, exports, module) {
         marginTop: 0,
         marginBottom: 0,
     };
-    appEvents.on('createEditor', function (e) {
-        e.editor.getPopupMargins = function (isDoc) {
+    Annotations.updateWorkers = after(
+        appEvents.on.bind(appEvents, 'fullyLoaded'),
+        function (session) {
+            Annotations.updateWorkers = this;
+            if (session.bgTokenizer) this(session);
+        }.bind(Annotations.updateWorkers),
+    );
+    Annotations.removeWorkers = after(
+        appEvents.on.bind(appEvents, 'fullyLoaded'),
+        function (session) {
+            Annotations.removeWorkers = this;
+            if (session.bgTokenizer) this(session);
+        }.bind(Annotations.removeWorkers),
+    );
+    //We modified ace to use getPopupMargins when positioning popups.
+    Editors.onEach(function (editor) {
+        editor.getPopupMargins = function (isDoc) {
             return isDoc
                 ? {
                       marginTop: 0,
@@ -74,6 +48,10 @@ define(function (require, exports, module) {
         };
     });
     appEvents.on('layoutChanged', function () {
+        var editors = editorView.$el.find('.editor');
+        for (var i = 0; i < editors.length; i++) {
+            editors[i].env && editors[i].env.onResize();
+        }
         var viewRoot = editorView.$el[0];
         margins.marginTop = parseInt(viewRoot.style.top) || 0;
         margins.marginBottom = (parseInt(viewRoot.style.bottom) || 0) + 50;
@@ -83,7 +61,7 @@ define(function (require, exports, module) {
     function onChangeTab(ev) {
         if (!Docs.has(ev.tab)) return;
         var editor = getMainEditor();
-        focusEditor(editor);
+        setActiveEditor(editor);
         Editors.setSession(Docs.get(ev.tab));
         ev.preventDefault();
     }
@@ -95,6 +73,7 @@ define(function (require, exports, module) {
             getMainEditor() === getActiveEditor() &&
             DocsTab.active !== ev.doc.id
         ) {
+            //No longer possible
             DocsTab.setActive(ev.doc.id, true, true);
         }
     }
@@ -128,16 +107,16 @@ define(function (require, exports, module) {
     //Initialize main editor
     var editor = Editors.createEditor(editorView.$el[0]);
     Editors.setEditor(editor);
-    //Previous attempts would have failed before now.
+    //Prior attempts would have failed.
     DocsTab.updateActive();
 
-    exports.getEditor = function (ses) {
-        if (ses) return getMainEditor(ses);
+    //The active main editor can safely be manipulated
+    //as opposed to plugin editors which might be returrned by getEditor
+    exports.getMainEditor = getMainEditor;
+    exports.getEditor = function (session) {
+        if (session) return getMainEditor(session);
         else return getActiveEditor();
     };
     exports.editorView = editorView;
     exports.getActiveDoc = getActiveDoc;
-    //The active main editor can safely be manipulated
-    //as opposed to plugin editors which might be returrned by getEditor
-    exports.getMainEditor = getMainEditor;
 });

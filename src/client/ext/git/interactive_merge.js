@@ -1,7 +1,6 @@
 /*jshint esversion:8,asi:true*/
 /*global git*/
 define(function(require,exports,module) {
-	var exports = {};
 	//return a list of conflicts 
 	//instead of merge not supported error;
 	const abbreviateRx = new RegExp('^refs/(heads/|tags/|remotes/)?(.*)')

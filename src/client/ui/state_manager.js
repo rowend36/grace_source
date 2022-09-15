@@ -19,8 +19,8 @@ define(function(require,exports,module) {
         var back;
         obj.onChange = function(newState, oldState, dir) {
             var handled = false;
-            for (var j in listeners) {
-                handled = handled || listeners[j](newState, oldState, dir);
+            for (var j in listeners.slice()) {
+                handled = listeners[j](newState, oldState, dir) || handled;
             }
             return handled;
         };
@@ -47,7 +47,7 @@ define(function(require,exports,module) {
             }
         };
         obj.removeListener = function(func) {
-            listeners.filter(function(e) {
+            listeners = listeners.filter(function(e) {
                 return func != e;
             });
         };

@@ -1,62 +1,107 @@
 define(function (require, exports, module) {
     /*globals $*/
+
+    require('css!./libs/mocha.css');
+    var chai = require('./libs/chai.js');
+    var mocha = require('./libs/mocha.min.js');
+    var splits = require('grace/ui/split_manager').SplitManager;
+    var getEditor = require('grace/setup/setup_editors').getEditor;
+    var Utils = require('grace/core/utils').Utils;
+    require('css!../libs/css/materialize-grace');
+    require('css!../index.css');
+    require('../themes/themes'); //removes SplashScreen
+    require('../ext/fs/browser_fs');
     /*
         Already, there are a lot of runtime tests embedded in the code using Utils.assert
         Only the more expensive tests are kept separate
     */
-    var splits = require("grace/ui/split_manager").SplitManager;
-    require("grace/setup/setup_editors");
-    var getEditor = require("grace/setup/setup_editors").getEditor;
-    var editEl = getEditor().container;
-    var container = splits.add($(editEl), "vertical");
-    $(container).append("<div id='mocha'></div>");
-    define("revert", function () {
+    define('revert', function () {
         return function (o, prop) {
-            if (o["no-prop-" + prop]) {
-                delete o["no-prop-" + prop];
+            if (o['no-prop-' + prop]) {
+                delete o['no-prop-' + prop];
                 delete o[prop];
-            } else if (o.hasOwnProperty("default-" + prop)) {
-                o[prop] = o["default-" + prop];
-                delete o["default-" + prop];
+            } else if (o.hasOwnProperty('default-' + prop)) {
+                o[prop] = o['default-' + prop];
+                delete o['default-' + prop];
             }
         };
     });
-    define("override", function () {
+    define('override', function () {
         return function (o, prop, value) {
             var d = o[prop];
-            if (!o["no-prop-" + prop] && !o.hasOwnProperty("default-" + prop)) {
-                if (!o.hasOwnProperty(prop)) o["no-prop-" + prop] = true;
-                else o["default-" + prop] = o[prop];
+            if (!o['no-prop-' + prop] && !o.hasOwnProperty('default-' + prop)) {
+                if (!o.hasOwnProperty(prop)) o['no-prop-' + prop] = true;
+                else o['default-' + prop] = o[prop];
             }
             o[prop] = value;
             return d;
         };
     });
-
-    require([
-        "require",
-        "css!./libs/mocha.css",
-        "./libs/chai.js",
-        "./libs/mocha.min.js",
-    ], function (require, css, chai, mocha) {
-        define("chai", chai);
-        mocha.setup("bdd");
-        mocha.checkLeaks();
-        require([
-            // "./tests/docs/test_docs",
-            // "./tests/core/test_core",
-            // "./tests/core/test_ajax",
-            // "./tests/core/test_schema",
-            // "./tests/core/test_fs",
-            // "./tests/setup/test_setup",
-            // "./tests/ext/test_shared_store",
-            // "./tests/ext/test_glob",
-            // "./tests/ext/test_config",
-            // "./tests/ext/test_tab_window",
-            // "./tests/ext/test_language",
-            "./tests/ext/test_diff"
-        ], function () {
-            mocha.run();
+    var waiting = [];
+    var data = new WeakMap();
+    var _id = 1;
+    var clearWaiting = Utils.debounce(function () {
+        waiting.forEach(function (e) {
+            let err = new Error('Callback(' + data.get(e).id + ') never called');
+            err.stack = err.message + '\n' + data.get(e).stack;
+            console.error(err);
+            data.delete(e);
         });
+        waiting.length = 0;
+    }, 5000);
+    define('ensureCb', function (require, exports, module) {
+        module.exports = function (_cb) {
+            function cb() {
+                if (!data.has(cb)) console.error('Delayed callback ' + info.id);
+                else if (Utils.removeFrom(waiting, cb) < 0) {
+                    let err = new Error(
+                        'Callback(' + info.id + ') called twice',
+                    );
+                    err.stack +=
+                        '\n====Async====\n' +
+                        info.stack +
+                        '\n====First called====\n' +
+                        info.firstCalled;
+                    throw err;
+                } else {
+                    info.firstCalled = new Error('h').stack;
+                }
+                _cb.apply(this, arguments);
+            }
+            var info = {
+                id: _id++,
+                stack: String(new Error().stack)
+                    .split('\n')
+                    .slice(2)
+                    .join('\n'),
+            };
+            waiting.push(cb);
+            data.set(cb, info);
+            clearWaiting();
+            return cb;
+        };
+    });
+    define('chai', chai);
+
+    Error.stackTraceLimit = 30;
+    var editEl = getEditor().container;
+    var container = splits.add($(editEl), 'vertical');
+    $(container).append("<div id='mocha'></div>");
+    mocha.setup('bdd');
+    mocha.checkLeaks();
+    require([
+        // './docs/test_docs',
+        // './core/test_core',
+        // './core/test_ajax',
+        // './core/test_schema',
+        // './core/test_fs',
+        // './ext/test_shared_store',
+        // './ext/test_glob',
+        // './ext/test_config',
+        // './ext/test_tab_window',
+        './ext/test_language',
+        // './ext/test_diff',
+    ], function () {
+        mocha.run();
     });
 });

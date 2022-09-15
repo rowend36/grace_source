@@ -9,15 +9,15 @@ define(function (require, exports, module) {
     var setImmediate = require('grace/core/utils').Utils.setImmediate;
     var appConfig = require('grace/core/config').Config.registerAll(
         {doubleClickIntervalMs: 500},
-        'toolbars'
+        'toolbars',
     );
     var RESET_CHAR = '\n\nmod-';
     var TAIL = '\n\n';
-    var keys = ace.require('ace/lib/keys');
+    var keys = require('ace!lib/keys');
     var FocusManager = require('grace/ui/focus_manager').FocusManager;
     var appEvents = require('grace/core/app_events').AppEvents;
     var TextEdit = require('./textedit').TextEdit;
-    var event = ace.require('ace/lib/event');
+    var event = require('ace!lib/event');
     var times = {};
     var pressed = {};
     var held = {};
@@ -82,7 +82,7 @@ define(function (require, exports, module) {
                 handleKey(
                     keys[char.toLowerCase()],
                     /[A-Z]/.test(char) ? keys.KEY_MODS.shift : 0,
-                    char
+                    char,
                 );
             } else if (RESET_CHAR.slice(0, -1) == char) {
                 handleKey(keys.Backspace);
@@ -228,7 +228,7 @@ define(function (require, exports, module) {
             }
             var command = clipboardHandler.findKeyCommand(
                 hashId,
-                keys[keyCode]
+                keys[keyCode],
             );
             inExec = true;
             if (command && command.exec) {
@@ -365,9 +365,7 @@ define(function (require, exports, module) {
             });
         },
     };
-    var clipboardHandler = new (ace.require(
-        'ace/keyboard/hash_handler'
-    ).HashHandler)();
+    var clipboardHandler = new (require('ace!keyboard/hash_handler').HashHandler)();
     clipboardHandler.bindKeys(editorHandler);
     appEvents.on('sidenavClosed', function () {
         closeModKey(true);

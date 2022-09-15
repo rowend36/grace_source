@@ -1,13 +1,11 @@
 define(function (require, exports, module) {
     'use strict';
     /*globals $*/
-    var browserModal;
     var saveMode, saveID;
     var EventsEmitter = require('grace/core/events_emitter').EventsEmitter;
     var Config = require('grace/core/config').Config;
     var getObj = Config.getObj;
     var Notify = require('grace/ui/notify').Notify;
-    var Form = require('grace/ui/forms').Forms;
     var putObj = Config.putObj;
     var register = Config.register;
     var viewToServer = getObj('viewToServer');
@@ -18,10 +16,6 @@ define(function (require, exports, module) {
     var serverFactories = FileUtils.$serverFactories;
     var SideNav;
     var Tabs;
-    var needsRecreate = true;
-    appEvents.on('registerFileServer', function () {
-        needsRecreate = true;
-    });
     var _fileBrowsers = {};
 
     appEvents.on('replaceFileServer', function (ev) {
@@ -43,70 +37,69 @@ define(function (require, exports, module) {
         initialize: function (container, tabs) {
             Tabs = tabs;
             SideNav = container;
-            browserModal = $(
-                Notify.modal({
-                    header: 'Pick Storage Type',
-                    body: "<select id='browserType'></select>",
-                    footers: ['Cancel', 'Create'],
-                    autoOpen: false,
-                    keepOnClose: true,
-                    ondismiss: function () {
-                        browserModal.detach();
-                    },
-                    dismissible: false,
-                })
-            );
-            browserModal.detach();
-            browserModal.find('select').on('change', function () {
-                browserModal.find('.config').hide();
-                browserModal
-                    .find('.config-' + browserModal.find('select').val())
-                    .show();
-            });
-            browserModal.find('.modal-create').click(function () {
-                browserModal.modal('close');
-                var params = {};
-                params.type = browserModal.find('select').val();
-                var e = browserModal.find('.config-' + params.type)[0];
-                if (e) {
-                    Object.assign(params, Form.parse(e));
-                }
-                var browser = Fileviews.initBrowser(params);
-                if (!browser) {
-                    Notify.error('Error Creating Storage');
-                } else Tabs.setActive(browser.id, true);
-            });
             Fileviews.loadBrowsers();
         },
         newBrowser: function () {
-            if (needsRecreate) {
-                var e = browserModal.find('.modal-content')[0];
-                browserModal.find('.config').detach();
-                var select = browserModal.find('select')[0];
-                $(select).empty();
-                for (var id in serverFactories) {
-                    if (id[0] == '!') continue;
-                    var factory = serverFactories[id];
-                    var option = document.createElement('option');
-                    option.setAttribute('name', id);
-                    option.setAttribute('value', id);
-                    option.innerText = factory.caption || id.toUpperCase();
-                    select.appendChild(option);
-                    if (factory.config) {
-                        var form = Form.create(factory.config);
-                        form.className = 'config config-' + id;
-                        e.appendChild(form);
-                        $(form).submit(false);
+            Notify.modal({
+                header: 'Initialize Storage',
+                form: [
+                    {
+                        type: 'select',
+                        name: 'browserType',
+                        caption: 'Storage Type',
+                    },
+                ],
+                footers: ['Cancel', 'Create'],
+                dismissible: false,
+                autoOpen: false,
+                onCreate: function (modal, Forms) {
+                    var select = modal.find('#browserType');
+                    var content = modal.find('.modal-content')[0];
+                    var updateView = function () {
+                        var type = select.val();
+                        modal.find('.config').hide();
+                        modal.find('.config-' + type).show();
+                    };
+                    select.on('change', updateView);
+                    for (var id in serverFactories) {
+                        if (id[0] == '!') continue;
+                        var factory = serverFactories[id];
+                        select.append(
+                            $('<option/>')
+                                .attr('name', id)
+                                .attr('value', id)
+                                .text(factory.caption || id.toUpperCase())
+                        );
+                        if (factory.config) {
+                            content.appendChild(
+                                Forms.create(
+                                    factory.config,
+                                    $('<div></div>')
+                                        .addClass('config pb-10 pt-10')
+                                        .addClass('config-' + id)[0]
+                                )
+                            );
+                        }
                     }
-                }
-                needsRecreate = false;
-            }
-            document.body.appendChild(browserModal[0]);
-            browserModal.modal('open');
-            browserModal.find('.config').hide();
-            browserModal
-                .find('.config-' + browserModal.find('select').val())
-                .show();
+                    modal.submit(function () {
+                        modal.modal('close');
+                        var params = {};
+                        params.type = modal.find('select').val();
+                        var e = modal.find('.config-' + params.type)[0];
+                        if (e) {
+                            Object.assign(params, Forms.parse(e));
+                        }
+
+                        var browser = Fileviews.initBrowser(params);
+                        if (!browser) {
+                            Notify.error('Error Creating Storage');
+                        } else Tabs.setActive(browser.id, true);
+                    });
+                    modal.find('.modal-create').attr('type', 'submit');
+                    updateView();
+                    modal.modal('open');
+                },
+            });
         },
         addBrowser: function (filebrowser) {
             if (_fileBrowsers[filebrowser.id]) {
@@ -281,11 +274,11 @@ define(function (require, exports, module) {
                 appEvents.off(event, newfunc);
             });
         },
-        pickFile: function (info, end, allowNew) {
+        pickFile: function (info, cb, allowNew) {
             if (!SideNav) return;
             if (!SideNav.isOpen) {
                 appEvents.once('sidenavOpened', function () {
-                    Fileviews.pickFile(info, end, allowNew);
+                    Fileviews.pickFile(info, cb, allowNew);
                 });
                 return SideNav.open();
             }
@@ -293,8 +286,8 @@ define(function (require, exports, module) {
             var dismiss = info ? Notify.direct(info) : Utils.noop;
             grp.on('sidenavClosed', dismiss, appEvents);
             grp.on('sidenavClosed', grp.off, appEvents);
-            grp.on('open-file', dismiss);
-            grp.once('open-file', end);
+            grp.on('pick-file', dismiss);
+            grp.once('pick-file', cb);
             var tab = Tabs.active;
             var browser = _fileBrowsers[tab];
             if (!browser) {
@@ -309,8 +302,8 @@ define(function (require, exports, module) {
                 Tabs.setActive(browser.id, true);
             }
             if (allowNew) {
-                grp.on('new-file', dismiss);
-                grp.once('new-file', end);
+                grp.on('create-file', dismiss);
+                grp.once('create-file', cb);
                 browser.newFile(saveMode && Docs.getName(saveID));
             }
         },
@@ -320,14 +313,10 @@ define(function (require, exports, module) {
             saveID = doc;
             var onSave = function (event) {
                 var save = function () {
-                    Docs.saveAs(
-                        saveID,
-                        event.filepath,
-                        event.browser.fileServer
-                    );
+                    Docs.saveAs(saveID, event.filepath, event.fs);
                     Fileviews.exitSaveMode();
                 };
-                if (event.id == 'new-file') save();
+                if (event.id == 'create-file') save();
                 else Notify.ask('Overwrite ' + event.filename + '?', save);
                 event.preventDefault();
             };
@@ -347,12 +336,13 @@ define(function (require, exports, module) {
             //$("#save-text").css("display", "none");
         },
         freezeEvent: function (event) {
-            var stub = event.browser;
+            var stub = event.fileview || _fileBrowsers.projectView;
             while (stub.parentStub) {
                 stub = stub.parentStub;
             }
             return {
-                browser: stub.id,
+                fileview: stub.id,
+                fs: stub.fileServer.id,
                 filename: event.filename,
                 filepath: event.filepath,
                 rootDir: event.rootDir,
@@ -362,12 +352,13 @@ define(function (require, exports, module) {
         //must be called after setting up fileviews
         unfreezeEvent: function (event) {
             var browser =
-                _fileBrowsers[event.browser] || _fileBrowsers.projectView;
-            event.browser = browser;
+                _fileBrowsers[event.fileview] || _fileBrowsers.projectView;
+            event.fileview = browser;
+            event.fs = FileUtils.getFileServer(event.fs) || browser.fileServer;
             return event;
         },
     };
-    Object.assign(Fileviews, EventsEmitter.prototype);
+    Fileviews = Object.assign(new EventsEmitter(), Fileviews);
     Fileviews._debug = true;
     exports.Fileviews = Fileviews;
 });

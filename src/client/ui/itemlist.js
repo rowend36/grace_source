@@ -1,7 +1,7 @@
 define(function (require, exports, module) {
     /*globals $*/
     var FocusManager = require("./focus_manager").FocusManager;
-    var KeyListener = require("./key_listener").KeyListener;
+    var KeyListener = require("./soft_keyboard_navigation").KeyListener;
 
     var EventsEmitter = require("../core/events_emitter").EventsEmitter;
     var Utils = require("../core/utils").Utils;

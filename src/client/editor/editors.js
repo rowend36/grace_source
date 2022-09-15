@@ -1,7 +1,7 @@
 define(function (require, exports, module) {
     var appEvents = require('../core/app_events').AppEvents;
     var Utils = require('../core/utils').Utils;
-    var config = ace.require('ace/config');
+    var Actions = require('../core/actions').Actions;
     var Docs = require('../docs/docs').Docs;
     var settings = require('./editor_settings');
     var FocusManager = require('../ui/focus_manager').FocusManager;
@@ -36,7 +36,7 @@ define(function (require, exports, module) {
         if (__editor == e) return;
         Utils.assert(
             editors.indexOf(e) > -1,
-            'Please use set tabwindow.getEditorWindow'
+            'Must use setActiveEditor for plugin editors.',
         );
         var oldEditor = __editor;
         __editor = e;
@@ -61,7 +61,6 @@ define(function (require, exports, module) {
                     Docs.closeSession(editor.session);
                 }
                 if (getEditor(session)) {
-                    //create synchronized clone
                     session = doc.cloneSession();
                 }
             }
@@ -70,14 +69,16 @@ define(function (require, exports, module) {
         var overrides = Object.assign(
             {},
             editor.editorOptions,
-            doc.editorOptions
+            doc.editorOptions,
         );
         for (var i in overrides) {
-            var value =
-                doc.editorOptions && doc.editorOptions.hasOwnProperty(i)
-                    ? doc.editorOptions[i]
-                    : settings.options[i];
-            editor.setOption(i, value);
+            if(settings.options.hasOwnProperty(i)){
+                var value =
+                    doc.editorOptions && doc.editorOptions.hasOwnProperty(i)
+                        ? doc.editorOptions[i]
+                        : settings.options[i];
+                editor.setOption(i, value);
+            }
         }
         editor.editorOptions = doc.editorOptions;
 
@@ -87,6 +88,7 @@ define(function (require, exports, module) {
     function closeEditor(edit) {
         var index = editors.indexOf(edit);
         if (index > -1) {
+            if (editors.length === 1) return;
             if (
                 appEvents.trigger('closeEditor', {
                     editor: edit,
@@ -115,11 +117,8 @@ define(function (require, exports, module) {
         container.appendChild(el);
         var editor = setupEditor(el);
         settings.add(editor);
+        editor.commands.addCommands(defaultCommands);
 
-        for (var i = 0, end = defaultCommands.length; i < end; i++) {
-            if (orphan && defaultCommands[i].mainOnly) continue;
-            editor.commands.addCommand(defaultCommands[i]);
-        }
         if (!orphan) {
             editors.push(editor);
             editor.renderer.on('themeLoaded', function (e) {
@@ -141,39 +140,31 @@ define(function (require, exports, module) {
         });
         return editor;
     }
+
     var defaultCommands = [];
 
-    function addCommands(commands, mainOnly) {
-        if (!Array.isArray(commands)) commands = [commands];
-        if (mainOnly) {
-            commands.forEach(function (e) {
-                e.mainOnly = true;
-            });
-        }
-        defaultCommands.push.apply(defaultCommands, commands);
+    Actions.registerActionHost('editor', function (action) {
+        defaultCommands.push(action);
         for (var i in editors) {
-            for (var j in commands) editors[i].commands.addCommand(commands[j]);
+            editors[i].commands.addCommand(action);
         }
-    }
-    function addOptions(options) {
-        config.defineOptions(
-            ace.require('ace/editor').Editor.prototype,
-            'editor',
-            options
-        );
-    }
-    var api = {};
+    });
 
-    api.getSettingsEditor = getSettingsEditor;
-    api.setSession = setSession;
-    api.findEditor = getEditor;
-    api.addOptions = addOptions;
-    api.addCommands = addCommands;
-    api.forEach = editors.forEach.bind(editors);
-    api.setEditor = setEditor;
-    api.$getEditor = getEditor;
-    api.$allEditors = editors;
-    api.createEditor = createEditor;
-    api.closeEditor = closeEditor;
-    exports.Editors = api;
+    var Editors = exports;
+    Editors.getSettingsEditor = getSettingsEditor;
+    Editors.setSession = setSession;
+    Editors.findEditor = getEditor;
+    Editors.forEach = editors.forEach.bind(editors);
+    Editors.onEach = function (e, ctx) {
+        Editors.forEach(e, ctx);
+        appEvents.on('createEditor', function (ev) {
+            e.call(ctx, ev.editor);
+        });
+    };
+    Editors.setEditor = setEditor;
+    Editors.$getEditor = getEditor;
+    Editors.$allEditors = editors;
+    Editors.createEditor = createEditor;
+    Editors.closeEditor = closeEditor;
+    exports.Editors = Editors;
 }); /*_EndDefine*/

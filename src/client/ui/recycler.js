@@ -20,7 +20,7 @@ define(function (require, exports, module) {
             }
             return sum;
         },
-        getScrollingElements: function (el) {
+        getScrollingParents: function (el) {
             //copied from filebrowser
             el[0] || (el = $(el));
             var a = [];
@@ -58,7 +58,7 @@ define(function (require, exports, module) {
             function svg(el, styles, attribs) {
                 var b = document.createElementNS(
                     'http://www.w3.org/2000/svg',
-                    el
+                    el,
                 );
                 for (var i in styles) {
                     b.style[i] = styles[i];
@@ -82,7 +82,7 @@ define(function (require, exports, module) {
                 {
                     version: '1.1',
                     viewBox: '0 0 1000 300',
-                }
+                },
             );
 
             var frameCountEl = svg(
@@ -94,7 +94,7 @@ define(function (require, exports, module) {
                     fill: 'blue',
                     x: 500,
                     y: 100,
-                }
+                },
             );
             svgEl.appendChild(frameCountEl);
 
@@ -107,7 +107,7 @@ define(function (require, exports, module) {
                     fill: 'red',
                     x: 500,
                     y: 150,
-                }
+                },
             );
             svgEl.appendChild(fpsEl);
             root.appendChild(svgEl);
@@ -128,7 +128,7 @@ define(function (require, exports, module) {
             this.el.style.height =
                 Math.min(
                     this.renderer.height - this.renderer.viewport.y,
-                    this.renderer.viewport.height
+                    this.renderer.viewport.height,
                 ) + 'px';
             this.frameCountEl.innerHTML = ' frames: ' + this.frames++;
             var t = new Date().getTime();
@@ -140,7 +140,7 @@ define(function (require, exports, module) {
                     ':' +
                     Math.round(
                         ((this.frames - this.lastFrame) / this.totalTime) *
-                            100000
+                            100000,
                     ) /
                         100;
             } else this.frames--;
@@ -155,9 +155,9 @@ define(function (require, exports, module) {
 
     var toClear = [];
     var clear = Utils.debounce(function () {
-        var total = 0;
+        // var total = 0;
         toClear.forEach(function (e) {
-            total += e.length;
+            // total += e.length;
             e.length = 0;
         });
         toClear = [];
@@ -211,6 +211,7 @@ define(function (require, exports, module) {
         this.container = this.back.container;
         this.els = [];
         this.autosync = autosync;
+        this.$sync = this.sync.bind(this);
     }
     FastCache.prototype.pop = function (container, before) {
         if (this.els.length > 0) {
@@ -233,8 +234,8 @@ define(function (require, exports, module) {
     };
     FastCache.prototype.push = function (el) {
         this.els.push(el);
-        if (this.autosync && !this.timeout)
-            this.timeout = setTimeout(this.sync.bind(this), 400);
+        if (!this.timeout && this.autosync)
+            this.timeout = setTimeout(this.$sync, 400);
     };
     FastCache.prototype.clone = function (el) {
         return new FastCache(this.back.clone(el), this.autosync);
@@ -260,7 +261,7 @@ define(function (require, exports, module) {
         viewport,
         index,
         insertBefore,
-        restack
+        restack,
     ) {
         this.visible = true;
         if (this.hidden) {
@@ -277,7 +278,7 @@ define(function (require, exports, module) {
                     stats.insert++;
                     this.view[0].parentElement.insertBefore(
                         this.view[0],
-                        insertBefore
+                        insertBefore,
                     );
                 } else {
                     stats.append++;
@@ -326,7 +327,14 @@ define(function (require, exports, module) {
     //var MODIFY_ABOVE = 132;//not yet supported
     var MODIFY_NOT_BELOW = 4;
     var INVALIDATE = 128;
-
+    var onRender = function () {
+        this.compute();
+        this.renderTimeout = null;
+        stats.append = 0;
+        stats.detach = 0;
+        stats.insert = 0;
+        if (this.changes) this.render();
+    };
     function RecyclerRenderer() {
         this.views = [];
         this.height = 0;
@@ -544,7 +552,7 @@ define(function (require, exports, module) {
         //we clip bottom in render because of invalidates
         scrollTop = Math.max(
             0,
-            scrollTop - (topMargin || -this.DEFAULT_VIEWPORT.y)
+            scrollTop - (topMargin || -this.DEFAULT_VIEWPORT.y),
         );
         if (scrollTop < this.viewport.y) {
             this.changes |= SCROLL_UP;
@@ -556,17 +564,11 @@ define(function (require, exports, module) {
     };
     RecyclerRenderer.prototype.schedule = function (/*viewport*/) {
         if (this.renderTimeout) return;
+        //Not yet tested enough to prevent layout thrashing
         if (this.changes)
             this.renderTimeout = /*window.requestAnimationFrame || */ setTimeout(
-                function () {
-                    this.compute();
-                    this.renderTimeout = null;
-                    stats.append = 0;
-                    stats.detach = 0;
-                    stats.insert = 0;
-                    if (this.changes) this.render();
-                }.bind(this),
-                34
+                onRender.bind(this),
+                34,
             );
     };
     //RecyclerRenderer+RecyclerViewHolder
@@ -613,7 +615,7 @@ define(function (require, exports, module) {
         viewport,
         index,
         insertBefore,
-        restack
+        restack,
     ) {
         this.visible = true;
         if (this.hidden) return;

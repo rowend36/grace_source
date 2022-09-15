@@ -1,5 +1,5 @@
 define(function(require,exports,module) {
-    /*globals $*/
+    /*globals $, ace*/
     var RecyclerViewCache = require("grace/ui/recycler").RecyclerViewCache;
     var RangeRenderer = require("grace/ui/range_renderer").RangeRenderer;
     var RecyclerRenderer = require("grace/ui/recycler").RecyclerRenderer;
@@ -106,7 +106,7 @@ define(function(require,exports,module) {
         };
         recycler = new RecyclerRenderer();
         // var visualizer = ViewportVisualizer.create(el[0], recycler);
-        var scrollers = ScrollSaver.getScrollingElements(el);
+        var scrollers = ScrollSaver.getScrollingParents(el);
         recycler.beforeRender = function() {
             el.css('height', recycler.height+'px');
             //if (el.css('height') != recycler.height + "px") {

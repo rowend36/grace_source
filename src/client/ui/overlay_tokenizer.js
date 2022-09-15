@@ -6,63 +6,45 @@ define(function(require,exports,module){
      * over another one. 
      * Subclasses can override mergeType method for different behaviour,
      * The optional ranges argument allows selecting ranges to overlay
-     * Currently, two ranges cannot share a row
      * The mainTokenizer argument allows using it as a mode
      **/
+    var RangeList = require('ace!range_list').RangeList;
     function OverlayTokenizer(tokenizer, ranges, mainTokenizer) {
         //the only necessary argument
         this.tokenizer = tokenizer;
-        //needed only if no range is passed in multiplex
-        this.ranges = ranges || [{
-            start: {
-                row: -Infinity
-            },
-            end: {
-                row: Infinity
-            }
-        }];
+        //needed only if no range is passed in overlay
+        this.rangelist = new RangeList();
+        if(ranges) this.rangelist.addList(ranges);
         //needed for getTokens
         this.mainTokenizer = mainTokenizer;
     }
     (function() {
         this.getTokens = function(row) {
             var tokens = this.mainTokenizer.getTokens(row);
-            tokens = this.multiplex(row, tokens);
+            tokens = this.overlay(row, tokens);
             return tokens;
         };
-        this.multiplex = function(row, tokens1, intersect) {
+        this.overlay = function(row, tokens1, intersect) {
             if (!tokens1.length) return tokens1;
-            if (!intersect) {
-                for (var rangeID in this.ranges) {
-                    var range = this.ranges[rangeID];
-                    if (row >= range.start.row && row <= range.end.row) {
-                        //this does not detect multiple
-                        //intersects on a single line yet
-                        //todo
-                        //one way to do this is to
-                        //have multiple multiplexers
-                        //run in turn
-                        //any way to save state will speed things up
-                        //another way is to have a separate clipper
-                        //clip the ranges first
-                        //then overlay tokenizer will not have to worry
-                        //about range
-                        intersect = range;
-                        break;
-                    }
+            if (arguments.length === 2) {
+                intersect = this.rangelist.clipRows(row, row + 1);
+                for (var i = 0; i < intersect.length - 1; i++) {
+                    tokens1 = this.overlay(row, tokens1, intersect[i]);
                 }
+                intersect = intersect[i];
             }
             if (!intersect) return tokens1;
             var tokens2 = this.tokenizer.getTokens(row, tokens);
-            var i1 = 0;
-            var i2 = 0;
-            var l1 = 0;
+            var l1 = 0;//index in tokens
             var l2 = 0;
+            var i1 = 0;//offset in tokens1[l1]
+            var i2 = 0;
             var end = Infinity;
             var tokens = [];
             var token = {};
-            var chars = 0;
+            var chars = 0;//offset in row
             if (intersect.start.row == row) {
+                //Add the unmodified tokens before the intersect column
                 chars = tokens1[l1++].value.length;
                 while (chars <= intersect.start.column) {
                     if (l1 >= tokens1.length) {

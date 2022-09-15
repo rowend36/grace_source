@@ -1,5 +1,6 @@
 define(function (require, exports, module) {
   'use strict';
+  /* globals ace */
   /**
    * The majority of the ace api we make use of.
    * Missing parts include EditSession, Document,

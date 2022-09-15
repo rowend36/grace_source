@@ -5,6 +5,14 @@ define(function (require, exports, module) {
     var Dropdown = require('grace/ui/dropdown').Dropdown;
     var FileUtils = require('grace/core/file_utils').FileUtils;
     var Notify = require('grace/ui/notify').Notify;
+    var appEvents = require('grace/core/app_events').AppEvents;
+    var noop = require('grace/core/utils').Utils.noop;
+    var Actions = require('grace/core/actions').Actions;
+    var configure = require('grace/core/config').Config.configure;
+    var join = FileUtils.join;
+    var dirname = FileUtils.dirname;
+    var GitUtils = require('./git_utils').GitUtils;
+    var isDirectory = FileUtils.isDirectory;
     var appConfig = require('grace/core/config').Config.registerAll(
         {
             gitdir: '***',
@@ -52,13 +60,9 @@ define(function (require, exports, module) {
             defaultRemoteBranch: undefined,
             forceShowStagedDeletes: true,
         },
-        'git'
+        'git',
     );
 
-    var configure = require('grace/core/config').Config.configure;
-    var join = FileUtils.join;
-    var dirname = FileUtils.dirname;
-    var isDirectory = FileUtils.isDirectory;
     require('grace/core/config').Config.registerInfo(
         {
             disableGit: 'Hide Git Option in the files menu',
@@ -91,136 +95,46 @@ define(function (require, exports, module) {
             forceShowStagedDeletes:
                 "Set to 'false' if viewStage operation seems too slow",
         },
-        'git'
+        'git',
     );
-
-    function findRoot(rootDir, fs) {
-        return new Promise(function (resolve, reject) {
-            var dir = appConfig.gitdir;
-            if (dir == '***') {
-                return Notify.ask(
-                    'Git support is still experimental. Use .grit instead of .git as git directory?',
-                    function () {
-                        configure('gitdir', '.grit', 'git', true);
-                        findRoot(rootDir, fs).then(resolve, reject);
-                    },
-                    function () {
-                        configure('gitdir', '.git', 'git', true);
-                        findRoot(rootDir, fs).then(resolve, reject);
-                    }
-                );
-            }
-            var check = function (root) {
-                fs.readdir(join(root, dir), function (e) {
-                    if (!e) {
-                        resolve(root);
-                    } else {
-                        if (e.code == 'ENOENT') {
-                            if (root != '/') {
-                                return check(dirname(root));
-                            }
-                            return resolve(false);
-                        } else return reject(e);
-                    }
-                });
-            };
-            check(rootDir);
-        });
-    }
-    //FileUtils guarantees only one browser will
+    //FileUtils guarantees only one fileview  will
     //use overflow at a time
     //global variables are allowed
-    var lastEvent;
-
-    function detectRepo(ev, btn, yes, no) {
-        require([
-            './iso_git',
-            './cache_fs',
-            './libs/isomorphic-http',
-            './libs/isomorphic-git-mod.js',
-            './git_interface',
-            './git_init',
-            './git_status',
-            './git_branch',
-            './git_commit',
-            './git_log',
-            './git_config',
-            './git_merge',
-            'grace/ui/itemlist',
-            './git_remote',
-            './git_fs',
-            './git_diff',
-            './merge3highlight',
-        ], function (git) {
-            if (!ev) return;
-            var dir = ev.rootDir;
-            lastEvent = ev;
-            findRoot(dir, ev.browser.fileServer).then(function (path) {
-                var fs = lastEvent.browser.fileServer;
-                var GitImpl = fs.$gitImpl || git.Git;
-                prov = new GitImpl(
-                    path || dir,
-                    join(path || dir, appConfig.gitdir),
-                    fs
-                );
-                if (path) {
-                    yes.show(btn);
-                    if (yes == GitOverflow) {
-                        prov.currentBranch().then(
-                            GitMenu.currentBranch.update,
-                            GitCommands.failure
-                        );
-                    }
-                } else no.show(btn);
-            }, GitCommands.failure);
-        });
-    }
-    var GitCommands = require('./git_commands').GitCommands;
-    var prov;
-    var detectHierarchyRepo = function (ev, btn, yes, no) {
-        ev.browser.menu && ev.browser.menu.hide();
-        ev.browser.expandFolder(ev.filename, function (cb) {
-            detectRepo(
-                Object.assign({}, ev, {
-                    browser: cb,
-                    rootDir: ev.filepath,
-                }),
-                ev.browser.getElement(ev.filename)[0],
-                yes,
-                no
-            );
-        });
-    };
+    var rootEvent;
+    /** @type {import('ui/dropdown').DropdownData} */
     var GitFileMenu = {
         '!update': [
             function (self, update) {
                 update(
-                    self,
-                    isDirectory(lastEvent.filepath || '')
+                    'show-file-status',
+                    isDirectory(rootEvent.filepath || '')
                         ? null
-                        : self['!show-file-status']
+                        : self['!show-file-status'],
                 );
             },
         ],
         '!show-file-status': {
             caption: 'Show file status',
-            command: 'status',
+            action: 'status',
         },
         'stage-file': {
             caption: 'Stage File',
-            command: 'add',
+            group: 'status',
+            action: 'add',
         },
         'unstage-file': {
             caption: 'Unstage File',
-            command: 'remove',
+            group: 'status',
+            action: 'remove',
         },
         'delete-from-tree': {
             caption: 'Delete and Stage',
-            command: 'delete',
+            group: 'status',
+            action: 'delete',
         },
         'diff-index': {
             caption: 'Show diff',
-            command: 'diff',
+            action: 'diff',
             sortIndex: 500,
         },
         'checkout-4': Dropdown.defaultLabel('Force Checkout'),
@@ -228,31 +142,31 @@ define(function (require, exports, module) {
             icon: 'warning',
             caption: 'Checkout file from index',
             className: 'git-warning-text',
-            command: 'doRevertINDEX',
+            group: 'commit',
+            action: 'revertChanges',
         },
         'do-revert-commit-file': {
             icon: 'warning',
             caption: 'Checkout file from ref',
             className: 'git-warning-text',
-            command: 'doRevertCommit',
+            group: 'commit',
+            action: 'checkoutRef',
         },
     };
-    var GitFileOverflow = new Dropdown();
-    GitFileOverflow.setData(GitFileMenu);
-
+    /** @type {import('ui/dropdown').DropdownData} */
     var NoGitMenu = {
         'init-repo': {
             caption: 'Initialize Repository',
-            command: 'init',
+            action: 'init',
         },
         'clone-repo': {
             caption: 'Clone Existing Repository',
-            command: 'clone',
+            group: 'init',
+            action: 'clone',
         },
     };
-    var NoGitOverflow = new Dropdown();
-    NoGitOverflow.setData(NoGitMenu);
 
+    /** @type {import('ui/dropdown').DropdownData} */
     var GitMenu = {
         currentBranch: {
             isHeader: true,
@@ -273,117 +187,249 @@ define(function (require, exports, module) {
         'do-commit': {
             icon: 'save',
             caption: 'Commit',
-            command: 'doCommit',
+            group: 'commit',
+            action: 'doCommit',
         },
         'view-stage': {
             icon: 'view_headline',
             caption: 'Repository Status',
-            command: 'showStage',
+            group: 'status',
+            action: 'showStage',
         },
         'show-status': {
             icon: 'view_headline',
             caption: 'Folder Status',
-            command: 'statusAll',
+            group: 'status',
+            action: 'statusAll',
         },
         branches: Dropdown.defaultLabel('Branches'),
         'create-branch': {
             icon: 'add',
             caption: 'Create Branch',
-            command: 'createBranch',
+            group: 'branch',
+            action: 'createBranch',
         },
         'switch-branch': {
             icon: 'swap_horiz',
             caption: 'Checkout Branch',
-            command: 'switchBranch',
+            group: 'branch',
+            action: 'switchBranch',
         },
         'switch-branch-nocheckout': {
             icon: 'home',
             caption: 'Set HEAD branch',
-            command: 'switchBranchNoCheckout',
+            group: 'branch',
+            action: 'switchBranchNoCheckout',
         },
         'do-merge': {
             icon: 'swap_vert',
             caption: 'Merge Branches',
-            command: 'doMerge',
+            group: 'merge',
+            action: 'doMerge',
         },
         'close-branch': {
             icon: 'delete',
             caption: 'Delete Branch',
-            command: 'deleteBranch',
+            group: 'branch',
+            action: 'deleteBranch',
         },
         'git-remotes': Dropdown.defaultLabel('Remotes'),
         'do-pull': {
             icon: 'vertical_align_bottom',
             caption: 'Pull Changes',
-            command: 'doPull',
+            group: 'merge',
+            action: 'doPull',
         },
         'do-push': {
             icon: 'vertical_align_top',
             caption: 'Push Changes',
-            command: 'doPush',
+            group: 'merge',
+            action: 'doPush',
         },
         'manage-remote': {
             icon: 'link',
             caption: 'Remotes',
-            command: 'manageRemotes',
+            group: 'remote',
+            action: 'manageRemotes',
         },
         'repo-actions': {
             icon: 'more_vert',
             caption: 'More...',
             sortIndex: 100000,
             subTree: {
-                histpry: Dropdown.defaultLabel('History'),
+                historyLabel: Dropdown.defaultLabel('History'),
                 'show-logs': {
                     icon: 'history',
                     caption: 'History',
-                    command: 'log',
+                    action: 'log',
                 },
                 'browse-logs': {
                     icon: 'history',
                     caption: 'Browse Ref/Commit',
-                    command: 'browseCommit',
+                    group: 'fs',
+                    action: 'browseCommit',
                 },
                 'configure-op': Dropdown.defaultLabel('authentication'),
                 authentication: {
                     icon: 'account_circle',
                     caption: 'Add Authentication',
-                    command: 'doConfig',
+                    group: 'config',
+                    action: 'doConfig',
                 },
                 'checkout-5': Dropdown.defaultLabel('Force Checkout'),
                 'do-revert-index': {
                     icon: 'warning',
                     caption: 'Checkout index',
                     className: 'git-warning-text',
-                    command: 'doRevertINDEX',
+                    group: 'commit',
+                    action: 'revertChanges',
                 },
                 'do-revert-commit': {
                     icon: 'warning',
                     caption: 'Checkout ref',
+                    group: 'commit',
                     className: 'git-warning-text',
-                    command: 'doRevertCommit',
+                    action: 'checkoutRef',
                 },
             },
         },
     };
+
+    function findRoot(rootDir, fs) {
+        return new Promise(function (resolve, reject) {
+            var dir = appConfig.gitdir;
+            if (dir == '***') {
+                return Notify.ask(
+                    'Git support is still experimental. Use .grace instead of .git as git directory?',
+                    function () {
+                        configure('gitdir', '.grace', 'git', true);
+                        findRoot(rootDir, fs).then(resolve, reject);
+                    },
+                    function () {
+                        configure('gitdir', '.git', 'git', true);
+                        findRoot(rootDir, fs).then(resolve, reject);
+                    },
+                );
+            }
+            var check = function (root) {
+                fs.readdir(join(root, dir), function (e) {
+                    console.log(root);
+                    if (!e) {
+                        resolve(root);
+                    } else {
+                        if (e.code == 'ENOENT') {
+                            if (root != '/') {
+                                return check(dirname(root));
+                            }
+                            return resolve(false);
+                        } else return reject(e);
+                    }
+                });
+            };
+            check(rootDir);
+        });
+    }
+
+    //Detect Repositiory When Triggered In Fileview
+    function detectRepo(ev, yes, no) {
+        console.log('fmffnn');
+        require(['./iso_git'], function (git) {
+            console.log('yipee');
+            if (!ev) return;
+            var dir = ev.rootDir;
+            rootEvent = ev;
+            findRoot(dir, ev.fs).then(function (path) {
+                var fs = rootEvent.fs;
+                var GitImpl = fs.$gitImpl || git.Git;
+                prov = new GitImpl(
+                    path || dir,
+                    join(path || dir, appConfig.gitdir),
+                    fs,
+                );
+                if (path) {
+                    yes.show(ev.anchor);
+                    if (yes == GitOverflow) {
+                        prov.currentBranch().then(
+                            GitMenu.currentBranch.update,
+                            GitUtils.failure,
+                        );
+                    }
+                } else no.show(ev.anchor);
+            }, GitUtils.failure);
+        });
+    }
+
+    var prov;
+
+    //Detect Repositiory When Triggered In Projectview
+    var detectProjectRepo = function (ev, yes, no) {
+        console.log('detect rodod');
+        ev.fileview.menu && ev.fileview.menu.hide();
+        ev.fileview.expandFolder(ev.filename, function (cb) {
+            detectRepo(
+                Object.assign({}, ev, {
+                    fileview: cb,
+                    rootDir: ev.filepath,
+                    anchor: ev.fileview.getElement(ev.filename)[0],
+                }),
+                yes,
+                no,
+            );
+        });
+    };
+
+    //Detect Repository when triggered by Command
+    var detectExecRepo = function (ev) {
+        var item = this;
+        if (!ev.fileview)
+            ev.fileview = {
+                reload: noop,
+            };
+        if (!ev.rootDir) {
+            return false;
+        }
+        var dir = ev.rootDir;
+        var file = './git_' + (item.group || item.action);
+        require(['./iso_git', file], function (git, mod) {
+            findRoot(dir, ev.fs).then(function (path) {
+                var fs = ev.fs;
+                if (!path) {
+                    path = FileUtils.getProject().rootDir;
+                    fs = FileUtils.getProject().fileServer;
+                }
+                var GitImpl = fs.$gitImpl || git.Git;
+                prov = new GitImpl(path, join(path, appConfig.gitdir), fs);
+                mod[item.action](event, prov);
+            });
+        });
+    };
+    var GitFileOverflow = new Dropdown();
+    var NoGitOverflow = new Dropdown();
     var GitOverflow = new Dropdown();
+
+    GitFileOverflow.setData(GitFileMenu);
+    NoGitOverflow.setData(NoGitMenu);
     GitOverflow.setData(GitMenu);
 
     GitOverflow.onclick = GitFileOverflow.onclick = NoGitOverflow.onclick = function (
         e,
         id,
         span,
-        data
+        data,
     ) {
         prov = prov.cached(id);
-        if (data.command) {
-            GitCommands[data.command](lastEvent, prov);
-        } else if (data.onclick) data.onclick(lastEvent, prov);
-        return true;
+        if (!data.action) return false;
+        var file = './git_' + (data.group || data.action);
+        require([file], function (mod) {
+            mod[data.action](rootEvent, prov);
+        });
+        return true; //Not used
     };
     GitOverflow.ondismiss = GitFileOverflow.ondismiss = NoGitOverflow.ondismiss = function (
-        e
+        e,
     ) {
-        var parent = lastEvent.browser.menu;
+        var parent = rootEvent.fileview.menu;
+        rootEvent = null;
         if (parent) {
             if (e) {
                 if (!e.navigation) parent.onOverlayClick(e);
@@ -400,82 +446,75 @@ define(function (require, exports, module) {
             navigation: true,
         });
     };
-
-    var GitFileOption = {
+    //Add the Actions
+    (function () {
+        function createAction(item) {
+            if (item.action) {
+                item.description = 'Git: ' + item.caption;
+                item.name = 'git.' + item.action;
+                item.handle = detectExecRepo;
+                item.showIn = 'editor';
+                Actions.addAction(item);
+            }
+            if (item.subTree) {
+                for (var i in item.subTree) {
+                    createAction(item.subTree[i]);
+                }
+            }
+        }
+        for (var i in GitMenu) {
+            createAction(GitMenu[i]);
+        }
+        for (i in GitFileMenu) {
+            createAction(GitFileMenu[i]);
+        }
+        for (i in NoGitMenu) {
+            createAction(NoGitMenu[i]);
+        }
+    })();
+    Actions.addAction({
         caption: 'Git...',
-        id: '!git-file-opts',
-        '!update': function (self, update) {
-            update(this.id.slice(1), appConfig.disableGit ? null : this);
+        name: 'gitFileOption',
+        isAvailable: function (self, update) {
+            return !appConfig.disableGit;
         },
-        onclick: function (ev) {
-            detectRepo(
-                ev,
-                GitFileOption.anchor,
-                GitFileOverflow,
-                NoGitOverflow
-            );
+        showIn: ['fleview.file', 'fileview.folder'],
+        handle: function (ev) {
+            console.log('File option');
+            detectRepo(ev, GitFileOverflow, NoGitOverflow);
             ev.preventDefault();
         },
         hasChild: true,
-        close: false,
-    };
-    var GitOption = {
+        dontClose: true,
+    });
+    Actions.addAction({
         sortIndex: 200,
         caption: 'Git...',
-        id: '!git-opts',
-        '!update': GitFileOption['!update'],
-        onclick: function (ev) {
-            lastEvent = ev;
-            detectRepo(ev, GitOption.anchor, GitOverflow, NoGitOverflow);
-            ev.preventDefault();
-            ev.stopPropagation();
+        name: 'gitProjectOption',
+        isAvailable: function (self, update) {
+            return !appConfig.disableGit;
         },
-        hasChild: true,
-        close: false,
-    };
-    var GitProjectOption = {
-        caption: 'Git...',
-        id: '!git-project-opts', //overwrites GitOption
-        '!update': GitFileOption['!update'],
-        sortIndex: 200,
-        onclick: function (ev) {
-            detectHierarchyRepo(
+        showIn: 'fileview.header',
+        handle: function (ev) {
+            (ev.fileview.isProjectView ? detectProjectRepo : detectRepo)(
                 ev,
-                GitProjectOption.anchor,
                 GitOverflow,
-                NoGitOverflow
+                NoGitOverflow,
             );
-            ev.stopPropagation();
             ev.preventDefault();
         },
         hasChild: true,
-        close: false,
-    };
-    //Add Git option for top bar
-    FileUtils.registerOption(['header'], GitOption.id, GitOption);
-    //Add Git option for files
-    FileUtils.registerOption(
-        ['file', 'folder'],
-        GitFileOption.id,
-        GitFileOption
-    );
-    //Add Git Opton for project view
-    FileUtils.registerOption(
-        ['project'],
-        GitProjectOption.id,
-        GitProjectOption
-    );
-    //Remove default Git option from project
-    FileUtils.registerOption(['project'], GitOption.id, '');
+        dontClose: true,
+    });
 
     //AutoLoad
-    if (
-        FileUtils.channelHasPending('servers-!gitfs') ||
-        FileUtils.channelHasPending('diffs-git') ||
-        FileUtils.channelHasPending('docs-git-merge')
-    ) {
-        detectRepo();
-    } else if (appConfig.enableMergeMode) {
+    if (FileUtils.channelHasPending('servers-!gitfs')) require(['./git_fs']);
+    appEvents.on('documentsLoaded', function () {
+        if (FileUtils.channelHasPending('diffs-git')) require(['./git_diff']);
+        if (FileUtils.channelHasPending('docs-git-merge'))
+            require(['./merge_doc']);
+    });
+    if (appConfig.enableMergeMode) {
         require(['./merge3highlight']);
     }
 }); /*_EndDefine*/

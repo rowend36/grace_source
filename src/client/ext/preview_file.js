@@ -39,10 +39,10 @@ define(function(require,exports,module) {
             data.height = img.naturalHeight;
             meta.innerHTML = table(data);
         };
-        if (ev.browser.fileServer.href) {
-            img.src = ev.browser.fileServer.href + "/" + ev.filepath;
+        if (ev.fs.href) {
+            img.src = ev.fs.href + "/" + ev.filepath;
         } else {
-            ev.browser.fileServer.readFile(ev.filepath, function(e, res) {
+            ev.fs.readFile(ev.filepath, function(e, res) {
                 if (e) Notify.error(e);
                 if (img) {
                     if (!res.buffer) res = new Uint8Array(res);
@@ -59,7 +59,7 @@ define(function(require,exports,module) {
     }
 
     function createFontFace(path, type, img) {
-        var id = require("grace/core/utils").Utils.genID('font');
+        var id = require("grace/core/utils").Utils.genID('ff');
         var style = document.createElement('style');
         style.id = id;
         style.innerHTML = [
@@ -111,10 +111,10 @@ define(function(require,exports,module) {
             name: ev.filepath
         };
         meta.innerHTML = table(data);
-        if (ev.browser.fileServer.href) {
-            font = createFontFace(ev.browser.fileServer.href + "/" + ev.filepath, mime, img);
+        if (ev.fs.href) {
+            font = createFontFace(ev.fs.href + "/" + ev.filepath, mime, img);
         } else {
-            ev.browser.fileServer.readFile(ev.filepath, function(e, res) {
+            ev.fs.readFile(ev.filepath, function(e, res) {
                 if (img) {
                     if (!res.buffer) res = new Uint8Array(res);
                     if (res.length < ONE_MB) {
@@ -160,10 +160,10 @@ define(function(require,exports,module) {
             data.duration = img.duration;
             meta.innerHTML = table(data);
         });
-        if (ev.browser.fileServer.href) {
-            img.src = ev.browser.fileServer.href + "/" + ev.filepath;
+        if (ev.fs.href) {
+            img.src = ev.fs.href + "/" + ev.filepath;
         } else {
-            ev.browser.fileServer.readFile(ev.filepath, function(e, res) {
+            ev.fs.readFile(ev.filepath, function(e, res) {
                 if (img) {
                     url = URL.createObjectURL(new Blob([res]));
                     img.src = url;
@@ -190,7 +190,7 @@ define(function(require,exports,module) {
         'woff': previewFont,
         'woff2': previewFont
     };
-    Fileviews.on('open-file', function(ev) {
+    Fileviews.on('pick-file', function(ev) {
         if (FileUtils.isBinaryFile(ev.filename)) {
             var ext = FileUtils.extname(ev.filename).toLowerCase();
             if (previewers[ext]) {

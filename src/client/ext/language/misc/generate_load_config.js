@@ -5,7 +5,13 @@ define(function (require, exports, module) {
     var FileUtils = require('grace/core/file_utils').FileUtils;
     var Configs = require('grace/ext/config/configs').Configs;
     var getFormatter = require('grace/ext/format/formatters').getFormatter;
-   require('grace/setup/setup_config').getFormatter;
+    /**
+     * @param {FS} server
+     * @param {string} projectFolder
+     * @param {Array<string>} extensions
+     * @param {$Element} el
+     * @param {Function} cb
+     */
     function gatherGlobs(server, projectFolder, extensions, el, cb) {
         var isDir = FileUtils.isDirectory;
         var preload = [];
@@ -20,6 +26,7 @@ define(function (require, exports, module) {
                         });
                         return [null, true];
                     } else return [path + '**', true];
+                    // @ts-ignore - Jshint will complain without break
                     break;
                 case 'load':
                     return [
@@ -50,7 +57,7 @@ define(function (require, exports, module) {
         el.find('.btn').on('click', function () {
             if (!currentData)
                 return console.error(
-                    'Found impossible situation: currentData called twice'
+                    'Found impossible situation: currentData called twice',
                 );
             var type = this.name;
 
@@ -73,10 +80,9 @@ define(function (require, exports, module) {
                 currentData = null;
                 nextItem.apply(
                     null,
-                    onResult(type, path, priority, data.initialValue.priority)
+                    onResult(type, path, priority, data.initialValue.priority),
                 );
             }
-
             if (waiting.length) {
                 updateForm(waiting.shift());
             } else if (isShown) {
@@ -98,8 +104,8 @@ define(function (require, exports, module) {
                         data.storedValue.type,
                         path,
                         data.storedValue.priority,
-                        data.initialValue.priority
-                    )
+                        data.initialValue.priority,
+                    ),
                 );
             } else if (isShown) {
                 waiting.push([path, next, data]);
@@ -123,6 +129,7 @@ define(function (require, exports, module) {
                     pr: data.initialValue.priority,
                     globPath: data.initialValue.path,
                 });
+                return true;
             },
             initialValue: {
                 priority: 0,
@@ -160,7 +167,7 @@ define(function (require, exports, module) {
 
     function applyConfig(server, projectFolder, extensions, folders) {
         var config = {
-            'autocompletion.preloadConfigs+': folders.map(function (paths) {
+            'intellisense.preloadConfigs+': folders.map(function (paths) {
                 return {
                     extensions: extensions,
                     completer: ['ternClient', 'tsClient', 'tagsClient'],
@@ -196,44 +203,40 @@ define(function (require, exports, module) {
                         require('grace/ext/fileview/fileviews').Fileviews.pickFile(
                             'Choose project configuration file',
                             function (ev) {
+                                ev.preventDefault();
+                                saveFile(server, ev.filepath, res);
                                 if (ev.filepath) {
                                     Configs.setConfig(ev.filepath, config);
+                                    Configs._debug = true;
                                     Configs.commit();
+                                    Configs._debug = false;
                                 }
-                                saveFile(server, projectFolder, res);
                             },
-                            true
+                            true,
                         );
                     },
                     function () {
                         Notify.ask('Apply settings? ', function () {
                             Configs.save(config);
                         });
-                    }
+                    },
                 );
-            }
+            },
         );
     }
-    function saveFile(server, projectFolder, res) {
-        server.readFile(
-            FileUtils.join(projectFolder, name),
-            function (oldContent) {
-                if (oldContent) {
-                    res = oldContent.replace(/\{(\s*)|$/, '$&' + res + '$1');
-                } else res = '//GRACE_CONFIG\n' + res;
-                server.writeFile(
-                    FileUtils.join(projectFolder, name),
-                    res,
-                    function () {
-                        Notify.info('Saved');
-                    }
-                );
-            }
-        );
+    function saveFile(server, path, res) {
+        server.readFile(path, function (oldContent) {
+            if (oldContent) {
+                res = oldContent.replace(/\{(\s*)|$/, '$&' + res + '$1');
+            } else res = '//GRACE_CONFIG\n' + res;
+            server.writeFile(path, res, function () {
+                Notify.info('Saved');
+            });
+        });
     }
     exports.generateLoadConfig = function (ev) {
         var projectFolder = ev.filepath;
-        var server = ev.browser.fileServer;
+        var server = ev.fs;
         Notify.prompt(
             'Enter file extensions separated by commas',
             function (ans) {
@@ -287,15 +290,15 @@ define(function (require, exports, module) {
                                     server,
                                     projectFolder,
                                     extensions,
-                                    folders
+                                    folders,
                                 );
-                            }
+                            },
                         );
                     },
                 });
             },
             'js',
-            ['py', 'cpp,c,h,cxx', 'java', 'ts,tsx,js,jsx']
+            ['py', 'cpp,c,h,cxx', 'java', 'ts,tsx,js,jsx'],
         );
     };
 });

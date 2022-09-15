@@ -3,7 +3,7 @@ define(function (require, exports, module) {
   var expect = require("chai").expect;
   var SharedStore = require("grace/ext/storage/shared_store").SharedStore;
   var Utils = require("grace/core/utils").Utils;
-  var Perf = require("grace/ext/profiler");
+  var Perf = require("grace/ext/dev/profiler");
   var KEY = "SharedStore";
   describe("SharedStore.stack", function () {
     var stack;
@@ -32,6 +32,8 @@ define(function (require, exports, module) {
     });
     //TODO more tests
   });
+  //TODO there is a fickle error in SharedStore.Set
+  //which happens once in a while.
   describe("SharedStore", function () {
     var DELAY = 120;
     var RERUNS = 1;

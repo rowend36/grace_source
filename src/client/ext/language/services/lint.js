@@ -1,66 +1,84 @@
 define(function (require, exports, module) {
     'use strict';
 
-    var Annotations = ace.require('ace/annotations').Annotations;
+    var Annotations = require('ace!annotations').Annotations;
     var Editors = require('grace/editor/editors').Editors;
-    var appEvents = require('grace/core/app_events').AppEvents;
     var EventsEmitter = require('grace/core/events_emitter').EventsEmitter;
     var Utils = require('grace/core/utils').Utils;
-    var getActiveEditor = require('grace/setup/setup_editors').getEditor;
 
     var lintProviders = new (require('grace/core/registry').Registry)(
         'getAnnotations',
-        'linting'
+        'intellisense.linting',
     );
     var lintWrappers = [];
 
-    function createLintWrapper(editor, provider, instance) {
-        //ace.Annotations.Provider interface.
+    function createLintWrapper(editor, provider) {
+        var wrapper = lintWrappers.find(function (e) {
+            return e.provider === provider && e.editor === editor;
+        });
+        if (wrapper) return wrapper;
+        //ace Annotations.Provider interface.
         //Known issues:
-        //Providers are tied to editor lifecycle not session lifecycle
+        //Providers are tied to editor/application lifecycle not session.
         //Also createWorker is synchronous and does not pass the session.
         //Solution:
-        //Create AnnotationProvider wrappers for each instance.
-        var stub = {
+        //Create AnnotationProvider wrappers for each Editor and for each Provider and Workers for each instance.
+        wrapper = {
             name: provider.name,
-            get provider() {
-                return provider;
-            },
+            provider: provider,
+            editor: editor,
             createWorker: function () {
+                //Create a worker for each session
                 var worker = new EventsEmitter();
                 worker.attachToDocument = function (doc) {
                     this.doc = doc;
                 };
-                var grp = Utils.groupEvents(instance);
+                var grp = Utils.groupEvents();
                 worker.terminate = function () {
+                    worker.terminated = true;
                     this.trigger('terminate');
                     grp.off();
                 };
-                grp.on('annotate', function (data) {
-                    if (data.session.getDocument() == this.doc) {
-                        this.trigger('annotate', data, true);
-                    }
+                provider.init(editor, function (instance) {
+                    if (!instance || worker.terminated) return;
+                    grp.on(
+                        'annotate',
+                        function (data) {
+                            if (data.session.getDocument() == worker.doc) {
+                                worker.trigger('annotate', data, true);
+                            }
+                        },
+                        instance,
+                    );
+                    grp.once(
+                        'destroy',
+                        worker.terminate.bind(worker),
+                        instance,
+                    );
+                    instance.updateAnnotations(editor);
                 });
-                grp.once('destroy', worker.terminate.bind(worker));
+                return worker;
             },
             getPriority: function (mode, session) {
-                return (
+                if (
                     editor.session === session &&
-                    provider.modes.indexOf(mode.split('/').pop()) && // mode matches
-                    provider.priority
-                );
+                    provider.modes.indexOf(mode.split('/').pop()) > -1
+                )
+                    // mode matches
+                    return !editor.$preferDefaultLinters
+                        ? provider.priority
+                        : provider.priority - 100000;
             },
             destroy: function () {
-                instance.$lintWrapper = null;
                 lintWrappers.splice(lintWrappers.indexOf(this), 1);
-                Annotations.unregisterProvider(stub);
+                Annotations.unregisterProvider(wrapper);
                 onChangeSessionForLint(null, editor);
             },
         };
-        instance.$lintWrapper = stub;
-        lintWrappers.push(stub);
-        Annotations.registerProvider(stub);
-        instance.on('destroy', stub.destroy.bind(stub));
+        lintWrappers.push(wrapper);
+        Annotations.registerProvider(wrapper);
+        Annotations.updateWorkers(editor.session);
+        return wrapper;
     }
 
     var onValueChangeForAnnotations = function (e, editor) {
@@ -68,7 +86,7 @@ define(function (require, exports, module) {
         if (!editor.session.$useWorker) return;
         editor.$debounceAnnotations = setTimeout(
             $invokeLinters.bind(editor),
-            2000
+            2000,
         );
     };
     var $invokeLinters = function () {
@@ -76,21 +94,12 @@ define(function (require, exports, module) {
             hasMain;
         if (!editor.session.$useWorker) return;
         lintProviders.getActive(editor).forEach(function (server) {
-            var instance;
             if (hasMain && !server.isSupport) return;
             hasMain = hasMain || !server.isSupport;
-            if ((instance = editor[server.name])) {
-                if (!instance.$lintWrapper)
-                    createLintWrapper(editor, server, instance);
-                instance.updateAnnotations(editor);
+            createLintWrapper(editor, server);
+            if (editor[server.name]) {
+                editor[server.name].updateAnnotations(editor, Utils.noop);
             }
-            server.init(editor, function (instance) {
-                if (!instance) return;
-                editor[server.name] = instance;
-                if (!instance.$lintWrapper)
-                    createLintWrapper(editor, server, instance);
-                instance.updateAnnotations(editor);
-            });
         });
     };
 
@@ -129,23 +138,27 @@ define(function (require, exports, module) {
             editor.$onChangeSessionForLint(editor, editor);
         }
     }
-    Editors.forEach(setupLinters);
-    appEvents.on('createEditor', function (e) {
-        setupLinters(e.editor);
-    });
+    Editors.onEach(setupLinters);
 
     exports.registerLintProvider = function (provider) {
         lintProviders.register(provider);
-        if (getActiveEditor())
-            onValueChangeForAnnotations(null, getActiveEditor());
+        Editors.forEach(function (e) {
+            onValueChangeForAnnotations(null, e);
+        });
     };
     exports.unregisterLintProvider = function (provider) {
         lintProviders.unregister(provider);
-        if (provider.$lintWrappers)
-            lintWrappers.forEach(function (e) {
-                if (e.provider === provider) e.remove();
-            });
-        if (getActiveEditor())
-            onValueChangeForAnnotations(null, getActiveEditor());
+        lintWrappers.forEach(function (e) {
+            if (e.provider === provider) e.destroy();
+        });
+        Editors.forEach(function (e) {
+            onValueChangeForAnnotations(null, e);
+        });
     };
+    Editors.getSettingsEditor().addOption('preferDefaultLinters', {
+        set: function () {
+            Annotations.updateWorkers(this.session);
+        },
+        value: false,
+    });
 });

@@ -3,6 +3,9 @@ define(function (require, exports, module) {
     var Utils = require('./utils').Utils;
     var debug = console;
     //Learnt from antlr: visitors and listeners
+    /**
+     * @this {RuleParser}
+     */
     function AbstractParser() {}
 
     //Override this method for better error recovery/reporting
@@ -22,7 +25,7 @@ define(function (require, exports, module) {
                 efficiency:
                     Math.floor(
                         (100 * this.consumed) /
-                            (this.lookAheads + this.triedToConsume)
+                            (this.lookAheads + this.triedToConsume),
                     ) + '%',
             });
             debug.log(stats);
@@ -68,8 +71,8 @@ define(function (require, exports, module) {
                 state.pos,
                 Math.min(
                     state.text.indexOf('\n', state.pos + 1) + 1 || Infinity,
-                    state.pos + 10
-                )
+                    state.pos + 10,
+                ),
             );
         error[0] += ' at position ' + state.pos + '\n:->' + before;
         e.message = error.join('\n');
@@ -78,20 +81,24 @@ define(function (require, exports, module) {
 
     //Simple parser without lexer used by JsonExt and Schema and quite disappointingly, nothing else
     //Not optimized, allows editing, inspired by ace Tokenizer
-    /**@typedef rule {
+    /**
+     * @typedef {{
         ///Input - One of re or token or rules
-     *  rules?: [rules] - matches all the rules in order
-     *  (re|token)?: regex or single character
+        rules?: Rule[]; // matches all the rules in order
+        token?: string // single character
+        re?: RegExp // regex or single character
         ///Output One of select,enter or next or maybe
-     *  select?: [rules] - choose between multiple rules using lookahead
-     *  enter?: start a new context, automatically validates any lookahead,
-     *  exit?: rule to read after the context in enter has been consumed
-     *  next?: read the next token immediately after this rule,
-     *  maybe?: like next but does not fail if there is no match so implies stopLookAhead
+        select?: Rule[] // choose between multiple rules using lookahead
+        enter?: string // start a new context, automatically validates any lookahead,
+        exit?: string // rule to read after the context in enter has been consumed
+        next?: string // read the next token immediately after this rule,
+        maybe?: string // like next but does not fail if there is no match so implies stopLookAhead
         /// Flags
-     *  stopLookAhead: Use with next|select to automatically validate current lookahead
-     *  isLookAhead: check this rule but don't consume any tokens
-     *}
+        stopLookAhead: boolean // Use with next|select to automatically validate current lookahead
+        isLookAhead: boolean // check this rule but don't consume any tokens
+     *}} Rule
+     * @constructor
+     * @param {Record<string,Rule|string|RegExp>} [rules]
      */
 
     function RuleParser(rules) {
@@ -100,7 +107,7 @@ define(function (require, exports, module) {
             this.rules = this.parseRules(rules);
         }
     }
-    RuleParser.prototype.Rule = function (keys, p, name) {
+    RuleParser.prototype.Rule = function Rule(keys, p, name) {
         this.name = p.name || name;
         this.rules = this.enter = this.exit = this.next = this.select = undefined;
         if (p.rules) this.rules = p.rules.map(keys);
@@ -247,7 +254,7 @@ define(function (require, exports, module) {
         return {
             text: this.stream,
             pos: this.pos,
-            stack: this.stack.slice(0),
+            stack: this.stack && this.stack.slice(0),
             state: this.state,
         };
     };
@@ -335,10 +342,10 @@ define(function (require, exports, module) {
             var result = this.consume(rule);
             if (result === false) return false;
             if (this._debug) {
-                if (result) this.numEmptyConsume = 0;
+                if (result && !rule.isLookAhead) this.numEmptyConsume = 0;
                 else if (++this.numEmptyConsume > 100) {
                     throw new Error(
-                        'Maximum number of empty tokens consumed ' + this.state
+                        'Maximum number of empty tokens consumed ' + this.state,
                     );
                 }
                 if (!this.inLookAhead) this.consumed++;
@@ -361,7 +368,7 @@ define(function (require, exports, module) {
                     return false;
                 }
             }
-            this.state = this.inList;//used by enter rule
+            this.state = this.inList; //used by enter rule
             this.inList = prevList;
         }
 
@@ -370,7 +377,7 @@ define(function (require, exports, module) {
                 Utils.repeat(this.stack.length, '-') +
                     ('|' + (rule.rules ? '' : '-')) +
                     (this.inLookAhead ? '??' : '') +
-                    this.state
+                    this.state,
             );
 
         if (this.inLookAhead && rule.stopLookAhead) return true;
@@ -381,7 +388,7 @@ define(function (require, exports, module) {
                     'Bad state, cannot use enter rule for ' +
                         this.state +
                         ' while executing rules in ' +
-                        this.inList
+                        this.inList,
                 );
             //can't enter context while in select so enter implies stop select
             if (this.inLookAhead) return true;
@@ -399,6 +406,8 @@ define(function (require, exports, module) {
     };
     RuleParser.prototype.errorState = 0; //okay
     RuleParser.prototype.consumeFully = function () {
+        this.inLookAhead = false;
+        this.inList = false;
         while (this.consumeRules()) {
             if (this.state == null) {
                 while (this.stack.length) {
@@ -421,25 +430,29 @@ define(function (require, exports, module) {
         this.errorState = this.UNEXPECTED;
     };
     Utils.inherits(RuleParser, AbstractParser);
-
     /**
-     * @typedef {{start:number,end?:number,text?:string,type:string}} Node
+     * @typedef {{start:number,end?:number,text?:string,depth:number,type:string}} Node
+     * @typedef {Node & {children:Node[]}} ParentNode
      * Generates Concrete Syntax Tree from a parser
      */
     /**@constructor*/
     var TreeListener = function () {
+        /**@type {Array<ParentNode>} */
         this.stack = [
             {
+                start: 0,
+                type: '',
+                depth: -1,
                 children: [],
             },
         ];
     };
-    /** @returns {Node}*/
+    /** @returns {ParentNode}*/
     TreeListener.prototype.getContext = function () {
         return this.stack[this.stack.length - 1];
     };
     TreeListener.prototype.exit = function (key, pos, json) {
-        var node = this.stack.pop();
+        var node = /**@type {Node}*/ (this.stack.pop());
         node.end = pos;
         node.text = json.slice(node.start, node.end);
         this.onParse(node);
@@ -449,6 +462,7 @@ define(function (require, exports, module) {
         var node = {
             type: key,
             start: pos,
+            depth: ctx ? ctx.depth + 1 : 0,
             parent: ctx,
             children: [],
         };
@@ -461,6 +475,7 @@ define(function (require, exports, module) {
             type: key,
             start: pos,
             parent: ctx,
+            depth: ctx ? ctx.depth + 1 : 0,
             end: pos + value.length,
             text: value,
         };

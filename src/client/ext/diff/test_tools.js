@@ -8,7 +8,7 @@ function test(cond, result) {
 function noop() {}
 
 function time(func, name) {
-    return function() {
+    return function () {
         debug.log(name);
         debug.time(name);
         var res = func.apply(this, arguments);
@@ -18,10 +18,10 @@ function time(func, name) {
 }
 //python-like @decorate
 function decorate(func, after) {
-    return function() {
+    return function () {
         var result = func.apply(this, arguments);
         var error = after.apply(this, spread(arguments, result));
-        return (error !== undefined) ? error : result;
+        return error !== undefined ? error : result;
     };
 }
 

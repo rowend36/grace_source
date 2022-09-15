@@ -3,6 +3,7 @@ define(function (require, exports, module) {
     var FileUtils = require('grace/core/file_utils').FileUtils;
     var Fileviews = require('grace/ext/fileview/fileviews').Fileviews;
     var appEvents = require('grace/core/app_events').AppEvents;
+    var Actions = require('grace/core/actions').Actions;
     require('grace/setup/setup_sideview');
     var appConfig = require('grace/core/config').Config.registerAll({
         disableOptimizedFileBrowser: false,
@@ -27,6 +28,19 @@ define(function (require, exports, module) {
         require('./file_browser').ProjectView;
     var projectView = new ProjectView($('#hierarchy'), '');
     projectView.id = 'projectView';
+    
+    Actions.registerActionHost('fileview', function (action) {
+        Fileviews.Impl.prototype.onNewOption(
+            ['file', 'folder'],
+            action.id,
+            action
+        );
+    });
+    ['file', 'folder', 'project', 'header'].forEach(function (e) {
+        Actions.registerActionHost('fileview.' + e, function (action) {
+            Fileviews.Impl.prototype.onNewOption([e], action.id, action);
+        });
+    });
 
     FileUtils.ownChannel(
         'fileviews',

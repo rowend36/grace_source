@@ -5,52 +5,34 @@ define(function (require, exports, module) {
     var closeDoc = require('../docs/docs').closeDoc;
     var openDoc = require('../docs/docs').openDoc;
     var DocsTab = require('./setup_tab_host').DocsTab;
-
-    var Notify = require('../ui/notify').Notify;
-
+    require('../docs/document_commands');
+    //Most of this file is now handled by doc_mixins
     //needed for Docs.defaults
     require('../editor/editor_settings');
 
     appEvents.on('tabClosed', function (ev) {
         if (Docs.has(ev.tab)) {
             closeDoc(ev.tab);
+            console.log(ev.tab,DocsTab.numTabs());
             if (DocsTab.numTabs() === 0) {
                 openDoc(null, '', null, {autoClose: true});
             }
         }
     });
 
-    appEvents.on('closeTab', function (ev) {
-        var doc = Docs.get(ev.tab);
-        if (doc && doc.clones && doc.clones.length) {
-            Notify.error('This document is being used by a plugin');
-            ev.preventDefault();
-        }
-        if (!doc) return;
-        if (doc.dirty) {
-            ev.stopPropagation();
-            ev.await('close-without-saving-' + doc.lastSave, function (resume) {
-                Notify.ask(
-                    Docs.getName(doc.id) +
-                        ' has unsaved changes. Close without saving?',
-                    resume
-                );
-            });
-        }
-    });
     var Config = require('../core/config').Config;
     Config.registerAll(
         {
             detectIndentation: true,
         },
-        'documents'
+        'documents',
     );
     Config.registerInfo(
         {
             detectIndentation:
                 'Automatically detect indentation in new files. Uses resource context.',
         },
-        'documents'
+        'documents',
     );
     appEvents.on('openDoc', function (e) {
         //TODO: usually not triggered for already loaded documents
@@ -68,5 +50,4 @@ define(function (require, exports, module) {
 
     //allow open document in new tab
     Docs.initialize();
-    appEvents.on('documentsLoaded', Docs.refreshDocs.bind(null, null));
 });

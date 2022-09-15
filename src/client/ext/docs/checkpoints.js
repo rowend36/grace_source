@@ -6,48 +6,48 @@ define(function (require, exports, module) {
         {
             maximumCheckpoints: 9,
         },
-        'documents'
+        'documents',
     );
     require('grace/core/config').Config.registerInfo(
         {
             maximumCheckpoints:
                 'Checkpoints allow you to jump between locations in history quickly. Note: Checkpoints are always deleted when a document is closed. Also, saving a checkpoint might fail if a document is very large',
         },
-        'documents'
+        'documents',
     );
-    var debug = console;
     //priority for checkpoints user creates
     var USER_CHECKPOINT_PRIORITY = 15;
     var TEMP_CHECKPOINT_PRIORITY = 5;
     var clearCheckpoints = Utils.noop;
     Doc.prototype.checkout = function (checkpoint, data, cb) {
-        function doRestore(data) {
+        var doRestore = function doRestore(data) {
             if (data) {
-                this.stateID = checkpoint.name;
+                this.$stateID = checkpoint.name;
                 this.setDirty();
                 this.restoreState(data);
                 this.session.once(
                     'change',
                     function () {
-                        if (this.stateID == checkpoint.name) {
-                            this.stateID = null;
+                        if (this.$stateID == checkpoint.name) {
+                            this.$stateID = null;
                         }
-                    }.bind(this)
+                    }.bind(this),
                 );
                 cb(true);
             } else {
                 this.deleteCheckpoint(checkpoint.name);
                 cb(false);
             }
-        }
+        }.bind(this);
         if (data) {
             doRestore(data);
         } else Docs.loadBlob(checkpoint.key, doRestore);
     };
     Doc.prototype.$loadCheckpoints = function () {
         if (!this.checkpoints) {
-            this.checkpoints =
-                Docs.getBlob(Docs.hasBlob(this.id, 'checkpoints')) || [];
+            var key = Docs.hasBlob(this.id, 'checkpoints');
+            // @ts-ignore
+            this.checkpoints = (key && Docs.getBlob(key)) || [];
         }
         clearCheckpoints();
         return this.checkpoints;
@@ -66,51 +66,53 @@ define(function (require, exports, module) {
             });
         } else checkpoint = this.checkpoints[this.checkpoints.length - 1];
         if (!checkpoint) return cb(false);
-        if (!this.revertPoints) {
-            this.revertPoints = [];
+        if (!this.$revertPoints) {
+            this.$revertPoints = [];
         }
 
-        if (checkpoint.name == this.stateID) {
+        if (checkpoint.name === this.$stateID) {
             //ignore if current
-            this.revertPoints.push(this.checkpoints.pop());
+            this.$revertPoints.push(this.checkpoints.pop());
             if (name) {
-                debug.log('already there');
                 return cb(true);
             } else return this.gotoCheckpoint(null, cb);
         }
 
-        // if (!this.revertPoints.length) {
+        // if (!this.$revertPoints.length) {
         //     //save current state, how to do this without gathering too
         //     //too many temporary checkpoints
         //     this.saveCheckpoint("Last Edit Location", true);
         //     //clears revert stack
-        //     this.revertPoints.push(this.checkpoints.pop());
+        //     this.$revertPoints.push(this.checkpoints.pop());
         // }
         Utils.removeFrom(this.checkpoints, checkpoint);
-        this.revertPoints.push(checkpoint);
-        this.checkout(checkpoint, null, function (pass) {
-            if (!pass) {
-                debug.log('failed checkout');
-                if (!name) return this.gotoCheckpoint(null, cb);
-                else return cb(false);
-            } else return cb(checkpoint);
-        });
+        this.$revertPoints.push(checkpoint);
+        this.checkout(
+            checkpoint,
+            null,
+            function (pass) {
+                if (!pass) {
+                    if (!name) return this.gotoCheckpoint(null, cb);
+                    else return cb(false);
+                } else return cb(checkpoint);
+            }.bind(this),
+        );
     };
     Doc.prototype.returnFromCheckpoint = function (cb) {
-        if (!this.revertPoints || !this.revertPoints.length) {
+        if (!this.$revertPoints || !this.$revertPoints.length) {
             return this.gotoCheckpoint(null, cb);
         }
-        var checkpoint = this.revertPoints.pop();
+        var checkpoint = this.$revertPoints.pop();
         this.checkpoints.push(checkpoint);
-        if (checkpoint.name == this.stateID) {
+        if (checkpoint.name == this.$stateID) {
             //ignore
             return this.returnFromCheckpoint(cb);
         }
         this.checkout(checkpoint, null, cb);
     };
     Doc.prototype.$clearRevertStack = function () {
-        while (this.revertPoints && this.revertPoints.length) {
-            this.checkpoints.push(this.revertPoints.shift());
+        while (this.$revertPoints && this.$revertPoints.length) {
+            this.checkpoints.push(this.$revertPoints.shift());
         }
     };
     Doc.prototype.saveCheckpoint = function (name, isTemporary, cb) {
@@ -122,7 +124,6 @@ define(function (require, exports, module) {
         this.$loadCheckpoints();
         name = name || Utils.genID('c');
         name = name.toLowerCase();
-
         var checkpoint = this.checkpoints.filter(function (e) {
             return e.name == name;
         })[0];
@@ -134,20 +135,21 @@ define(function (require, exports, module) {
             checkpoint = {
                 name: name,
                 time: new Date().getTime(),
+                key: '',
             };
             if (this.checkpoints.length >= appConfig.maximumCheckpoints) {
                 var toRemove = this.checkpoints.splice(1, 1);
                 this.deleteCheckpoint(toRemove[0].name);
             }
         }
-        this.stateID = checkpoint.name;
+        this.$stateID = checkpoint.name;
         this.session.once(
             'change',
             function () {
-                if (this.stateID == checkpoint.name) {
-                    this.stateID = null;
+                if (this.$stateID == checkpoint.name) {
+                    this.$stateID = null;
                 }
-            }.bind(this)
+            }.bind(this),
         );
 
         var data = this.saveState();
@@ -167,13 +169,13 @@ define(function (require, exports, module) {
             function (key) {
                 checkpoint.key = key;
                 if (key === false) return cb(false);
-
                 this.checkpoints.push(checkpoint);
+                Utils.assert(localStorage.getItem(key));
                 Docs.setBlob(this.id, 'checkpoints', this.checkpoints, {
                     priority: USER_CHECKPOINT_PRIORITY,
                 });
                 return cb(checkpoint);
-            }
+            }.bind(this),
         );
     };
     Doc.prototype.deleteCheckpoint = function (name) {
@@ -192,4 +194,173 @@ define(function (require, exports, module) {
             });
         }
     };
+    require('grace/core/actions').Actions.addAction({
+        caption: 'State',
+        icon: 'bookmark',
+        subTree: {},
+    });
+    /** @returns {import('docs/document').Doc} */
+    function getDoc(editor) {
+        // @ts-ignore
+        return Docs.forSession(editor.session);
+    }
+    var Notify = require('grace/ui/notify').Notify;
+    require('grace/core/actions').Actions.addActions(
+        [
+            {
+                isHeader: true,
+                showIn: 'actionbar.state',
+                name: 'section_state',
+                caption: 'State',
+            },
+            {
+                name: 'saveState',
+                icon: 'bookmark_border',
+                exec: function (editor, args) {
+                    var mainDoc = getDoc(editor);
+                    if (!mainDoc) return;
+                    mainDoc.$clearRevertStack();
+
+                    function saveState(name) {
+                        mainDoc.saveCheckpoint(name, function (obj) {
+                            if (args && args.cb) args.cb(obj && obj.key);
+                            else if (obj) Notify.info('Saved');
+                            else
+                                Notify.error(
+                                    'Failed to save state. File might be too large.',
+                                );
+                        });
+                    }
+                    if (args && args.name) {
+                        saveState(args.name);
+                    } else
+                        Notify.prompt(
+                            'Enter name',
+                            saveState,
+                            (mainDoc.$loadCheckpoints()[0] || {}).name,
+                            mainDoc.$loadCheckpoints().map(function (e) {
+                                return e.name;
+                            }),
+                        );
+                },
+            },
+            {
+                name: 'restoreState',
+                icon: 'restore_page',
+                exec: function (editor, args) {
+                    var doc = getDoc(editor);
+                    doc.$clearRevertStack();
+                    if (doc.$loadCheckpoints().length < 1)
+                        return Notify.info('No states saved for this file');
+
+                    function restore(name) {
+                        doc.gotoCheckpoint(name, function (res) {
+                            if (args && args.cb) args.cb(res);
+                            else if (res === true)
+                                Notify.info('Already at state');
+                            else if (res) {
+                                Notify.info('Switched to state ' + res.name);
+                            } else
+                                Notify.error(
+                                    'Failed to switch state. State has been cleared.',
+                                );
+                        });
+                    }
+                    if (!doc.$stateID) Notify.warn('Current state not saved');
+                    if (args && args.name) {
+                        restore(name);
+                    } else
+                        Notify.pick(
+                            'Select checkpoint',
+                            doc.$loadCheckpoints().map(function (e) {
+                                return e.name;
+                            }),
+                            restore,
+                        );
+                },
+            },
+            {
+                name: 'deleteState',
+                exec: function (editor, args) {
+                    var doc = getDoc(editor);
+                    if (!doc) return;
+                    doc.$clearRevertStack();
+                    if (doc.$loadCheckpoints().length < 1)
+                        return Notify.info('No states saved for this file');
+
+                    function restore(name) {
+                        doc.deleteCheckpoint(name);
+                        if (args && args.cb) args.cb();
+                    }
+                    if (args && args.name) {
+                        restore(name);
+                    } else
+                        Notify.pick(
+                            'Select state',
+                            doc.$loadCheckpoints().map(function (e) {
+                                return e.name;
+                            }),
+                            restore,
+                        );
+                },
+            },
+            {
+                name: 'returnFromState',
+                bindKey: 'Ctrl-Alt-J',
+                exec: function (editor) {
+                    getDoc(editor).returnFromCheckpoint(Utils.noop);
+                },
+            },
+            {
+                isHeader: true,
+                showIn: 'actionbar.state',
+                name: 'section_history',
+                caption: 'History',
+            },
+            {
+                name: 'undoAllChanges',
+                exec: function (editor) {
+                    var mainDoc = getDoc(editor);
+                    if (mainDoc) {
+                        mainDoc.saveCheckpoint('last undo', function (pass) {
+                            if (pass) {
+                                Notify.info('Added checkpoint automatically');
+                            } else Notify.error('Unable to add checkpoint');
+                            mainDoc.abortChanges();
+                        });
+                    }
+                },
+            },
+            {
+                name: 'redoAllChanges',
+                exec: function (editor) {
+                    var mainDoc = getDoc(editor);
+                    if (mainDoc) mainDoc.redoChanges();
+                },
+            },
+            {
+                name: 'partialUndo',
+                isAvailable: function (editor) {
+                    return getDoc(editor) && getDoc(editor).session.partialUndo;
+                },
+                dontClose: true,
+                exec: function (editor) {
+                    var mainDoc = getDoc(editor);
+                    if (mainDoc) mainDoc.session.partialUndo();
+                },
+            },
+            {
+                name: 'partialRedo',
+                isAvailable: function (editor) {
+                    return getDoc(editor) && getDoc(editor).session.partialRedo;
+                },
+                dontClose: true,
+                exec: function (editor) {
+                    var mainDoc = getDoc(editor);
+                    if (mainDoc) mainDoc.session.partialRedo();
+                },
+            },
+        ],
+        {showIn: ['editor', 'actionbar.state']},
+    );
 }); /*_EndDefine*/

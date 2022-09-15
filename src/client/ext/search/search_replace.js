@@ -12,6 +12,7 @@ define(function (require, exports, module) {
         function revertDelta(doc, info) {
             opts.beforeUndo && opts.beforeUndo(info, doc);
             if (doc.getChecksum() != info.checksum) {
+                //TODO transform changes based on info.rev
                 return (
                     (opts.onChecksumFail && opts.onChecksumFail(info, doc)) ||
                     false
@@ -54,7 +55,7 @@ define(function (require, exports, module) {
                         info,
                         FileUtils.createError({
                             code: SearchReplace.SERVER_DELETED,
-                        })
+                        }),
                     );
                     return next();
                 }
@@ -94,12 +95,7 @@ define(function (require, exports, module) {
         function replaceRanges(doc, replacement, path, server) {
             var ranges = opts.getRanges(doc, path);
             var replacements = 0;
-            var manager = doc.session.$undoManager;
-            if (!manager) {
-                manager = new ace.UndoManager();
-                doc.session.setUndoManager(manager);
-            }
-            var rev = manager.startNewGroup();
+            var rev = doc.getRevision();
             for (var i = ranges.length - 1; i >= 0; --i) {
                 var session = doc.session;
                 var range = ranges[i];
@@ -107,20 +103,21 @@ define(function (require, exports, module) {
                 var replacer = opts.getReplacer(
                     input,
                     replacement,
-                    range.match
+                    range.match,
                 );
                 if (replacer !== null) {
                     range.end = session.replace(range, replacer);
                     replacements++;
                 }
             }
-            var deltas = manager.getDeltas(rev);
+            var deltas = doc.getDeltas(rev);
             //to do if deltas.length
             if (deltas) {
                 undoDeltas.push({
                     path: path,
                     server: server.id,
                     checksum: doc.getChecksum(),
+                    rev: doc.getRevision(),
                     deltas: deltas,
                 });
             }
@@ -141,7 +138,7 @@ define(function (require, exports, module) {
                             doc,
                             replacement,
                             e,
-                            doc.getFileServer()
+                            doc.getFileServer(),
                         );
                         refs++;
                         return next();
@@ -159,7 +156,7 @@ define(function (require, exports, module) {
                             doc,
                             replacement,
                             e,
-                            defaultServer
+                            defaultServer,
                         );
                         refs++;
                         doc.save(function (doc, err) {
@@ -168,7 +165,7 @@ define(function (require, exports, module) {
                                     {path: e, server: defaultServer.id},
                                     doc,
                                     err,
-                                    true
+                                    true,
                                 );
                             doc.unref('search_replace');
                             next();
@@ -178,7 +175,7 @@ define(function (require, exports, module) {
                 function () {
                     opts.onReplaceFinished &&
                         opts.onReplaceFinished(refs, replaced);
-                }
+                },
             );
         }
         this.undo = undoReplace;
@@ -213,7 +210,7 @@ define(function (require, exports, module) {
         },
         onReplaceFinished: function (refs, replaced) {
             Notify.info(
-                'Replaced ' + replaced + ' instances in ' + refs + ' files'
+                'Replaced ' + replaced + ' instances in ' + refs + ' files',
             );
         },
         getReplacer: function (input, replacement, range) {

@@ -2,54 +2,99 @@
 
 <head>
     <meta http-equiv="content-type" content="text/html; charset=utf-8" />
-
     <title>Testing Diff</title>
-    <link rel="stylesheet" href="diff.css" title="" type="" />
-    <script src="../../src-min-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
-    <script src="../../libs/js/diff_match_patch.js" type="text/javascript" charset="utf-8"></script>
-    <script src="../../libs/js/eruda.min.js" type="text/javascript" charset="utf-8"></script>
-    <script src="ace-diff3.js" type="text/javascript" charset="utf-8"></script>
+    <link rel="stylesheet" href="libs/ace-diff.css" title="" type="" />
     <script type="text/javascript" charset="utf-8">
-        var Modules = window;
+        function define(a) {
+            a(null, window);
+        }
     </script>
-    <script src="../core/utils.js" type="text/javascript" charset="utf-8"></script>
+    <script src="../../libs/js/diff_match_patch.js" type="text/javascript" charset="utf-8"></script>
+    <script src="../../libs/ace/ace.js" type="text/javascript" charset="utf-8"></script>
+    <script src="../../libs/js/eruda.min.js" type="text/javascript" charset="utf-8"></script>
+    <script src="test_tools.js" type="text/javascript" charset="utf-8"></script>
+    <script src="../profiler.js" type="text/javascript" charset="utf-8"></script>
+    <script src="libs/ace-diff-utils.js" type="text/javascript" charset="utf-8"></script>
+    <script type="text/javascript" charset="utf-8">
+          profileObject(AceDiffUtils)
+    </script>
+    <script src="libs/ace-diff.js" type="text/javascript" charset="utf-8"></script>
+    <script src="libs/ace-inline-diff.js" type="text/javascript" charset="utf-8"></script>
 </head>
 
 <body>
     <style type="text/css" media="all">
-    
-        
+        body {
+            background: white;
+        }
+
+        #acediff-container {
+            height: 100%;
+        }
     </style>
     <div id='acediff-container'>
-    
     </div>
     <script>
         eruda.init([]);
-        var a = Object.keys(localStorage).filter(e => e.match(/m\d+/));
+        // var a = Object.keys(localStorage)
+        // .filter(e => e.match(/m\d+/));
         //todo profile,addfolds,and lock scrolling
-        var differ = new AceDiff.diff(document.getElementById('acediff-container'),{
+        var content = document.body.innerHTML.repeat(5);
+        var differ = AceInlineDiff.diff(document.getElementById('acediff-container'), {
             mode: 'ace/mode/javascript',
             lockScrolling: true,
             showConnectors: true,
             showCopyArrows: false,
-            alignLines: false,
+            alignLines: true,
+            leftIsYours: true,
+            autoUpdate: true,
             // threeWay: false,
             right: {
-                content: document.body.innerHTML
+                content: ('ckcf\njfjd\n' + content).slice(0,200)
             },
             // right: {
-            //     content: document.body.innerHTML.replace(/a(\w+)/g, "$1b")
+            //     content:content.replace(/a(\w+)/g, "$1b")
             // },
             left: {
-                content: document.body.innerHTML.replace(/b(\w+)/g, "$1a")
+                content: ('ckf\njfd\n'.repeat(5) + content.replace(/b(\w+)/g, "\n$1a")).slice(0,200),
+                editable: true
+            },
+            options: {
+                // wrap: 20
             }
         });
+        // var a = AceInlineDiff.diff(differ.getEditors()
+        //     .left, differ.getEditors()
+        //     .right.getSession(), {
+        //         ignoreWhitespace: false
+        //     })
+        var a = differ;
+        profileObject(a.$texts.constructor.prototype)
+        profileObject(a.$texts)
+        profileObject(a)
+        profileObject(a.constructor.prototype)
+        differ.editor.on('change', AceDiffUtils.throttle(() => {
+            displayResults('totalRuntime', ['avgRuntime', 'totalRuntime']);
+        }, 1500))
+        // var editors = differ.getEditors();
+        differ.id = 'one';
+        //Buggy stuff, right should be left
+        // new AceInlineDiff.diff(differ.panes.right.ace, {
+        //         right: {
+        //             content: differ.options.left.content
+        //         },
+        //     })
+        //     .id = 'two'
+        // new AceInlineDiff.diff(differ.panes.right.ace, {
+        //         right: {
+        //             content: differ.options.left.content
+        //         },
+        //     })
+        //     .id = 'three'
         /*setTimeout(function(){
             differ.destroy();
         },60000)*/
-
         //differ.render();
     </script>
 </body>
-
 </html>

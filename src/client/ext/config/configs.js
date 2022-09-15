@@ -28,7 +28,7 @@ define(function (require, exports, module) {
         .replace('{key}', p.key || 'EMPTY_KEY')
         .replace('{val}', value)
         .replace('{path}', path)
-        .replace('{cause}', cause) + errSource
+        .replace('{cause}', cause) + errSource,
     );
 
     obj.error = error;
@@ -37,6 +37,7 @@ define(function (require, exports, module) {
     obj.value = value;
     obj.path = path;
     obj.cause = cause;
+    if (cause) obj.stack = cause.stack || obj.stack;
     errHandler(obj);
   }
   Configs.withErrorHandler = function (err, func) {
@@ -169,7 +170,7 @@ define(function (require, exports, module) {
               key,
               _parse,
               finalValue,
-              data.key ? prefix + data.key : ns
+              data.key ? prefix + data.key : ns,
             ),
           };
           current = _parse({'_triggers.rules+': [rule]}, '', current, top);
@@ -265,7 +266,7 @@ define(function (require, exports, module) {
     } else {
       _error(
         'Type mismatch: Cannot modify value at {key} in {ns}',
-        (path ? path + DOT : path) + p
+        (path ? path + DOT : path) + p,
       );
       return obj1[p];
     }
@@ -278,7 +279,7 @@ define(function (require, exports, module) {
       if (!error) return true;
       _error('Invalid value for {path}, {val} : {cause}', path, val, error);
     } catch (e) {
-      _error('Error validating {path}:{val}', path, val, e);
+      _error('Error validating {path}:{val} : {cause}', path, val, e);
     }
   }
 
@@ -299,9 +300,9 @@ define(function (require, exports, module) {
       var ext = _ext(firstPart);
       var prop = ext ? firstPart.slice(0, -1) : firstPart;
       if (mask && !_hasProp(mask[ns], prop)) continue;
-
-      if (type && type.keys && !_validate(prop, type.keys, ns)) continue;
-      else if (!_hasProp(allConfigs[ns], prop)) {
+      if (type && type.keys) {
+        if (!_validate(prop, type.keys, ns)) continue;
+      } else if (!_hasProp(allConfigs[ns], prop)) {
         _error('Unknown option {key} in namespace {ns}', ns + DOT + key);
         continue;
       }
@@ -317,7 +318,7 @@ define(function (require, exports, module) {
       } else {
         ext = _ext(key);
         var chain = key.split(DOT);
-        var last = chain.pop(); //order matters
+        var last = /** @type {string} */ (chain.pop()); //order matters
         var target = deepGet(dest, chain);
         var result = src[key];
         if (!target.missing && isPureObject(target.val)) {
@@ -329,7 +330,7 @@ define(function (require, exports, module) {
               last,
               src[key],
               ext,
-              ns + DOT + chain.join(DOT)
+              ns + DOT + chain.join(DOT),
             );
           }
           if (result === target.val[key]) continue;
@@ -345,7 +346,7 @@ define(function (require, exports, module) {
               _error(
                 'Discarding non-object value while updating {path} : {val}',
                 ns + DOT + chain.slice(0, r + 1).join(DOT),
-                parent[link]
+                parent[link],
               );
             }
             parent = parent[link] = {};
@@ -386,7 +387,7 @@ define(function (require, exports, module) {
   };
 
   var _changes = {};
-  /** @type {back:Map<String,Array<Object>>,front:Map<String,Array<Object>>} */
+  /** @type {{back:Record<String,Array<Object>>,front:Record<String,Array<Object>>}} */
   //TODO: Potential speed ups:
   //1. cache #back
   //2. _merge backwards
@@ -465,7 +466,7 @@ define(function (require, exports, module) {
           'Recursive update {cause} limit exceeded!!!',
           null,
           null,
-          commitDepth > 7 ? 'depth' : 'size'
+          commitDepth > 7 ? 'depth' : 'size',
         );
         return false;
       }
@@ -536,30 +537,52 @@ define(function (require, exports, module) {
   //Like #save but saves only the changes to
   //the current configuration.
   Configs.apply = _checkErrorFlag(function (config) {
-    return Config.save(Configs.diff(config, allConfigs));
+    //reset rules
+    return Configs.save(Configs.diff(allConfigs, config));
   });
   Configs.diff = function (base, config) {
     var layers = _parse(config);
+    
+    //Parse treats all rules like + ops
+    //Merge the rules ahead of time to get correct diffs
+    var ignoreTriggers = false;
+    var t = _merge({}, layers, {_triggers: {rules: true}});
+    if (t._triggers) {
+      if (layers === config) layers = Object.assign({}, config);
+      layers._triggers = Object.assign(
+        layers._triggers || t._triggers,
+        t._triggers,
+      );
+      ignoreTriggers = true;
+    }
+
     var diff = {},
       head = diff;
     forEachNs(layers, function (ns, data) {
-      var d = ((head[ns] ? (head = head.__n$x$t = {}) : head)[ns] = {});
+      if (!base[ns]) return (head[ns] = data);
+      var ignoreRules = ignoreTriggers && ns === '_triggers';
+      var d;
       for (var i in data) {
+        if (ignoreRules && i === 'rules+') continue;
         var old = base[ns][i];
         var val = _optimize(data[i], old);
         if (old === val) continue;
+        if (!d) d = (head[ns] ? (head = head.__n$x$t = {}) : head)[ns] = {};
+
         var m = getInfo(ns + DOT + i);
         var join = false;
-        if (m && m.isList) {
-          join = true;
-          old = Utils.parseList(old);
-          val = Utils.parseList(val);
-        } else if (_ext(i)) {
-          d[i] = _evaluate(d[i], val, '+', _hasProp(d, i));
-          continue;
-        } else if (!isArray(old) || !isArray(val)) {
-          d[i] = val;
-          continue;
+        if (!isArray(old) || !isArray(val)) {
+          if (m && m.isList) {
+            join = true;
+            old = Utils.parseList(old);
+            val = Utils.parseList(val);
+          } else if (_ext(i)) {
+            d[i] = _evaluate(d[i], val, '+', _hasProp(d, i));
+            continue;
+          } else {
+            d[i] = val;
+            continue;
+          }
         }
         var added = val.filter(Utils.notIn(old));
         var removed = old.filter(Utils.notIn(val));
@@ -571,6 +594,7 @@ define(function (require, exports, module) {
         }
       }
     });
+    console.log(diff);
     return diff;
   };
 
@@ -593,19 +617,20 @@ define(function (require, exports, module) {
     var keys = Object.keys(allConfigs).sort();
     var userConfig = {};
     //Guarantee the following keys come first
+    userConfig.ui = undefined;
+    userConfig.files = undefined;
     userConfig.documents = undefined;
     userConfig.editor = undefined;
-    userConfig.files = undefined;
-    userConfig.ui = undefined;
 
     for (var i = 0; i < keys.length; i++) {
       var path = keys[i];
       if (getInfo(path) === NO_USER_CONFIG) continue;
-      var parent, name;
+      var parent,
+        name = '';
       if (path.indexOf(DOT) > 0) {
         // Add nested configuration
         var parts = path.split(DOT);
-        name = parts.pop();
+        name = /** @type {string} */ (parts.pop());
         var res = deepGet(userConfig, parts);
         if (res.missing) {
           debug.warn('Missing parent namespace ' + path);
@@ -620,7 +645,10 @@ define(function (require, exports, module) {
           ? handlers[path].toJSON()
           : allConfigs[path];
       parent[name] = {};
-      for (var j in children) {
+      var keys2 = Object.keys(children);
+      if (!handlers[path] || !handlers[path].toJSON) keys2.sort();
+      for (var k in keys2) {
+        var j = keys2[k];
         if (getInfo(path + DOT + j) === NO_USER_CONFIG) continue;
         parent[name][j] = children[j];
       }
@@ -636,14 +664,15 @@ define(function (require, exports, module) {
     return s.ns ? allConfigs[s.ns][s.key] : undefined;
   };
   (function () {
+    var Actions = require('grace/core/actions').Actions;
     var FileUtils = require('grace/core/file_utils').FileUtils;
-    var MainMenu = require('grace/setup/setup_main_menu').MainMenu;
     var Notify = require('grace/ui/notify').Notify;
-    FileUtils.registerOption(['file'], 'load-config-file', {
-      caption: 'Load As Configuration',
+    Actions.addAction({
+      caption: 'Load as configuration',
       extension: 'json',
       icon: 'settings',
-      onclick: function (e) {
+      showIn: 'fileview.file',
+      handle: function (e) {
         e.preventDefault();
         FileUtils.getDocFromEvent(
           e,
@@ -656,71 +685,60 @@ define(function (require, exports, module) {
             }
           },
           true,
-          true
+          true,
         );
       },
     });
-    MainMenu.extendOption(
-      'load-settings',
-      {
-        caption: 'Configuration',
-        icon: 'settings_applications',
-        subTree: {
-          'clear-settings': {
-            icon: 'warning',
-            caption: 'Clear Saved Configuration',
-            sortIndex: 1000,
-            onclick: function () {
-              Notify.prompt(
-                "<h6>Clear Saved Configuration</h6>\
+    Actions.addAction({
+      icon: 'warning',
+      caption: 'Clear saved settings',
+      sortIndex: 1000,
+      showIn: 'actionbar.settings',
+      handle: function () {
+        Notify.prompt(
+          "<h6>Clear Saved Settings</h6>\
                 <p style='font-size:1rem'>In the textbox below, you can either specify\
-                <ol> <li><span class='error-text'>all</span> to clear all values or</li><li>A comma separated string list of namespaces. Nested namespaces must be specified separately. Example\n<small><code>search, editor, keyBindings.intellisense</code></small></li></ol></p><p style='font-size:1rem'> <span class='error-text'>Restart</span> immediately after unless previous configuration might be rewritten back.</p>",
-                function resetAll(value) {
-                  if (!value) return;
-                  var toReset, caption;
-                  if (value == 'all') {
-                    toReset = allConfigs;
-                    caption = 'all your configuration';
-                  } else {
-                    toReset = Utils.parseList(value);
-                    caption =
-                      'all your configurations in\n' + toReset.join(',\n');
+                <ul class='ml-15'><li><span class='error-text'>all</span> to clear all values or</li><li>A comma separated string list of namespaces. Nested namespaces must be specified separately. Example\n<small><code>search, editor, keyBindings.intellisense</code></small></li></ul></p><p style='font-size:1rem'> <span class='error-text'>Restart</span> immediately after unless previous configuration might be rewritten back.</p>",
+          function resetAll(value) {
+            if (!value) return;
+            var toReset, caption;
+            if (value == 'all') {
+              toReset = Object.keys(allConfigs);
+              caption = 'all your configuration';
+            } else {
+              toReset = Utils.parseList(value);
+              caption = 'all your configurations in\n' + toReset.join(',\n');
+            }
+            Notify.ask(
+              'This will reset ' + caption + '\n   Continue?',
+              function () {
+                for (var y in toReset) {
+                  var ns = toReset[y];
+                  for (var m in allConfigs[ns]) {
+                    Config.unregister(m, ns);
                   }
-                  Notify.ask(
-                    'This will reset ' + caption + '\n   Continue?',
-                    function () {
-                      for (var y in toReset) {
-                        var ns = toReset[y];
-                        for (var m in allConfigs[ns]) {
-                          Config.unregister(m, ns);
-                        }
-                      }
-                      Notify.info('Restart Immediately to Apply Changes');
-                    }
-                  );
-                },
-                true,
-                {
-                  options: Utils.mergeList(Object.keys(allConfigs), ['all']),
-                  complete: function (value) {
-                    var name = value.split(',').pop();
-                    return this.options.filter(function (e) {
-                      return e.toLowerCase().indexOf(name.toLowerCase()) > -1;
-                    });
-                  },
-                  update: function (input, value) {
-                    var prec = input.value.lastIndexOf(',') + 1;
-                    input.value = input.value.substring(0, prec) + value;
-                  },
                 }
-              );
+                Notify.info('Restart Immediately to Apply Changes');
+              },
+            );
+          },
+          'all',
+          {
+            options: Utils.mergeList(Object.keys(allConfigs), ['all']),
+            complete: function (value) {
+              var name = value.split(',').pop();
+              return this.options.filter(function (e) {
+                return e.toLowerCase().indexOf(name.toLowerCase()) > -1;
+              });
+            },
+            update: function (input, value) {
+              var prec = input.value.lastIndexOf(',') + 1;
+              input.value = input.value.substring(0, prec) + value;
             },
           },
-        },
+        );
       },
-      true,
-      true
-    );
+    });
   })();
   exports.Configs = Configs;
 });

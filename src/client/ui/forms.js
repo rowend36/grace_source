@@ -64,7 +64,7 @@ define(function (require, exports, module) {
                 var btn = input;
                 btn.style.margin = "10px 10px 5px 0";
                 btn.className += " btn btn-small";
-                btn.setAttribute("value", t.caption || sentenceCase(name));
+                btn.setAttribute("value", t.caption || sentenceCase(t.name));
                 btn.setAttribute("type", t.type);
                 if (t.onclick) $(btn).on("click", t.onclick);
                 el.appendChild(btn);
@@ -80,7 +80,8 @@ define(function (require, exports, module) {
                     t.type === "checkbox" ? "span" : "label"
                 );
                 span.innerText = t.caption;
-                span.className += " label";
+                span.className += " label fill-box";
+                span.style.overflowWrap = 'break-word'
                 if (t.type == "checkbox") {
                     wrapper.appendChild(input);
                     wrapper.appendChild(span);

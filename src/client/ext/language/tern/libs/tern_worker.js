@@ -178,6 +178,7 @@
                 getFile: getFile,
                 async: true,
                 defs: defs,
+                projectDir: '',
                 plugins: plugins,
             });
         };

@@ -1,11 +1,12 @@
 define(function (require, exports, module) {
     'use strict';
-    /*globals $*/
+    /*globals $, ace*/
     require('css!./lsp_ui');
     var htmlEncode = require('grace/core/utils').Utils.htmlEncode;
     var visit = require('grace/ui/focus_manager').FocusManager.visit;
+    var focus = require('grace/ui/focus_manager').FocusManager.focusIfKeyboard;
     var Depend = require('grace/core/depend');
-    var EditSession = ace.require('ace/edit_session').EditSession;
+    var EditSession = require('ace!edit_session').EditSession;
     var Sidenav = require('grace/ui/sidenav').Sidenav;
     var autoMode = require('grace/docs/docs').Docs.autoMode;
     function remove(node) {
@@ -88,7 +89,7 @@ define(function (require, exports, module) {
         editor,
         closeOnCursorActivity,
         fadeOutDuration,
-        onClose
+        onClose,
     ) {
         var node = elt('div', 'ace_tooltip ' + this.cls + 'tooltip');
         if (typeof content === 'string') node.innerHTML = content;
@@ -152,14 +153,13 @@ define(function (require, exports, module) {
         try {
             var message = '',
                 details = '';
-
             var isError = function (o) {
-                return o && o.name && o.stack && o.message;
+                return o && o.stack && o.message;
             };
 
             if (isError(msg)) {
                 //msg is an Error object
-                message = msg.name + ': ' + msg.message;
+                message = (msg.name || 'Error') + ': ' + msg.message;
                 details = msg.stack;
             } else if (msg.msg && msg.err) {
                 //msg is object that has string msg and Error object
@@ -178,7 +178,7 @@ define(function (require, exports, module) {
 
             debug.log('tsError:\t ', message, '\n details:', details); //log the message and deatils (if any)
 
-            if (!noPopup) {
+            if (typeof message === 'string' && !noPopup) {
                 //show popup
                 var el = elt('span', null, message);
                 el.style.color = 'red';
@@ -197,7 +197,7 @@ define(function (require, exports, module) {
                         '\n' +
                         ex.message +
                         '\n' +
-                        ex.stack
+                        ex.stack,
                 );
             }, 0);
         }
@@ -208,7 +208,7 @@ define(function (require, exports, module) {
         y,
         editor,
         max_width,
-        max_height
+        max_height,
     ) {
         tip.style.top = 0;
         tip.style.bottom = tip.style.right = tip.style.left = tip.style.maxWidth = tip.style.maxHeight =
@@ -232,16 +232,15 @@ define(function (require, exports, module) {
             tip.style.paddingTop = '';
             tip.style.paddingRight = '35px';
         }
-        if (x === null || y === null) {
-            var location = editor.renderer.getCursorPosition();
-            x = location.x;
-            y = location.y;
+        if (typeof x != 'number' || typeof y != 'number') {
+            var location = editor.renderer.getCursorPosition(null, true);
+            x = location.left;
+            y = location.top;
         }
         var rect = editor.container.getBoundingClientRect();
-
         var margins = editor.getPopupMargins(true);
         var screenHeight = document.body.clientHeight;
-        var lineHeight = editor.renderer.lineHeight;
+        var lineHeight = editor.renderer.layerConfig.lineHeight;
         var top = y + rect.y;
         var left = x - 50 + rect.x;
         var smallHeight = false;
@@ -266,7 +265,7 @@ define(function (require, exports, module) {
             tip.style.bottom =
                 Math.max(
                     screenHeight - top + lineHeight,
-                    margins.marginBottom
+                    margins.marginBottom,
                 ) + 'px';
         } else {
             tip.style.maxHeight = spaceBelow + 'px';
@@ -309,10 +308,10 @@ define(function (require, exports, module) {
                 'h6',
                 'tooltip-header',
                 'Rename ',
-                elt('span', 'tooltip-name', data.name || '')
+                elt('span', 'tooltip-name', data.name || ''),
             ),
             editor,
-            false
+            false,
         );
         tip.className += ' large-tooltip';
         tip.style.padding = '15px';
@@ -347,8 +346,8 @@ define(function (require, exports, module) {
         tip.appendChild(elt('div', 'clearfix mt-10'));
         tip.appendChild(
             document.createTextNode(
-                '\n(WARNING: Cannot replace refs in files that are not loaded!)'
-            )
+                '\n(WARNING: Cannot replace refs in files that are not loaded!)',
+            ),
         );
         this.moveTooltip(tip, null, null, editor);
     };
@@ -388,7 +387,7 @@ define(function (require, exports, module) {
                     -1,
                     function () {
                         moveToLastFocus();
-                    }
+                    },
                 );
                 close = container.$closeThisTip;
                 container.className += ' large-tooltip';
@@ -399,7 +398,7 @@ define(function (require, exports, module) {
                 container = sideView.el;
                 //use a live list
                 sideView.options.focusable = sideView.el.getElementsByTagName(
-                    'textarea'
+                    'textarea',
                 );
                 sideView.open();
             }
@@ -414,8 +413,8 @@ define(function (require, exports, module) {
                     elt(
                         'i',
                         'color-inactive info-tooltip',
-                        'This is not guaranteed to find references in other files or references for non-private variables.'
-                    )
+                        'This is not guaranteed to find references in other files or references for non-private variables.',
+                    ),
                 ).style.padding = '10px';
             } else {
                 sideView.returnFocus = moveToLastFocus;
@@ -442,7 +441,7 @@ define(function (require, exports, module) {
                             editor.setOption('animatedScroll', true); //re-enable
                         }
                     },
-                    true
+                    true,
                 );
             });
 
@@ -450,14 +449,14 @@ define(function (require, exports, module) {
                 this.moveTooltip(container, null, null, editor);
                 container.style.contaner = '150px';
             } else refs.el.style.overflow = 'auto';
-        }
+        },
     );
 
-    UI.prototype.showArgHints = function showArgHints(ts, editor, argpos) {
-        if (ts.cachedArgHints.isdraggable) {
+    UI.prototype.showArgHints = function showArgHints(ts, editor, activeIndex) {
+        if (ts.cachedArgHints.isClosed) {
             return;
         }
-        var html = ts.genArgHintHtml(ts.cachedArgHints, argpos);
+        var html = ts.genArgHintHtml(ts.cachedArgHints, activeIndex);
         if (ts.argHintTooltip && typeof html == 'string') {
             ts.argHintTooltip.lastChild.innerHTML = html;
             this.moveTooltip(ts.argHintTooltip, null, null, editor);
@@ -477,10 +476,10 @@ define(function (require, exports, module) {
                 null,
                 function (e) {
                     if (e && (e.type == 'click' || e.type == 'mousedown')) {
-                        ts.cachedArgHints.isdraggable = true;
+                        ts.cachedArgHints.isClosed = true;
                     }
                     ts.argHintTooltip = null;
-                }
+                },
             );
         }
     };
@@ -511,7 +510,7 @@ define(function (require, exports, module) {
                 }
             },
             onCloseStart: function () {
-                this.returnFocus();
+                this.returnFocus && this.returnFocus();
                 Navigation.removeRoot(this);
             },
             onCloseEnd: AutoCloseables.onCloseEnd,
@@ -529,16 +528,23 @@ define(function (require, exports, module) {
     var sharedRenderer;
     //copied from SearchTab
     var Counter = function (text) {
-        this.lastLinePos = 0;
-        this.indexToPosition(-1);
         this.text = text;
+        //Copied this out for typescript
+        this.line = -1;
+        this.nextLinePos = 0;
+        this.lastLinePos = -1;
+        this.regex = /\r\n|\r|\n/g;
+    };
+    Counter.prototype.reset = function () {
+        this.line = -1;
+        this.nextLinePos = 0;
+        this.lastLinePos = -1;
+        this.regex = /\r\n|\r|\n/g;
     };
     Counter.prototype.indexToPosition = function (offset) {
         var match;
-        if (offset < this.lastLinePos) {
-            (this.line = -1), (this.nextLinePos = 0), (this.lastLinePos = -1);
-            this.regex = /\r\n|\r|\n/g;
-        }
+        if (offset < this.lastLinePos) this.reset();
+
         while (offset >= this.nextLinePos) {
             this.lastLinePos = this.nextLinePos;
             this.line++;
@@ -580,12 +586,13 @@ define(function (require, exports, module) {
         sharedRenderer.config.fontSize = 'inherit';
     }
 
-    function normalizeRef(refs, path) {
-        var ref = refs.items[path];
-        if (!(ref.start || ref.span)) return null;//Bad format
+    function normalizeRef(refs, ref) {
+        var path = ref.file;
+        if (!(ref.start || ref.span)) return null; //Bad format
         var clientDoc =
-            (refs.ts.docs[path] && refs.ts.docs[path].doc) || refs.loadedFiles[path];
-        if (!clientDoc) return null;//No loaded file
+            (refs.ts.docs[path] && refs.ts.docs[path].doc) ||
+            refs.loadedFiles[path];
+        if (!clientDoc) return null; //No loaded file
         var start, end, session, autoClose;
         if (clientDoc.getLine) {
             //session
@@ -595,7 +602,7 @@ define(function (require, exports, module) {
             } else {
                 start = clientDoc.indexToPosition(ref.span.start);
                 end = clientDoc.indexToPosition(
-                    ref.span.start + ref.span.length
+                    ref.span.start + ref.span.length,
                 );
             }
             session = clientDoc;
@@ -607,8 +614,8 @@ define(function (require, exports, module) {
                 counter.indexToPosition(ref.span.start + ref.span.length);
             if (clientDoc.length < 10 || ref.start) {
                 //No need to get substring.
-                session = new ace.require('ace/edit_session').EditSession(
-                    clientDoc
+                session = new require('ace!edit_session').EditSession(
+                    clientDoc,
                 );
             } else {
                 //Speed up tokenization/memory usage by reducing size
@@ -625,7 +632,7 @@ define(function (require, exports, module) {
                 var res = clientDoc.substring(s, e);
                 var linesBefore = require('grace/core/utils').Utils.repeat(
                     offStart.row,
-                    '\n'
+                    '\n',
                 );
                 session = new EditSession(linesBefore + res, res);
                 // require("grace/core/utils").Utils.assert(session
@@ -676,14 +683,14 @@ define(function (require, exports, module) {
                 data.start ? data.start.row + 1 : '',
                 ', column ',
                 data.start ? data.start.column : '',
-                '</i>'
+                '</i>',
             );
         } else if (data.span) {
             parts.push('<i>Offset ', data.span.start, '</i>');
         }
         parts.push('</span>');
         element.innerHTML = parts.join('');
-        data = normalizeRef(this, data.file);
+        data = normalizeRef(this, data);
         if (data) {
             if (data.autoClose) {
                 var modeId = autoMode(data.file);
@@ -701,6 +708,5 @@ define(function (require, exports, module) {
 
     require('grace/core/utils').Utils.inherits(References, ItemList);
     //Had to override this one method
-
     exports.LspUI = UI;
 }); /*_EndDefine*/

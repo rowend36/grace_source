@@ -13,7 +13,7 @@ Hence, Docs is a messy area.
 Attempts to organise it have yielded limited success
 in the form of mixins.
 base - The minimum functionality for docs as originally planned.
-blob - is a safer wrapper for Config.storage
+blob - is a wrapper for Config.storage
 persist - handles saving and loading documents from storage
 save - handles file operations e.g save, rename
 tabs - handles tab management
@@ -23,7 +23,7 @@ Additional mixins
 ext/docs/checkpoints
 ext/docs/partial_undo
 
-Doc vs ace.EditSession vs ace.Document
+Doc vs ace.EditSession or ace.Document
 Doc fires app events, can be persisted easily and integrates
 better with the rest of the application. A lot of stuff
 just bail out once they realise they are not dealing with

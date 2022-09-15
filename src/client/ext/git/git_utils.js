@@ -1,6 +1,7 @@
 define(function (require, exports, module) {
+    /* globals $ */
     var Utils = require('grace/core/utils').Utils;
-    var GitCommands = (exports.GitCommands = Object.create(null));
+    var GitUtils = (exports.GitUtils = exports);
     var Notify = require('grace/ui/notify').Notify;
     var UiThread = require('grace/ext/ui_thread').UiThread;
     var padStart =
@@ -15,22 +16,22 @@ define(function (require, exports, module) {
                   );
               }
             : (str, len, pad) => str.padStart(len, pad);
-    GitCommands.padStart = padStart;
-    GitCommands.testPlain = function (str) {
+    exports.padStart = padStart;
+    exports.testPlain = function (str) {
         if (!str) return false;
         return /^[A-Za-z][-A-Za-z_0-9]+$/.test(str);
     };
-    GitCommands.testUrl = function (str) {
+    exports.testUrl = function (str) {
         if (!str) return false;
         return /^([A-Za-z]+\:\/+)?([0-9\.]+(\:[0-9]+)?|[A-Za-z][-\.A-Za-z_0-9]+)(\/+[A-Za-z][A-Za-z_0-9]*)*(\.([a-zA-Z]+))?\/?$/.test(
             str
         );
     };
-    GitCommands.success = function () {
+    exports.success = function () {
         Notify.info('Done');
     };
 
-    GitCommands.createProgress = function (status) {
+    exports.createProgress = function (status) {
         var el = $(
             Notify.modal(
                 {
@@ -90,11 +91,11 @@ define(function (require, exports, module) {
                     el.modal('close');
                     el = null;
                 }
-                GitCommands.failure(e);
+                GitUtils.failure(e);
             },
         };
     };
-    GitCommands.handleError = function (e, data) {
+    exports.handleError = function (e, data) {
         switch (e.code) {
             case 'CheckoutConflictError':
                 Notify.modal({
@@ -108,9 +109,26 @@ define(function (require, exports, module) {
                 console.error(e);
         }
     };
-    GitCommands.failure = function (e) {
-        GitCommands.handleError(e);
+    exports.failure = function (e) {
+        GitUtils.handleError(e);
         if (e.toString == {}.toString) e = e.message || e.code;
         Notify.error('Error: ' + e.toString());
+    };
+    exports.writeFile = function (name, content, prov, cb) {
+        var fs = prov.fs;
+        var dir = prov.gitdir;
+        fs.mkdir(dir + '/grace', function () {
+            fs.writeFile(dir + '/grace/' + name, content, cb);
+        });
+    };
+    exports.readFile = function (name, prov, cb) {
+        var fs = prov.fs;
+        var dir = prov.gitdir;
+        fs.readFile(dir + '/grace/' + name, 'utf8', cb);
+    };
+    exports.removeFile = function (name, prov, cb) {
+        var fs = prov.fs;
+        var dir = prov.gitdir;
+        fs.unlink(dir + '/grace/' + name, cb);
     };
 }); /*_EndDefine*/

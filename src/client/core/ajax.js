@@ -3,22 +3,24 @@ define(function (require, exports, module) {
     var dirname = require('./file_utils').FileUtils.dirname;
 
     /**
-     * @typedef ("application\/x-www-form-urlencoded"|"multipart\/form-data"|"text\/plain"|"urlparams") DataType
+     * @typedef {("application\/x-www-form-urlencoded"|"multipart\/form-data"|"text\/plain"|"urlparams")} DataType
+     * @typedef {("arraybuffer"|"blob"|"json"|"document"|"text")} ResponseType
      * @param {string} url
      * @param {Object} [opts]
-     * @param {string} opts.method
-     * @param {object} opts.headers
-     * @param {Object} opts.data
-     * @param {DataType} opts.dataType
-     * @param {Object|ArrayBuffer|string} opts.body
-     * @param {(arraybuffer|blob|json|document|text)} opts.responseType
-     * @param {string} opts.mimeType - The mimetype of the response text
-     * @param {boolean} opts.withCredentials
-     * @param {boolean} opts.addTimestamp
-     * @callback {({loaded,total?})} opts.onProgress
-     * @param {window.AbortSignal} opts.abortSignal
-     * @param {number} opts.retryCount
-     * @param {number} opts.timeout
+     * @param {string} [opts.method]
+     * @param {object} [opts.headers]
+     * @param {Object} [opts.data]
+     * @param {DataType} [opts.dataType]
+     * @param {Object|ArrayBuffer|string} [opts.body]
+     * @param {(ResponseType)} [opts.responseType]
+     * @param {string} [opts.mimeType] - The mimetype of the response text
+     * @param {boolean} [opts.withCredentials]
+     * @param {boolean} [opts.addTimestamp]
+     * @param {number} [opts.retryCount]
+     * @param {Function} [opts.onProgress]
+     * @param {number} [opts.timeout]
+     * @param {import("ext/stop_signal").StopSignal} [opts.stopSignal]
+     * @callback {({loaded,total?})} [opts.onProgress]
      */
 
     function ajax(url, opts) {
@@ -35,8 +37,8 @@ define(function (require, exports, module) {
             if (opts.mimeType) req.overrideMimeType(opts.mimeType);
             if (opts.timeout) req.timeout = opts.timeout;
 
-            if (opts.abortSignal) {
-                opts.abortSignal.addEventListener('abort', req.abort.bind(req));
+            if (opts.stopSignal) {
+                opts.stopSignal.subscribe(req.abort.bind(req));
             }
             // ({lengthComputable:boolean,loaded:number,total?:number})
             if (opts.onProgress)

@@ -91,7 +91,7 @@ define(function (require, exports, module) {
             last = anno[maxNumErrors].row;
             anno = anno.slice(0, maxNumErrors);
         }
-        if (found && config.filters.showSuppressed) {
+        if (found && config.showSuppressed) {
             anno.push({
                 row: last || this.session.getLength() - 1,
                 column: 0,

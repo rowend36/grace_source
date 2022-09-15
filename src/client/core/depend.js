@@ -41,7 +41,12 @@ define(function (require, exports, module) {
             }
         };
     };
-
+    exports.syncRequire = function (deps, cb) {
+        var loaded =
+            deps.filter(require.specified, require).length == deps.length;
+        if (loaded) return cb.apply(null, deps.map(require));
+        else require(deps, cb);
+    };
     //return a promisified form of define
     //e.g generateAllNames = m.promise(generateAllNames)
     //async function b(){

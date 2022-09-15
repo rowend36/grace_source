@@ -1,78 +1,136 @@
 define(function (require, exports, module) {
-    var Editor = ace.require('ace/editor').Editor;
-    var config = ace.require('ace/config');
-    var Marker = ace.require('ace/layer/marker').Marker;
-    var dom = ace.require('ace/lib/dom');
-    var oop = ace.require('ace/lib/oop');
-
+    /* globals ace */
+    var Editor = require('ace!editor').Editor;
+    var config = require('ace!config');
+    var Marker = require('ace!layer/marker').Marker;
+    var dom = require('ace!lib/dom');
+    var oop = require('ace!lib/oop');
+    var removeFrom = require('../core/utils').Utils.removeFrom;
+    var noop = require('../core/utils').Utils.noop;
     var VSCROLL_WIDTH = 25;
+    /** @constructor */
+    function Part(top) {
+        this.element = {
+            childElementCount: 0,
+            childNodes: [],
+            lastChild: undefined,
+            root: top.element,
+            cache: top.$cache,
+            appendChild: function (e) {
+                this.childElementCount = this.childNodes.push(e);
+                this.lastChild = e;
+                this.root.appendChild(e);
+            },
+            removeChild: function (e) {
+                if (e === this.lastChild) {
+                    this.childNodes.pop();
+                    this.lastChild = this.childNodes[
+                        --this.childElementCount - 1
+                    ];
+                } else if (removeFrom(this.childNodes, e) < 0) return;
+                this.cache.push(e);
+            },
+            reuseNodes: function () {
+                if (this.cache.length) {
+                    this.lastChild = this.childNodes[
+                        (this.childElementCount = this.childNodes.push.apply(
+                            this.childNodes,
+                            this.cache,
+                        )) - 1
+                    ];
+                    this.cache.length = 0;
+                }
+            },
+        };
+        this.i = 0;
+        this.start = 0;
+        this.end = 0;
+        this.done = false;
+        this._deadLine = -1;
+        this.delayedUpdate = top.delayedUpdate;
+        this.editor = top.editor;
+    }
 
-    function ScrollbarMarker(editor) {
+    oop.inherits(Part, Marker);
+    Part.prototype.getConfig = function (config) {
+        var config = Object.assign({}, config);
+        config.firstRow = this.start;
+        config.lastRow = this.end;
+        return config;
+    };
+    Part.prototype.LONG_TIMEOUT = 150;
+    Part.prototype.SHORT_TIMEOUT = 25;
+
+    Object.defineProperty(Part.prototype, 'deadLine', {
+        //TODO : Remove another hack
+        get: function () {
+            return this._deadLine;
+        },
+        set: function (t) {
+            if (this._deadLine === -1) {
+                this._deadLine = t;
+            }
+        },
+    });
+    /** @constructor */
+    function Minimap(editor) {
         Marker.call(this, editor.container);
         this.element.className +=
             ' ace_scrollbar ace_scrollbar-v ace_scrollbar_marker';
-        this.$render = this.render.bind(this);
-        this.viewport = {
-            clazz: 'marker_square',
-            type: 'fullLine',
-            update: function (html, self, session, config) {
-                self.elt(
-                    this.clazz,
-                    'height:' +
-                        self.editor.renderer.$size.scrollerHeight *
-                            config.scaleY +
-                        'px;' +
-                        'width:' +
-                        config.width +
-                        'px;' +
-                        'top:' +
-                        (self.editor.renderer.scrollMargin.top +
-                            session.getScrollTop()) *
-                            config.scaleY +
-                        'px;' +
-                        'left:' +
-                        0 +
-                        'px;',
-                );
-            },
-        };
-        this.cursors = [];
+        this.$render = this.onAfterRender.bind(this);
         editor.renderer.on('afterRender', this.$render);
         this.editor = editor;
+        this.viewportEl = null;
+        this.cursors = [];
+        this.$cache = [];
+        this.chunkSize = 0;
+        this.timeoutCounter = 0;
+        this.renderIndex = 0;
+        this.parts = [new Part(this)];
     }
-    oop.inherits(ScrollbarMarker, Marker);
+    oop.inherits(Minimap, Marker);
+    Minimap.prototype.session = undefined;
+    Minimap.prototype.delayedUpdate = undefined;
+    Minimap.prototype.element = undefined;
+    Minimap.prototype.MIN_CHUNK_SIZE = 5;
+    Minimap.prototype.MAX_NUM_PARTS = 10;
+    Minimap.prototype.SCHEDULE_DELAY = 1500;
 
-    ScrollbarMarker.prototype.scroll = function () {
-        var viewport = this.element.getElementsByClassName('marker_square')[0];
-        if (viewport) {
-            viewport.style.top =
-                (this.editor.renderer.scrollMargin.top +
-                    this.session.getScrollTop()) *
-                    this.config.scaleY +
-                'px';
+    Minimap.prototype.updateParts = function () {
+        var len = this.session.getLength();
+        var chunkSize = Math.max(
+            this.MIN_CHUNK_SIZE,
+            (len / this.MAX_NUM_PARTS) | 0,
+        );
+        for (var i = 0, k = 0; k < len; i++, k += chunkSize) {
+            var part = this.parts[i] || (this.parts[i] = new Part(this));
+            part.start = k;
+            part.end = k + chunkSize - 1;
+        }
+        this.chunkSize = chunkSize;
+        while (i < this.parts.length) {
+            this.$cache.push.apply(
+                this.$cache,
+                this.parts.pop().element.childNodes,
+            );
         }
     };
-    ScrollbarMarker.prototype.destroy = function () {
+    Minimap.prototype.destroy = function () {
         this.editor.renderer.off('afterRender', this.$render);
         this.element.remove();
     };
-    ScrollbarMarker.prototype.$padding = 0;
-    ScrollbarMarker.prototype.SCHEDULE_DELAY = 1500;
-    ScrollbarMarker.prototype.gatherMarkers = function () {
+    Minimap.prototype.$padding = 0;
+    Minimap.prototype.gatherMarkers = function () {
         var markers = Object.assign(
             {},
             this.session.getMarkers(),
             this.session.getMarkers(true),
         );
-        markers.viewport = this.viewport;
-        this.setMarkers(markers);
+        for (var i = 0; i < this.parts.length; i++) {
+            this.parts[i].setMarkers(markers);
+        }
     };
-    ScrollbarMarker.prototype.update = function () {
-        Marker.prototype.update.apply(this, arguments);
-        this.cursors.length = 0; //Marker will remove all the cursor elements
-        this.updateCursors();
-    };
-    ScrollbarMarker.prototype.updateCursors = function () {
+    Minimap.prototype.updateCursors = function () {
         var all = this.editor.selection.getAllRanges();
         if (all.length == 1) all = [];
         all = all.filter(function (e) {
@@ -110,37 +168,125 @@ define(function (require, exports, module) {
         }, this);
     };
 
-    ScrollbarMarker.prototype.render = function (changes) {
+    Minimap.prototype.viewportMarker = {
+        clazz: 'marker_square',
+        type: 'fullLine',
+        update: function (html, self, session, config) {
+            self.elt(
+                this.clazz,
+                'height:' +
+                    self.editor.renderer.$size.scrollerHeight * config.scaleY +
+                    'px;' +
+                    'width:' +
+                    config.width +
+                    'px;' +
+                    'top:' +
+                    (self.editor.renderer.scrollMargin.top +
+                        session.getScrollTop()) *
+                        config.scaleY +
+                    'px;' +
+                    'left:' +
+                    0 +
+                    'px;',
+            );
+            self.viewportEl =
+                self.i > -1
+                    ? self.element.childNodes[self.i - 1]
+                    : self.element.childNodes[
+                          self.element.childNodes.length - 1
+                      ];
+        },
+    };
+    Minimap.prototype.update = function (config, isAsync) {
+        this.config = config;
+        var len = this.parts.length;
+        this.renderIndex = (this.renderIndex + 1) % len;
+        var finished = true,
+            timedOut = false,
+            deadLine = -1;
+        for (var i = 0; i < len; i++) {
+            var part = this.parts[(i + this.renderIndex) % len];
+            if (part.done) continue;
+            if (timedOut) {
+                finished = false;
+                this.delayedUpdate(this.SCHEDULE_DELAY);
+                break;
+            }
+            part.element.reuseNodes();
+            part.session = this.session;
+            part._deadLine = deadLine;
+            part.update(part.getConfig(config), isAsync);
+            if (deadLine === -1) deadLine = part._deadLine;
+            //TODO Hack: Marker must render at least on element for it to time out. Otherwise, part.timedOut simply means the update was postponed.
+            var skippedRender = part.timedOut && part.i === 0;
+            if (!skippedRender) {
+                timedOut = part.timedOut;
+                if (!timedOut || isAsync) {
+                    part.done = true;
+                }
+            } else {
+                finished = false;
+                break;
+            }
+        }
+        if (finished) {
+            for (var i = 0; i < this.$cache.length; i++) {
+                this.element.removeChild(this.$cache[i]);
+            }
+            this.$cache.length = 0;
+        }
+    };
+
+    Minimap.prototype.scroll = function () {
+        this.viewportEl.style.top =
+            (this.editor.renderer.scrollMargin.top +
+                this.session.getScrollTop()) *
+                this.config.scaleY +
+            'px';
+    };
+
+    Minimap.prototype.onAfterRender = function (changes) {
         var r = this.editor.renderer;
         this.setSession(this.editor.session);
-
-        this.element.style.bottom = r.scrollBarH.getHeight() + 'px';
-        var isScroll = false;
+        var isScroll = false,
+            sizeChanged = changes & (r.CHANGE_SIZE | r.CHANGE_FULL|r.CHANGE_LINES);
+        if (sizeChanged) this.updateParts();
         if (
             changes &
-            (r.CHANGE_MARKER | r.CHANGE_MARKER_BACK | r.CHANGE_MARKER_FRONT)
+            (r.CHANGE_MARKER |
+                r.CHANGE_MARKER_BACK |
+                r.CHANGE_MARKER_FRONT |
+                r.CHANGE_FULL)
         ) {
             this.gatherMarkers();
-        } else if (!(changes & (r.CHANGE_SIZE | r.CHANGE_FULL))) {
-            if (changes & (r.CHANGE_SCROLL | r.CHANGE_H_SCROLL)) {
-                isScroll = true;
-            } else if (changes & r.CHANGE_CURSOR) {
-                return this.updateCursors();
-            } else return;
-        }
-        var configOld = r.layerConfig;
+            sizeChanged = 1;
+        } else if (sizeChanged) {
+        } else if (changes & (r.CHANGE_SCROLL | r.CHANGE_H_SCROLL)) {
+            isScroll = true;
+        } else if (changes & r.CHANGE_CURSOR) {
+            return this.updateCursors();
+        } else return;
+
+        this.element.style.bottom = r.scrollBarH.getHeight() + 'px';
+        var layerConfig = r.layerConfig;
         var totalHeight = r.getScrollbarHeight();
-        var scaleY = Math.min(1, this.element.clientHeight / totalHeight);
+        var scaleY = Math.min(
+            1,
+            (layerConfig.height - r.scrollBarH.getHeight()) / totalHeight,
+        );
         var scaleX =
             (VSCROLL_WIDTH - 5) /
-            Math.min(configOld.width, r.$size.scrollerWidth * 2 + r.scrollLeft);
+            Math.min(
+                layerConfig.width,
+                r.$size.scrollerWidth * 2 + r.scrollLeft,
+            );
         var config = {
             scaleY: scaleY,
-            lineHeight: configOld.lineHeight * scaleY,
+            lineHeight: layerConfig.lineHeight * scaleY,
             firstRow: 0,
             width: VSCROLL_WIDTH,
             scaleX: scaleX,
-            characterWidth: configOld.characterWidth * scaleX,
+            characterWidth: layerConfig.characterWidth * scaleX,
             lastRow: this.session.getLength(),
             firstRowScreen: -r.getLineAtHeight(r.scrollMargin.top),
             offset: 0,
@@ -151,19 +297,25 @@ define(function (require, exports, module) {
                 return this.scroll();
             }
         }
+        for (var i = 0; i < this.parts.length; i++) {
+            this.parts[i].done = false;
+        }
+        this.i = 0;
+        this.viewportMarker.update(null, this, this.session, config);
         this.update(config);
+        this.updateCursors();
     };
     config.defineOptions(Editor.prototype, 'editor', {
         annotateScrollbar: {
             set: function (val) {
                 if (val) {
-                    if (!this.$scrollbarMarker) {
-                        this.$scrollbarMarker = new ScrollbarMarker(this);
+                    if (!this.$minimap) {
+                        this.$minimap = new Minimap(this);
                         this.renderer.updateBackMarkers();
                     }
-                } else if (this.$scrollbarMarker) {
-                    this.$scrollbarMarker.destroy();
-                    this.$scrollbarMarker = null;
+                } else if (this.$minimap) {
+                    this.$minimap.destroy();
+                    this.$minimap = null;
                 }
             },
             value: false,
@@ -313,6 +465,7 @@ define(function (require, exports, module) {
         }
     };
     var FocusManager = require('../ui/focus_manager').FocusManager;
+    exports.ScrollbarMarker = Minimap;
     exports.setupEditor = function (el) {
         var editor = ace.edit(el);
         editor.$enableTouchHandles = true;

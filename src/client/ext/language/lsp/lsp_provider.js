@@ -3,30 +3,36 @@ define(function (require, exports, module) {
         {
             lspConfigs: [],
         },
-        'autocompletion'
+        'intellisense',
     );
+    var Notify = require('grace/ui/notify').Notify;
+
     require('grace/core/config').Config.registerInfo(
         {
             lspConfigs: {
                 doc:
                     'Array of configurations. Format {\n\
+name: Name of provider.\n\
 address: string- Address default: ws: or wss:\n\
-name: name of provider\n\
-modes: list of language modes where it is enabled\n\
-options: server options to send to language service\n\
-languageId: languageId to report.',
+modes: List of language modes where it is enabled\n\
+languageId?: Override languageID to report. Necessary for some language servers to work properly.\n\
+isSupport?: Whether this language service provides full support or should allow other services to support it.\n\
+priority?: An LSP will be called before those with lower priority.\n\
+options?: Server options to send to language service',
                 type: [
                     {
-                        address: 'url',
                         name: 'string',
+                        address: 'url',
                         modes: ['string'],
+                        languageId: '?string',
+                        isSupport: '?boolean',
+                        priority: '?number',
                         options: '?object',
-                        languageId: 'string',
                     },
                 ],
             },
         },
-        'autocompletion'
+        'intellisense',
     );
     var ServerHost = require('grace/ext/language/server_host').ServerHost;
     var BaseProvider = require('grace/ext/language/base_provider').BaseProvider;
@@ -36,33 +42,47 @@ languageId: languageId to report.',
     var FileUtils = require('grace/core/file_utils').FileUtils;
     /** @constructor*/
     function LspProvider(config) {
-        this.address = config.address;
-        this.name = config.name + '_LSP';
-        this.options = config.options;
-        this.languageId = config.languageId;
-        this.instance = null;
-        this.modes = config.modes;
         this.id = Utils.genID('lsp');
+        this.address = config.address;
+        this.modes = config.modes;
+        this.name = config.name ? config.name + '_LSPClient' : this.id;
+        this.languageId = config.languageId;
+        this.isSupport = !!config.isSupport;
+        if (typeof config.priority === 'number')
+            this.priority = config.priority;
+        this.options = config.options;
+        this.instance = null;
+        this.transport = null;
         this.changeWorkspace = this.changeWorkspace.bind(this);
+        this.changeWorkspace();
         appEvents.on('changeProject', this.changeWorkspace);
     }
     Utils.inherits(LspProvider, BaseProvider);
-    var LspClient;
+    var LspClient, LspTransport;
     LspProvider.prototype.init = Depend.after(
         function (cb) {
             var self = this;
             require(['./lsp_transport', './lsp_client'], function (mod1, mod) {
-                self.changeWorkspace();
                 self.changeOptions();
-                self.transport = new mod1.LspTransport(self);
+                LspTransport = mod1.LspTransport;
                 LspClient = mod.LspClient;
                 cb();
             });
         },
         function (editor, cb) {
             var self = this;
-            if (this.instance) {
-                return cb(this.instance);
+            if (!self.transport) {
+                try {
+                    self.transport = new LspTransport(self);
+                } catch (e) {
+                    Notify.error(e.message);
+                    console.error(e);
+                    self.updateCapabilities({});
+                    return cb();
+                }
+            }
+            if (self.instance) {
+                return cb(self.instance);
             }
             self.instance = new LspClient(self.transport, {
                 switchToDoc: ServerHost.switchToDoc,
@@ -71,9 +91,32 @@ languageId: languageId to report.',
                 normalize: FileUtils.normalize,
                 name: self.name,
             });
-            this.attachToEditor(editor, self.instance, cb);
-        }
+            self.attachToEditor(editor, self.instance, cb);
+        },
     );
+    LspProvider.prototype.updateCapabilities = function (has) {
+        var prov = this;
+        if (has.completionProvider) {
+            if (has.completionProvider.triggerCharacters) {
+                prov.triggerRegex = new RegExp(
+                    '(?:' +
+                        has.completionProvider.triggerCharacters
+                            .map(Utils.regEscape)
+                            .join('|') +
+                        ')$',
+                );
+            }
+        } else prov.hasCompletions = false;
+        if (!has.definitionProvider) prov.hasDefinition = false;
+        if (!has.referencesProvider) prov.hasReferences = false;
+        if (!has.signatureHelpProvider) prov.hasArgHints = false;
+        if (!has.signatureHelpProvider) prov.hasArgHints = false;
+        if (!has.documentFormattingProvider) prov.hasFormatting = false;
+        if (!has.documentRangeFormattingProvider)
+            prov.hasRangeFormatting = false;
+        if (!has.renameProvider) prov.hasRename = false;
+        ServerHost.toggleProvider(prov, prov.modes, true);
+    };
     LspProvider.prototype.changeOptions = function () {
         if (this.transport) {
             this.transport.initialize(
@@ -82,9 +125,9 @@ languageId: languageId to report.',
                         'workspace/didChangeWorkspaceFolders',
                         {
                             settings: this.options,
-                        }
+                        },
                     );
-                }.bind(this)
+                }.bind(this),
             );
         }
     };
@@ -94,7 +137,7 @@ languageId: languageId to report.',
         var current =
             project.rootDir === FileUtils.NO_PROJECT
                 ? {
-                      rootUri: 'file://temp/',
+                      rootUri: 'file://tmp/',
                       name: 'No Project',
                   }
                 : {
@@ -112,9 +155,9 @@ languageId: languageId to report.',
                                 added: current && [current],
                                 removed: old && [old],
                             },
-                        }
+                        },
                     );
-                }.bind(this)
+                }.bind(this),
             );
         }
     };
@@ -122,12 +165,10 @@ languageId: languageId to report.',
     LspProvider.prototype.hasArgHints = true;
     LspProvider.prototype.hasAnnotations = true;
     LspProvider.prototype.hasFormatting = true;
+    LspProvider.prototype.hasRangeFormatting = true;
+    LspProvider.prototype.hasSynchronization = true;
     LspProvider.prototype.hasRename = true;
     LspProvider.prototype.priority = 12000;
-    LspProvider.prototype.destroy = function () {
-        BaseProvider.prototype.destroy.apply(this, arguments);
-        this.transport.destroy();
-    };
     //Todo codeLens, codeAction and executeCommand
     var providers = {
         //[name]: LspProvider
@@ -138,12 +179,13 @@ languageId: languageId to report.',
         if (ev.config !== 'lspConfigs') return;
         var m = appConfig.lspConfigs,
             o = lspConfigs;
+        lspConfigs = appConfig.lspConfigs;
         var removed = o.filter(Utils.notIn(m));
         var added = m.filter(Utils.notIn(o));
         removed.forEach(function (e) {
             if (providers[e.name]) {
                 ServerHost.unregisterProvider(providers[e.name]);
-                providers[e.name].destroy();
+                providers[e.name].destroyInstance();
                 providers[e.name] = null;
             }
         });
@@ -160,10 +202,6 @@ languageId: languageId to report.',
         ServerHost.registerProvider(providers[config.name]);
         return providers[config.name];
     };
-    update({
-        config: 'lspConfigs',
-        oldValue: [],
-        newValue: appConfig.lspConfigs,
-    });
-    require('grace/core/config').Config.on('autocompletion', update);
+    update({config: 'lspConfigs'});
+    require('grace/core/config').Config.on('intellisense', update);
 });

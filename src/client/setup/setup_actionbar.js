@@ -4,11 +4,11 @@ define(function (require, exports, module) {
     var rootView = require('./setup_root').rootView;
     var View = require('../ui/view').View;
     var LinearLayout = require('../ui/linear_layout').LinearLayout;
+    var Dropdown = require('../ui/dropdown').Dropdown;
     var TabRenderer = require('../ui/tab_renderer').TabRenderer;
     var FocusManager = require('../ui/focus_manager').FocusManager;
     var DocsTab = require('./setup_tab_host').DocsTab;
-    var Editors = require('../editor/editors').Editors;
-    var MainMenu = require('./setup_main_menu').MainMenu;
+    var Actions = require('../core/actions').Actions;
     var Config = require('../core/config').Config;
     var appConfig = Config.registerAll(
         {
@@ -59,9 +59,9 @@ define(function (require, exports, module) {
     tabs.$el = tabView.$el;
     tabs.$setSingleTabs(appConfig.singleTabLayout);
     tabs.setFadeCloseIcon();
-    DocsTab.addRenderer(tabs);
     tabs.$el.on('click', '.tab a', tabs.getOnClickListener(DocsTab));
-    appEvents.once('documentsLoaded', DocsTab.recreate.bind(DocsTab));
+    DocsTab.addRenderer(tabs);
+    DocsTab.recreate();
 
     var menuTrigger = new View(
         $(
@@ -73,7 +73,6 @@ define(function (require, exports, module) {
     );
     ActionBar.addView(menuTrigger, 3, 40);
     ActionBar.render();
-    MainMenu.createTrigger(menuTrigger.$el[0]);
 
     function updateSize(ev) {
         $(document.body).toggleClass('virtual-keyboard-visible', ev.visible);
@@ -121,12 +120,78 @@ define(function (require, exports, module) {
     }
     //should also be window on resize
     appEvents.on('keyboardChanged', updateSize);
-    Editors.addCommands({
+    Actions.addAction({
         name: 'toggleFullscreen',
+        icon: 'fullscreen',
         bindKey: 'F11',
         exec: function () {
             ActionBar.$forcedOpen = ActionBar.hidden;
             ActionBar.toggle();
         },
     });
+
+    var settingsItems = {};
+    var moreItems = {
+        settings: {
+            caption: 'Configuration',
+            icon: 'settings_application',
+            subTree: settingsItems,
+        },
+    };
+
+    var menuItems = {
+        more: {
+            icon: 'more_vert',
+            caption: 'More',
+            subTree: moreItems,
+            sortIndex: 10000,
+        },
+    };
+    var menu = new Dropdown();
+    menu.onclick = function (ev, id, element, item, anchor) {
+        if (!item.handle) return;
+        var event = Actions.createEvent();
+        event.element = element;
+        event.anchor = anchor;
+        event.event = ev;
+        item.handle(event);
+    };
+    menu.setData(menuItems);
+    Actions.registerActionHost('actionbar', function (action) {
+        if (
+            !menuItems[action.name] &&
+            Object.keys(menuItems).filter(function (e) {
+                return (
+                    e !== '!changed' && e !== '!update' && !menuItems['!' + e]
+                );
+            }).length > 6
+        )
+            addTo(moreItems, action);
+        else addTo(menuItems, action);
+    });
+    Actions.registerActionHost('actionbar.more', function (action) {
+        addTo(moreItems, action);
+    });
+    Actions.registerActionHost('actionbar.settings', function (action) {
+        addTo(settingsItems, action);
+    });
+    function addTo(items, option) {
+        if (items[option.name]) {
+            var extend = {};
+            extend['!' + option.name] = option;
+            Dropdown.assign(items, extend);
+        } else {
+            items[option.name] = null;
+            items[(option.isHeader ? '' : '!') + option.name] = option;
+        }
+        menu.setData();
+        if (option.subTree)
+            Actions.registerActionHost(
+                'actionbar.' + option.name,
+                function (child) {
+                    addTo(option.subTree, child);
+                }
+            );
+    }
+    menu.createTrigger(menuTrigger.$el[0]);
 });

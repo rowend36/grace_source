@@ -4,25 +4,26 @@ define(function (require, exports, module) {
   var getActiveDoc = require('./setup_editors').getActiveDoc;
   var Docs = require('../docs/docs').Docs;
   var Notify = require('../ui/notify').Notify;
-  var menu = require('./setup_main_menu').MainMenu;
+  var Actions = require('../core/actions').Actions;
   var closeTab = require('./setup_tab_host').closeTab;
   var DocsTab = require('./setup_tab_host').DocsTab;
   var Utils = require('../core/utils').Utils;
   var table = require('../ui/ui_utils').tabulate;
-  var appEvents = require('../core/app_events').appEvents;
+  var FocusManager = require('../ui/focus_manager').FocusManager;
+  var appEvents = require('../core/app_events').AppEvents;
   var Config = require('../core/config').Config;
   var appConfig = Config.registerAll(
     {
       inactiveFileDelay: '5min',
     },
-    'documents'
+    'documents',
   );
   Config.registerInfo(
     {
       inactiveFileDelay:
         'Configures the duration of time used for determining inactive documents. Uses resource context.',
     },
-    'documents'
+    'documents',
   );
   function doCopy() {
     var editor = getActiveEditor();
@@ -33,47 +34,23 @@ define(function (require, exports, module) {
   }
 
   var menuItems = {
-    '!update': [
-      function (self, update) {
-        var doc = getActiveDoc();
-        update('save', doc ? self['!save'] : null);
-      },
-    ],
-    '!save': {
-      icon: 'save',
-      caption: 'Save',
-      close: true,
-      sortIndex: 1,
-      onclick: function () {
-        getActiveEditor().execCommand('save');
-      },
-    },
     file: {
       caption: 'File',
       sortIndex: 2,
       icon: 'insert_drive_file',
       subTree: {
-        '!update': [
-          function (self, update) {
-            var doc = getActiveDoc();
-            update('refresh', doc ? self['!refresh'] : null);
-            update('refresh-all', doc ? self['!refresh-all'] : null);
-          },
-        ],
         'close-current': {
           icon: 'close',
-          sortIndex: -1,
+          sortIndex: -3,
           caption: 'Close current tab',
-          close: true,
-          onclick: function () {
+          handle: function () {
             closeTab(DocsTab.active);
           },
         },
         'close-except': {
           icon: 'clear_all',
           caption: 'Close others',
-          close: true,
-          onclick: function () {
+          handle: function () {
             var tab = DocsTab;
             for (var i = tab.tabs.length; i-- > 0; ) {
               if (tab.tabs[i] != DocsTab.active) {
@@ -85,8 +62,7 @@ define(function (require, exports, module) {
         'close-all': {
           icon: 'clear_all',
           caption: 'Close all',
-          close: true,
-          onclick: function () {
+          handle: function () {
             var tab = DocsTab;
             for (var i = tab.tabs.length; i-- > 0; ) {
               closeTab(tab.tabs[i]);
@@ -96,8 +72,7 @@ define(function (require, exports, module) {
         'close-inactive': {
           icon: 'timelapse',
           caption: 'Close inactive tabs',
-          close: true,
-          onclick: function () {
+          handle: function () {
             Utils.asyncForEach(
               DocsTab.tabs.slice(0),
               function (e, i, n) {
@@ -112,7 +87,7 @@ define(function (require, exports, module) {
                 var inactiveTime =
                   new Date().getTime() -
                   Utils.parseTime(
-                    Config.forPath(e, appConfig, 'inactiveFileDelay')
+                    Config.forPath(e, 'documents', 'inactiveFileDelay'),
                   );
 
                 if (Utils.getCreationDate(e) >= inactiveTime) return n();
@@ -130,86 +105,33 @@ define(function (require, exports, module) {
                   });
               },
               null,
-              5
+              5,
             );
-          },
-        },
-
-        '!refresh': {
-          icon: 'refresh',
-          caption: 'Refresh',
-          close: true,
-          onclick: function () {
-            var doc = getActiveDoc();
-            doc &&
-              doc.refresh(function (err,refreshed) {
-                if (refreshed) Notify.info('Refreshed');
-              });
-          },
-        },
-        '!refresh-all': {
-          icon: 'refresh',
-          caption: 'Refresh All',
-          close: true,
-          onclick: function () {
-            Docs.refreshDocs();
           },
         },
       },
     },
-    'Jump to': {
+    go: {
       icon: 'call_made',
-      caption: 'Navigation',
+      caption: 'Go..',
       subTree: {
-        '!update': [
-          function (self, update) {
-            var c = getActiveEditor().getMainCompleter();
-            update('jump-to-def', c ? self['!jump-to-def'] : null);
-            update('find-refs', c ? self['!find-refs'] : null);
-          },
-        ],
         'find-in-file': {
-          caption: 'Find in File',
-          close: true,
-          onclick: function () {
+          caption: 'Find in file',
+          handle: function () {
+            FocusManager.hintChangeFocus();
             getActiveEditor().execCommand('find');
           },
         },
         'goto-file': {
-          caption: 'Go to Line',
-          close: true,
-          onclick: function () {
+          caption: 'Go to line',
+          handle: function () {
+            FocusManager.hintChangeFocus();
             getActiveEditor().execCommand('gotoline');
           },
         },
         'next-error': {
-          caption: 'Go to Next Error',
-          close: true,
-          onclick: function () {
-            getActiveEditor().execCommand('goToNextError');
-          },
-        },
-        '!find-refs': {
-          caption: 'Find References',
-          close: true,
-          onclick: function () {
-            var editor = getActiveEditor();
-            var completer = editor.getMainCompleter();
-            if (completer.findRefs) {
-              completer.findRefs(editor);
-            }
-          },
-        },
-        '!jump-to-def': {
-          caption: 'Jump To Definition',
-          close: true,
-          onclick: function () {
-            var editor = getActiveEditor();
-            var completer = editor.getMainCompleter();
-            if (completer.jumpToDef) {
-              completer.jumpToDef(editor);
-            }
-          },
+          caption: 'Go to next error',
+          command: 'goToNextError',
         },
       },
     },
@@ -217,86 +139,59 @@ define(function (require, exports, module) {
       icon: 'edit',
       caption: 'Edit',
       subTree: {
-        '!update': [
-          function (self, update) {
-            var c = getActiveEditor().getMainCompleter();
-            update('rename', c ? self['!rename'] : null);
-          },
-        ],
         undo: {
           icon: 'undo',
           caption: 'Undo',
-          close: false,
-          onclick: function () {
+          dontClose: true,
+          handle: function () {
             getActiveEditor().execCommand('undo');
           },
         },
         redo: {
           caption: 'Redo',
           icon: 'redo',
-          close: false,
-          onclick: function () {
+          dontClose: true,
+          handle: function () {
             getActiveEditor().execCommand('redo');
           },
         },
         'increase-indent': {
-          caption: 'Increase Indent',
+          caption: 'Increase indent',
           icon: 'format_indent_increase',
-          close: false,
-          onclick: function () {
+          dontClose: true,
+          handle: function () {
             getActiveEditor().execCommand('indent');
           },
         },
         'decrease-indent': {
-          caption: 'Decrease Indent',
+          caption: 'Decrease indent',
           icon: 'format_indent_decrease',
-          close: false,
-          onclick: function () {
+          dontClose: true,
+          handle: function () {
             getActiveEditor().execCommand('outdent');
-          },
-        },
-        '!rename': {
-          icon: 'find_replace',
-          caption: 'Rename Variable',
-          close: true,
-          onclick: function () {
-            var editor = getActiveEditor();
-            var completer = editor.getMainCompleter();
-            if (completer.rename) {
-              completer.rename(editor);
-            }
-          },
-        },
-        format: {
-          caption: 'Format',
-          icon: 'format_align_justify',
-          close: true,
-          onclick: function () {
-            getActiveEditor().execCommand('beautify');
           },
         },
         paste: {
           caption: 'Paste',
           icon: 'content_paste',
-          close: true,
-          onclick: function () {
+          handle: function () {
             require('../ext/editor/enhanced_clipboard').clipboard.get(
               0,
               function (text) {
                 getActiveEditor().execCommand('paste', text);
-              }
+              },
             );
           },
         },
         copy: {
           caption: 'Copy',
           icon: 'content_copy',
-          onclick: doCopy,
+          handle: doCopy,
         },
         cut: {
           caption: 'Cut',
           icon: 'content_cut',
-          onclick: function doCut() {
+          handle: function doCut() {
             var editor = getActiveEditor();
             doCopy();
             editor.execCommand('cut');
@@ -305,45 +200,40 @@ define(function (require, exports, module) {
       },
     },
   };
-  for (var i in menuItems) {
-    menu.extendOption(i, menuItems[i]);
-  }
-  menu.addOption(
-    'quick-info',
-    {
-      icon: 'info',
-      caption: 'Show Document Info',
-      onclick: function () {
-        var doc = getActiveDoc();
+  Actions.addActions(menuItems, {showIn: 'actionbar'});
+  Actions.addAction({
+    icon: 'info',
+    caption: 'Show document info',
+    showIn: 'actionbar.settings',
+    handle: function () {
+      var doc = getActiveDoc();
 
-        var data;
-        if (doc)
-          data = {
-            Size: doc.getSize(),
-            Opened: Utils.getCreationDate(doc.id),
-            Lines: doc.session.getLength(),
-            Encoding: doc.getEncoding(),
-            'Line Mode': doc.session.getNewLineMode(),
-            'Detected New Line': JSON.stringify(
-              doc.session.getDocument().$autoNewLine
-            ),
-            'Autosave Enabled': doc.allowAutoSave,
-            'Annotation Providers': doc.session.listWorkers().map(function (m) {
-              return m.id;
-            }),
-          };
-        else data = {};
+      var data;
+      if (doc)
+        data = {
+          Size: doc.getSize(),
+          Opened: Utils.getCreationDate(doc.id),
+          Lines: doc.session.getLength(),
+          Encoding: doc.getEncoding(),
+          'Line Mode': doc.session.getNewLineMode(),
+          'Detected New Line': JSON.stringify(
+            doc.session.getDocument().$autoNewLine,
+          ),
+          'Autosave Enabled': doc.allowAutoSave,
+          'Annotation Providers': doc.session.listWorkers().map(function (e) {
+            return e.provider.name || e.id;
+          }),
+        };
+      else data = {};
 
-        appEvents.asyncTrigger('showDocInfo', {data: data}, function (e) {
-          if (!e.defaultPrevented)
-            Notify.modal({
-              header: 'Document Info',
-              body: table(data),
-              footers: ['close'],
-            });
-        });
-      },
+      appEvents.asyncTrigger('showDocInfo', {data: data}, function (e) {
+        if (!e.defaultPrevented)
+          Notify.modal({
+            header: 'Document Info',
+            body: table(data),
+            footers: ['close'],
+          });
+      });
     },
-    true
-  );
+  });
 });

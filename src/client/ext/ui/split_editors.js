@@ -4,8 +4,10 @@ define(function (require, exports, module) {
     var app = require('grace/core/app_events').AppEvents;
     var removeFrom = require('grace/core/utils').Utils.removeFrom;
     var Docs = require('grace/docs/docs').Docs;
-    var getEditor = require('grace/setup/setup_editors').getMainEditor;
+    var getMainEditor = require('grace/setup/setup_editors').getMainEditor;
+    var getEditor = require('grace/setup/setup_editors').getEditor;
     var Editors = require('grace/editor/editors').Editors;
+    var Actions = require('grace/core/actions').Actions;
     var SplitManager = require('grace/ui/split_manager').SplitManager;
     var FocusManager = require('grace/ui/focus_manager').FocusManager;
     var host = require('grace/ext/ui/tab_window').getHostEditor;
@@ -50,7 +52,7 @@ define(function (require, exports, module) {
             Editors.closeEditor(hostEditor);
             //unclickable(hostEditor.container);
             if (splitEditors.length === 1) {
-                var mainEditor = getEditor();
+                var mainEditor = getMainEditor();
                 //unclickable(mainEditor.container);
                 removeFrom(splitEditors, mainEditor);
                 NameTags.removeTag(mainEditor);
@@ -60,80 +62,20 @@ define(function (require, exports, module) {
         }
     }
 
-    var splitCommands = [
-        {
-            name: 'Add Split',
-            bindKey: 'F10',
-            exec: function (edit) {
-                return createSplitEditor(edit, 'horizontal');
-            },
-        },
-        {
-            name: 'Add Split Vertical',
-            bindKey: 'F9',
-            exec: function (edit) {
-                return createSplitEditor(edit, 'vertical');
-            },
-        },
-        {
-            name: 'Remove Split',
-            bindKey: 'F8',
-            exec: removeSplitEditor,
-        },
-    ];
-    var MainMenu = require('grace/setup/setup_main_menu').MainMenu;
-    MainMenu.addOption('!splits-m', {
-        caption: 'Splits',
-        icon: 'view_module',
-        '!update': function (self, update) {
-            return update(
-                'splits-m',
-                appConfig.disableSplits ? null : self['!splits-m']
-            );
-        },
-        subTree: {
-            'add-split': {
-                caption: 'Add Split Horizontal',
-                onclick: function () {
-                    createSplitEditor(
-                        require('grace/setup/setup_editors').getEditor(),
-                        'horizontal'
-                    );
-                },
-            },
-            'add-split-v': {
-                caption: 'Add Split Vertical',
-                onclick: function () {
-                    createSplitEditor(
-                        require('grace/setup/setup_editors').getEditor(),
-                        'vertical'
-                    );
-                },
-            },
-            'remove-split': {
-                caption: 'Remove Split',
-                onclick: function () {
-                    removeSplitEditor(
-                        require('grace/setup/setup_editors').getEditor()
-                    );
-                },
-            },
-        },
-    });
     /*Check if a document is open in any split*/
     /*Focus that editor if found*/
     function showDoc(doc) {
-        var curDoc = Docs.forSession(getEditor().session);
+        var curDoc = Docs.forSession(getMainEditor().session);
         if (curDoc == doc) return true;
         if (splitEditors.length < 2) return false;
-        var editor = getEditor(doc.session);
+        var editor = getMainEditor(doc.session);
         if (editor && isSplit(editor)) {
             Editors.setEditor(editor);
             FocusManager.focusIfKeyboard(editor, true);
             return true;
         }
         for (var i in doc.clones) {
-            editor = getEditor(doc.clones[i]);
+            editor = getMainEditor(doc.clones[i]);
             if (editor && isSplit(editor)) {
                 Editors.setEditor(editor);
                 FocusManager.focusIfKeyboard(editor, true);
@@ -179,7 +121,43 @@ define(function (require, exports, module) {
     function isSplit(editor) {
         return splitEditors.indexOf(editor) > -1;
     }
-    Editors.addCommands(splitCommands);
+
+    var splitCommands = [
+        {
+            name: 'Add Split',
+            bindKey: 'F10',
+            exec: function (edit) {
+                return createSplitEditor(edit, 'horizontal');
+            },
+        },
+        {
+            name: 'Add Split Vertical',
+            bindKey: 'F9',
+            exec: function (edit) {
+                return createSplitEditor(edit, 'vertical');
+            },
+        },
+        {
+            name: 'Remove Split',
+            bindKey: 'F8',
+            exec: removeSplitEditor,
+        },
+    ];
+    Actions.addAction({
+        name: 'splits',
+        icon: 'view_module',
+        showIn: 'actionbar.more',
+        isAvailable: function () {
+            return !appConfig.disableSplits;
+        },
+        subTree: {},
+    });
+    Actions.addActions(splitCommands, {
+        showIn: ['editor', 'actionbar.splits'],
+        isAvailable: function () {
+            return !appConfig.disableSplits;
+        },
+    });
     exports.SplitEditors = {
         create: createSplitEditor,
         close: removeSplitEditor,

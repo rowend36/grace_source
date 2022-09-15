@@ -252,6 +252,7 @@ define(function(require,exports,module) {
         var blockEnd = this.end.exec(this.buf);
         return (blockEnd ? blockEnd.index + blockEnd[0].length : -1);
     };
+    require("grace/core/utils").Utils.inherits(LineFilter, BlockFilter);
     var RegionFilter = function(starts, stream) {
         var start = [];
         for (var i in starts) {
@@ -283,9 +284,8 @@ define(function(require,exports,module) {
         }
         return -1;
     };
-    require("grace/core/utils").Utils.inherits(LineFilter, BlockFilter);
     require("grace/core/utils").Utils.inherits(RegionFilter, BlockFilter);
-    var pyScopeFinder = function(rawStream) {
+    var indentScopeSolver = function(rawStream) {
         var multiLine;
         var stream =
             new LineFilter("\\#",
@@ -356,13 +356,13 @@ define(function(require,exports,module) {
         }
         return scopes;
     };
-    var regexRe = "(?<=(?:[^\w]|^) *)\\/"; //the only look behind in this codebase
+    var regexRe = "(?<=(?:[^\\w]|^) *)\\/"; //the only look behind in this codebase
     try {
         new RegExp(regexRe);
     } catch (e) {
-        regexRe = "(?:[^\w\{\}]|^) *\\/";
+        regexRe = "(?:[^\\w{}]|^) *\\/";
     }
-    var cScopeFinder = function(stream) {
+    var braceScopeSolver = function(stream) {
         stream = new LineFilter("\\/\\/",
             new RegionFilter([{
                 open: "\\\"",
@@ -426,15 +426,15 @@ define(function(require,exports,module) {
         return scopes;
     };
     exports.ScopeSolvers = {
-        'javascript': cScopeFinder,
-        'jsx': cScopeFinder,
-        'kotlin': cScopeFinder,
-        'dart': cScopeFinder,
-        'typescript': cScopeFinder,
-        'php': cScopeFinder,
-        'java': cScopeFinder,
-        'python': pyScopeFinder,
-        'c_cpp': cScopeFinder
+        'javascript': braceScopeSolver,
+        'jsx': braceScopeSolver,
+        'kotlin': braceScopeSolver,
+        'dart': braceScopeSolver,
+        'typescript': braceScopeSolver,
+        'php': braceScopeSolver,
+        'java': braceScopeSolver,
+        'python': indentScopeSolver,
+        'c_cpp': braceScopeSolver
     };
     exports.scopeIterator = scopeIterator;
     exports.DocStream = DocStream;

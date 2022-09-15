@@ -1,6 +1,5 @@
 /*region*diffs*/
-
-.acediff-gutter{
+.acediff-gutter {
     background-color: #222222;
 }
 
@@ -13,20 +12,23 @@
     white-space: nowrap;
 }
 
-.acediff-container .acediff-editor:first-child{
+.acediff-container .acediff-editor:first-child {
     border-top-left-radius: 4px;
     border-bottom-left-radius: 4px;
     border-left-width: 2px;
 }
-.acediff-container .acediff-editor:last-child{
+
+.acediff-container .acediff-editor:last-child {
     border-top-right-radius: 4px;
     border-bottom-right-radius: 4px;
     border-right-width: 2px;
 }
+
 .acediff-container .acediff-gutter,
 .acediff-editor {
     height: 100%;
     display: inline-block;
+    vertical-align: top;
     overflow: hidden;
     border: 2px solid #222222;
     border-left-width: 0;
@@ -38,8 +40,9 @@
 
 .acediff-editor {
     width: 45%;
-    min-width: 250px;
+    min-width: 300px;
 }
+
 .acediff-container .acediff-gutter {
     font-size: 20px;
     width: 30px;
@@ -49,6 +52,7 @@
     .acediff-container .acediff-gutter {
         width: 5%;
     }
+
     .acediff-three-pane .acediff-editor {
         min-width: 30%;
         width: 30%;
@@ -104,6 +108,12 @@
     color: red;
 }
 
+/*.acediff-content-removed *{*/
+/*    color: red!important;*/
+/*}*/
+/*.acediff-content-added *{*/
+/*    color: green!important;*/
+/*}*/
 .acediff-gutter-added .ace_fold-widget,
 .acediff-gutter-removed .ace_fold-widget {
     margin-left: auto;
@@ -118,10 +128,24 @@
 .acediff-inline-removed {
     display: block;
     box-sizing: border-box;
-    border: 1px solid grey;
+    /*margin-left: -1px;*/
+    /*margin-top: -1px;*/
+    border: 1px solid;
     position: absolute;
+    border-radius: 1px;
 }
 
+.acediff-inline-removed {
+    background: rgb(255, 0, 0);
+    border-color: rgb(200, 0, 0);
+    opacity: 0.4;
+}
+
+.acediff-inline-added {
+    background: rgb(0, 255, 0);
+    border-color: rgb(0, 128, 0);
+    opacity: 0.3;
+}
 .fading {
     border-right: 5px solid transparent;
     border-top-style: dashed;
@@ -137,21 +161,15 @@
     z-index: 4;
 }
 
-.acediff-inline-removed {
-    background: rgb(255, 0, 0);
-    opacity: 0.3;
-}
+/*.acediff-gutter-added {*/
+    /*border-right: 1px solid green;*/
+/*}*/
+/*.acediff-swapped .acediff-gutter-added{*/
+/*    border-right: none;*/
+/*}*/
 
 .acediff-swapped .acediff-gutter-removed {
-    border-right: 1px solid green;
-}
-.acediff-swapped .acediff-gutter-added {
-    border-left: 1px solid red;
-}
-
-.acediff-inline-added {
-    background: rgb(0, 255, 0);
-    opacity: 0.3;
+    border-right: 1px dotted red;
 }
 
 .acediff-added {
@@ -165,6 +183,5 @@
     position: absolute;
     background: red;
 }
-
 
 /*endregion*/

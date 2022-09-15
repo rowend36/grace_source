@@ -34,6 +34,7 @@ define(function (require, exports, module) {
         var remSize = this.size - totalSize;
         var sizePerWeight = remSize / (totalWeight || 1);
         var lastPos = 0;
+        var pivot = this.views.length - 1;
         for (i in this.views) {
             view = this.views[i];
             if (view.hidden) continue;
@@ -42,10 +43,11 @@ define(function (require, exports, module) {
                 (view.layout_weight || 0) * sizePerWeight;
             var nextPos = lastPos + view[size];
             if (view.layout_weight) {
+                pivot = i;
                 view.$el.css(edge1, lastPos);
                 view.$el.css(edge2, this.size - nextPos);
                 view.$el.css(size, 'auto');
-            } else if (lastPos < this.size / 2) {
+            } else if (i < pivot) {
                 view.$el.css(edge1, lastPos);
                 view.$el.css(size, view[size]);
                 view.$el.css(edge2, 'auto');

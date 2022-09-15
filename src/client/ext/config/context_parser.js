@@ -70,7 +70,7 @@ define(function (require, exports, module) {
         exit: 'end_pred',
       },
       end_pred: {
-        token: ']',
+        rules: [']','space'],//add space so we can add duplicate keys
         select: ['chain', 'pred', 'key', null],
       },
       EXPR: {
@@ -113,7 +113,7 @@ define(function (require, exports, module) {
       value: {
         select: ['string', 'number', 'blob'],
       },
-      eq: /=~|==|=|!=|<=|<|>|>=|/,
+      eq: /=~|==|=|!=|<=|<|>=|>/,
       op: /&&|\|\|/,
       key: /[^\.\[]+/,
       name: /[^<>!=[\]();|&#\s`'"]+/,
@@ -121,6 +121,7 @@ define(function (require, exports, module) {
       space: /\s*/,
       number: /-?\.?\d+|\d+(?:\.\d+)?\b/,
       string: /\"(?:[^\"\\]|\\.)+\"|\'(?:[^\'\\]|\\.)+\'/,
+      ']': ']',
       '(': '(',
       ')': ')',
     });
@@ -244,6 +245,7 @@ define(function (require, exports, module) {
             term = this.compile(expr.right[0]);
             if (term.op == 'not') return term.val;
             else return _term(undefined, 'not', term);
+            // @ts-ignore - Jshint
             break;
           case ')':
             return this.compile(expr.right[0]);

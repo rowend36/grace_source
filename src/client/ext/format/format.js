@@ -1,8 +1,9 @@
 define(function (require, exports, module) {
   'use strict';
-  var Range = ace.require('ace/range').Range;
+  var Range = require('ace!range').Range;
   var Notify = require('grace/ui/notify').Notify;
   var Docs = require('grace/docs/docs').Docs;
+  var Actions = require('grace/core/actions').Actions;
   var $dmpDiffToAceDeltas = require('grace/docs/docs').$dmpDiffToAceDeltas;
   var getFormatter = require('./formatters').getFormatter;
   /**
@@ -81,7 +82,7 @@ define(function (require, exports, module) {
         originalRangeStart,
         range,
         formatAll,
-        unselect,
+        unselect
       );
       return true;
     }
@@ -112,7 +113,8 @@ define(function (require, exports, module) {
       }
     }
     //#endregion
-    var formatter = getFormatter(detectedMode);
+    var doc = Docs.forSession(session);
+    var formatter = getFormatter(detectedMode, doc && doc.getSavePath());
     if (!formatter) {
       Notify.warn('Unable to find formatter for this file');
       return false;
@@ -136,20 +138,20 @@ define(function (require, exports, module) {
           newCursorPos || originalRangeStart,
           range,
           formatAll,
-          unselect,
+          unselect
         );
       },
       {
-        //the characters that indent the first line
+        //the number of characters that indent the first line
         baseIndent: indent,
         //When in partial formatting, shows whether text starts
-        //from beginning of line
+        //from beginning of the line
         textContainsIndent: textContainsIndent,
         cursor: originalRangeStart,
         editor: editor,
         range: range,
         isPartialFormat: !formatAll,
-      },
+      }
     );
     return true;
   }
@@ -161,7 +163,7 @@ define(function (require, exports, module) {
     cursorPosition,
     range,
     formattedAll,
-    unselect,
+    unselect
   ) {
     try {
       if (!value || value == session) return;
@@ -174,9 +176,10 @@ define(function (require, exports, module) {
           deltas = $dmpDiffToAceDeltas(
             value,
             formattedAll ? 0 : range.start.row,
-            formattedAll ? 0 : range.start.column,
+            formattedAll ? 0 : range.start.column
           );
       } else {
+        //Doc.prototype.updateValue
         if (formattedAll) {
           session.getDocument().$detectNewLine(value);
         }
@@ -184,20 +187,22 @@ define(function (require, exports, module) {
           formattedAll ? session.getValue() : session.getTextRange(range),
           value,
           formattedAll ? 0 : range.start.row,
-          formattedAll ? 0 : range.start.column,
+          formattedAll ? 0 : range.start.column
         );
       }
-      var end = range.start;
+      // var end = range.start;
       session.markUndoGroup();
       for (var i = 0; i < deltas.length; i++) {
         session.doc.applyDelta(deltas[i]);
       }
       if (0 < deltas.length) {
-        end = deltas[deltas.length - 1].end;
+        // end = deltas[deltas.length - 1].end;
       }
       if (!formattedAll) {
         if (unselect) {
-          sel.setSelectionRange(Range.fromPoints(sel.cursor, sel.cursor));
+          sel.setSelectionRange(
+            Range.fromPoints(cursorPosition, cursorPosition)
+          );
         }
       }
     } catch (e) {
@@ -211,11 +216,13 @@ define(function (require, exports, module) {
         mac: 'Command-B',
         win: 'Ctrl-B',
       },
+      icon: "format_align_justify",
+      showIn: 'actionbar.edit',
       exec: beautify,
       readOnly: false,
     },
     {
-      name: 'removeBlank',
+      name: 'removeBlanks',
       bindKey: {
         mac: 'Command-Shift-B',
         win: 'Ctrl-Shift-B',
@@ -226,4 +233,5 @@ define(function (require, exports, module) {
       readOnly: false,
     },
   ];
+  Actions.addActions(exports.FormatCommands);
 });

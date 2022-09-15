@@ -19,14 +19,16 @@ define(function (require, exports, module) {
               if (!amount || amount < 0) return '';
               return String(sep === undefined ? ' ' : sep).repeat(amount);
           }
-        : function (amount, sep) {
+        : function repeat(amount, sep) {
               if (sep === undefined) sep = ' ';
-              if (amount < 2) return sep;
-              if (amount < 10000) {
-                  return new Array(amount + 1).join(sep);
-              }
+              if (!amount || amount < 0) return '';
+              if (amount === 1) return sep;
               var half = amount >> 1;
-              return repeat(amount - half, sep) + repeat(half, sep);
+              var text = sep;
+              for (var i = 1; i <= half; i <<= 1) {
+                  text = text + text;
+              }
+              return i < amount ? text + repeat(amount - i, sep) : text;
           };
 
     function extend(prop, superClass, mixins) {
@@ -43,6 +45,7 @@ define(function (require, exports, module) {
 
     /*Fancy timeouts*/
     function delay(func, wait) {
+        assert(func, 'Must provide function');
         wait = wait || 30;
         var timeout, ctx, args;
         var later = function () {
@@ -64,9 +67,10 @@ define(function (require, exports, module) {
             args = arguments;
             later();
         };
-        call.later = function (wait) {
+        call.later = function (_wait) {
             call.cancel();
-            timeout = setTimeout(later, wait);
+            ctx = this;
+            timeout = setTimeout(later, _wait || wait);
         };
         call.cancel = function () {
             if (timeout) {
@@ -78,9 +82,8 @@ define(function (require, exports, module) {
     }
 
     //Cancel any previous posts and then post again, used for saving
+    //Equivalent to args=>delay.cancel();delay(args)
     function debounce(func, wait) {
-        //like delay except each call cancels the previous
-        //simple and useful but op might be suspended indefinitely
         var timeout;
         wait = wait || 30;
         return function () {
@@ -97,8 +100,7 @@ define(function (require, exports, module) {
         };
     }
 
-    //Put on a queue and then call each one at a time
-    //Considering replacing this something from app_cycle
+    //Space calls to a function asynchronously  in order to nott block event loop. Similar to app_cyle.
     function spread(func, wait) {
         var tasks = [];
         var execute = delay(function () {
@@ -116,11 +118,15 @@ define(function (require, exports, module) {
         post.cancel = execute.cancel;
         return post;
     }
+    function assert(cond, e) {
+        if (!cond) throw new Error(e || 'AssertError');
+        return true;
+    }
     /*The most powerful async method ever built*/
     //call stack rearranging
     //parallelization
     //resume and cancel
-    /*But spoilt by bad api, a method should have 2-3 arguments, anything longer is a scam*/
+    /*But spoilt by bad api, a method should have 2-3 arguments, anything longer is a scam.*/
 
     /*Note on unfinished: resume can be called multiple times
     //Calling resume(true) tells async not to wait for new results when
@@ -130,8 +136,7 @@ define(function (require, exports, module) {
         var i = 0;
         var resume, cancel, waiting, cancelled;
         parallel = parallel || 1;
-        if (isNaN(parallel))
-            throw new Error('Invalid Parameter for parallel:' + parallel);
+        assert(parallel >= 1, 'Invalid parameter for parallel:' + parallel);
         if (unfinished) {
             resume = function (finished) {
                 if (finished) unfinished = false;
@@ -170,7 +175,9 @@ define(function (require, exports, module) {
                     }
                 } else if (parallel < 0) {
                     debug.error(
-                        'Counter error: you might be calling next twice or calling both next and cancel'
+                        new Error(
+                            'Counter error: you might be calling next twice or calling both next and cancel',
+                        ),
                     );
                 } else {
                     waiting++;
@@ -339,41 +346,6 @@ define(function (require, exports, module) {
         }
         return index;
     }
-    function AbortSignal() {
-        this.aborted = false;
-        this.listeners = [];
-        this.abort = this.control(this.abort.bind(this), false);
-    }
-    AbortSignal.prototype.control = function (func, onAborted) {
-        var self = this;
-        return function () {
-            if (self.aborted)
-                return typeof onAborted == 'function'
-                    ? onAborted.apply(this, arguments)
-                    : onAborted;
-            return func.apply(this, arguments);
-        };
-    };
-    AbortSignal.prototype.abort = function (cause) {
-        this.aborted = cause || true;
-        var listeners = this.listeners;
-        this.listeners = null;
-        for (var i = listeners.length; i > 0; ) {
-            listeners[--i].apply(null, arguments);
-        }
-        return true;
-    };
-    AbortSignal.prototype.notify = function (func) {
-        if (this.aborted) setImmediate(func, [this.aborted]);
-        else if (this.listeners.indexOf(func) < 0) this.listeners.push(func);
-    };
-    AbortSignal.prototype.unNotify = function (func) {
-        if (!this.aborted) removeFrom(this.listeners, func);
-    };
-    AbortSignal.prototype.clear = function () {
-        this.aborted = true;
-        this.listeners = null;
-    };
 
     function htmlEncode(string) {
         var entityMap = {
@@ -390,9 +362,8 @@ define(function (require, exports, module) {
     function sentenceCase(text) {
         return text && text[0].toUpperCase() + text.slice(1).toLowerCase();
     }
-    var idCount = 0;
+    var idCount = Math.floor(Math.random() * 1000);
     exports.Utils = {
-        AbortSignal: AbortSignal,
         repeat: repeat,
         spread: spread,
         unimplemented: function () {
@@ -406,10 +377,7 @@ define(function (require, exports, module) {
         },
         htmlEncode: htmlEncode,
         noop: function () {},
-        assert: function (cond, e) {
-            if (!cond) throw new Error(e || 'AssertError');
-            return true;
-        },
+        assert: assert,
         groupEvents: function (_emitter) {
             var events = [];
 
@@ -443,37 +411,24 @@ define(function (require, exports, module) {
                             off();
                             fn.apply(this, arguments);
                         },
-                        emitter
+                        emitter,
                     );
                 },
             };
         },
-        genID: function (s /*,oldIds*/) {
-            return (
-                s +
-                '' +
-                ('' + new Date().getTime()).substring(2) +
-                ((++idCount % 90) + 10)
-            );
+        genID: function (prefix) {
+            //m_adjjjdk6
+            var body = (++idCount + new Date().getTime())
+                .toString(36)
+                .slice(-8);
+            return prefix + repeat(9 - body.length, '_') + body;
         },
         getCreationDate: function (id) {
-            var today = new Date().getTime();
-            var l = parseInt(('' + today).substring(0, 2));
-            var m = id.substring(id.length - 11, id.length);
-            var forwardDate = parseInt(l + m);
-            return new Date(
-                forwardDate > today ? forwardDate - 100000000000 : forwardDate
-            );
-        },
-        inspect: function () {
-            debug.debug(
-                print.apply(
-                    null,
-                    arguments.length == 1 || typeof arguments[1] == 'number'
-                        ? arguments
-                        : [arguments]
-                )
-            );
+            var date = parseInt(id.slice(id.lastIndexOf('_') + 1), 36);
+            //TODO: uncomment this in year 2059 :D
+            // var today = Date.now();
+            // while (today - date >= 2e11) date += Math.pow(36, 8);
+            return new Date(date);
         },
         mergeList: mergeList,
         setImmediate: setImmediate,
@@ -495,7 +450,8 @@ define(function (require, exports, module) {
         sentenceCase: sentenceCase,
         plural: plural,
         inherits: extend,
-        //deprecated but used by Parser
+        //Used by Parser
+        //and regex_find
         toChars: function (str) {
             return Array.prototype.map
                 .call(str, function (e) {
@@ -505,7 +461,7 @@ define(function (require, exports, module) {
         },
         createCounter: createCounter,
         parseTime: parseTime,
-        toTime: toTimeString,
+        toDate: toTimeString,
         parseSize: parseTime,
         toSize: toSizeString,
         asyncForEach: asyncEach,
@@ -526,7 +482,13 @@ define(function (require, exports, module) {
                     try {
                         var args = result || [];
                         if (i < steps.length - 1) {
+                            var called = false;
                             args.unshift(function () {
+                                if (called)
+                                    throw new Error(
+                                        'Next called more than once.',
+                                    );
+                                called = true;
                                 result = _slice.call(arguments, 0);
                                 n();
                             });
@@ -545,7 +507,7 @@ define(function (require, exports, module) {
                 },
                 0,
                 false,
-                true
+                true,
             );
         },
     };

@@ -10,6 +10,7 @@ define(function (require, exports, module) {
     var FocusManager = require('../ui/focus_manager').FocusManager;
     var Navigation = require('../ui/navigation').Navigation;
     var TabHost = require('../ui/tab_host').TabHost;
+    var Docs = require('../docs/docs').Docs;
     var TabRenderer = require('../ui/tab_renderer').TabRenderer;
     var TabPager = require('../ui/tab_pager').TabPager;
     var Sidenav = require('../ui/sidenav').Sidenav;
@@ -128,7 +129,9 @@ define(function (require, exports, module) {
     var doclist = new TabRenderer(sideViewEl.find('#opendocs'));
     doclist.createItem = function (id, name) {
         return (
-            '<li tabIndex=0 draggable=true class="file-item" data-file=' +
+            '<li tabIndex=0 draggable=true class="file-item '+
+            (Docs.has(id) && Docs.get(id).dirty?'indicator-pending':'')+
+            '" data-file=' +
             id +
             '><i class="material-icons">insert_drive_file</i>' +
             '<span class="filename">' +
@@ -168,7 +171,7 @@ define(function (require, exports, module) {
         );
     });
     DocsTab.addRenderer(doclist);
-    appEvents.once('documentsLoaded', DocsTab.recreate.bind(DocsTab));
+    DocsTab.recreate();
 
     var sidenavTrigger = new View(
         $(

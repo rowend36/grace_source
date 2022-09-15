@@ -17,7 +17,6 @@ define(function (require, exports, module) {
       } else store = {};
       require(['grace/setup/setup_docs'], function () {
         try {
-          expect(Docs.numDocs()).to.be.greaterThan(0);
           for (var i in store) {
             expect(Docs.has(i) || !Docs.canDiscard(i)).to.equal(true);
           }

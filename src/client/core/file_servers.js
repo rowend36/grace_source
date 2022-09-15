@@ -4,7 +4,7 @@ define(function (require, exports, module) {
     Config.registerAll({defaultEncoding: 'utf8'}, 'files');
     var appEvents = require('./app_events').AppEvents;
     var Utils = require('./utils').Utils;
-    var Notify = require('../ui/notify');
+    var Notify = require('../ui/notify').Notify;
     var cyclicRequire = require;
     var putObj = Config.putObj;
     var getObj = Config.getObj;
@@ -13,6 +13,7 @@ define(function (require, exports, module) {
     FileServer management - needed methods for fileservers
     */
     var serverCreationParams = getObj('serverCreationParams');
+    var setImmediate = Utils.setImmediate;
     var serverFactories = [];
     var loadedServers;
     var defaultServer, defaultFactory;
@@ -41,7 +42,7 @@ define(function (require, exports, module) {
             caption,
             factory,
             config,
-            isDefault
+            isDefault,
         ) {
             serverFactories[type] = {
                 create: factory,
@@ -55,11 +56,12 @@ define(function (require, exports, module) {
         },
         $serverFactories: serverFactories,
         $getDefaultServer: function () {
-            if (!defaultServer)
-                defaultServer =
-                    loadedServers.default ||
-                    serverFactories[defaultFactory].create(null, 'default');
-            return defaultServer;
+            if (defaultServer) return defaultServer;
+            if (!serverFactories[defaultFactory])
+                throw new Error('No default FS Factory configured');
+            return (defaultServer =
+                loadedServers.default ||
+                serverFactories[defaultFactory].create(null, 'default'));
         },
         //TODO no undefined ids
         createServer: function (type, params, id) {
@@ -96,7 +98,7 @@ define(function (require, exports, module) {
                     loadedServers[i] = FileServers.createServer(
                         params.type,
                         params,
-                        i
+                        i,
                     );
                 } catch (e) {
                     debug.error(e);
@@ -131,10 +133,10 @@ define(function (require, exports, module) {
         },
         /**
          * @param intent {{
-             name: [string],
+             name?: string,
              path: string,
-             encoding: [string],
-             fileserver: [string]
+             encoding?: string,
+             fileserver?: string
          }}
         **/
         openIntent: function (intent) {
@@ -160,10 +162,10 @@ define(function (require, exports, module) {
                                     {
                                         fileServer: id,
                                         encoding: intent.encoding,
-                                    }
+                                    },
                                 );
                             } else next();
-                        }
+                        },
                     );
                 },
                 function () {
@@ -171,7 +173,7 @@ define(function (require, exports, module) {
                 },
                 1,
                 false,
-                true
+                true,
             );
         },
         availableEncodings: function (server) {
@@ -200,6 +202,7 @@ define(function (require, exports, module) {
         },
         detectEncoding: function (path, server, cb) {
             var encoding = Config.forPath(path, 'files', 'defaultEncoding');
+            setImmediate(cb, encoding);
             return encoding;
         },
         createError: function (obj) {
@@ -279,7 +282,7 @@ define(function (require, exports, module) {
                 function (err) {
                     if (!err) server.delete(path, cb);
                     else cb && cb(err);
-                }
+                },
             );
         },
     };

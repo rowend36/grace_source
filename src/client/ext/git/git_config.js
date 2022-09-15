@@ -1,6 +1,7 @@
 //Git Commands Configuration
 define(function (require, exports, module) {
-    var GitCommands = require("./git_commands").GitCommands;
+    /* globals $ */
+    var GitUtils = require("./git_utils").GitUtils;
     var appConfig = require("grace/core/config").Config.registerAll(
         null,
         "git"
@@ -110,5 +111,5 @@ define(function (require, exports, module) {
             }
         });
     }
-    GitCommands.doConfig = doConfig;
+    exports.doConfig = doConfig;
 });

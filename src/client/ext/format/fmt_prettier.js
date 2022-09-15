@@ -89,7 +89,7 @@ define(function (require, exports, module) {
           }
           if (err)
             Notify.error(
-              '<pre style="font-size:12px">' +
+              '<pre style="font-size:12px;white-space:pre-wrap">' +
                 Utils.htmlEncode(e.toString()) +
                 '</pre>',
             );

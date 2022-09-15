@@ -2,13 +2,14 @@ define(function (require, exports, module) {
   'use strict';
   var ConfigEvents = require('grace/core/config').Config;
   var Utils = require('grace/core/utils').Utils;
-  var Editors = require('grace/editor/editors').Editors;
+  var Notify = require('grace/ui/notify').Notify;
+  var Actions = require('grace/core/actions').Actions;
   var ServerHost = require('grace/ext/language/server_host').ServerHost;
-  var BaseProvider = require('grace/ext/language/base_provider')
-    .BaseProvider;
+  var BaseProvider = require('grace/ext/language/base_provider').BaseProvider;
+  var join = require('grace/core/file_utils').FileUtils.join;
   var supportedModes = ['java', 'python', 'javascript', 'c_cpp', 'json'];
-  var completions = ace.require('ace/ext/completions');
-  var TagsCompleter = require('./tags_completer').TagsCompleter;
+  var completion = require('../misc/basic_completion');
+  var TagsClient = require('./tags_client').TagsClient;
   var globToRegex = require('grace/core/file_utils').FileUtils.globToRegex;
   var Config = require('grace/core/config').Config;
   var appConfig = Config.registerAll(
@@ -22,20 +23,20 @@ define(function (require, exports, module) {
       enableTagsCompletion: ['css'].concat(supportedModes),
       enableWordsGathering: ['python', 'json'],
     },
-    'autocompletion.tags'
+    'intellisense.tags',
   );
   require('grace/core/config').Config.registerInfo(
     {
       '!root':
         'Use ctags for language support.\
-You can either load ctag files (with autocompletion.tags.ctagsFilePattern),\
+You can either load ctag files (with intellisense.tags.ctagsFilePattern),\
 json tag files exported from the application( with .gtag extension)\
 or actual source files( will be parsed.',
       ctagsFilePattern: {
         type: 'glob',
         isList: true,
         doc:
-          'A wildcard used to determine is a file specified in autocompletion.loadConfigs is a ctags file.',
+          'A wildcard used to determine is a file specified in intellisense.loadConfigs is a ctags file.',
       },
       loadFileTypes: {
         doc:
@@ -75,24 +76,41 @@ or actual source files( will be parsed.',
           'Allow the engine to update tags from the current file automatically on load and whenever changes are made. Uses resource context.',
       },
     },
-    'autocompletion.tags'
+    'intellisense.tags',
   );
 
-  Editors.addCommands({
+  Actions.addAction({
     bindKey: 'Ctrl-Alt-.',
     name: 'jumpToTag',
     exec: function (editor) {
       Tags.jumpToDef(editor);
     },
   });
-  var Tags = new TagsCompleter(ServerHost);
+  Actions.addAction({
+    name: 'exportTags',
+    caption: 'Export tags',
+    showIn: 'fileview.language',
+    handle: function (ev) {
+      ev.preventDefault();
+      var folder = join(ev.filepath, Utils.genID('tags'));
+      ev.fs.mkdir(folder, function () {
+        Tags.tags.exportTags(
+          ev.fs,
+          folder,
+          Notify.info.bind(null, 'Done'),
+        );
+      });
+    },
+  });
+
+  var Tags = new TagsClient(ServerHost);
 
   var memo = {};
   function isOptionEnabled(_option, mode, path) {
     var value = appConfig[_option];
     switch (_option) {
       case 'autoUpdateTags':
-        value = Config.forPath(path, 'autocompletion.tags', _option);
+        value = Config.forPath(path, 'intellisense.tags', _option);
       /*fall through*/
       default:
         return value === false
@@ -106,7 +124,7 @@ or actual source files( will be parsed.',
     var m = memo[_option] || (memo[_option] = globToRegex(appConfig[_option]));
     return m.test(value);
   }
-  ConfigEvents.on('autocompletion.tags', function (e) {
+  ConfigEvents.on('intellisense.tags', function (e) {
     switch (e.config) {
       case 'loadFileTypes':
       case 'enableWordsGathering':
@@ -128,9 +146,9 @@ or actual source files( will be parsed.',
       return isOptionEnabled('enableTagsCompletion', e);
     });
     ServerHost.registerProvider(Tags);
-    completions.removeCompleter(Tags);
+    completion.removeCompleter(Tags);
     //so that init can be called
-    completions.addCompleter(Tags);
+    completion.addCompleter(Tags);
     ServerHost.unregisterProvider(Tags);
   }
 

@@ -7,13 +7,18 @@ define(function (require, exports, module) {
     var getActiveDoc = require("grace/setup/setup_editors").getActiveDoc;
     var sentenceCase = require("grace/core/utils").Utils.sentenceCase;
     var Tabs = require("grace/setup/setup_sideview").SideViewTabs;
-    var themelist = ace.require("ace/ext/themelist");
+    var SideView = require("grace/setup/setup_sideview").SideView;
+    var themelist = require("ace!ext/themelist");
     var appEvents = require("grace/core/app_events").AppEvents;
     var ConfigEvents = require("grace/core/config").Config;
+    //For the options, we could actually use an action_host instead though
+    require('grace/ext/language/misc/basic_completion');
+    require('grace/ext/language/services/completion');
+    require('grace/ext/language/services/hover');
     Tabs.addTab("settings", "settings");
     var settingsMenu = $("#settings");
 
-    var OptionsPanel = ace.require("ace/ext/options").OptionPanel;
+    var OptionsPanel = require("ace!ext/options").OptionPanel;
     var SettingsPanel = new OptionsPanel(null, settingsMenu[0]);
     var sessionOption = function (obj) {
         obj.getValue = function (editor) {
@@ -228,7 +233,7 @@ define(function (require, exports, module) {
         require("grace/ui/ui_utils").styleCheckbox(settingsMenu);
     }
     Tabs.afterClick = function (id) {
-        if (id === "settings") updateSettings();
+        if (id === "settings" && SideView.isOpen) updateSettings();
     };
     appEvents.on("sidenavOpened", function () {
         if (Tabs.active == "settings") updateSettings();
@@ -250,5 +255,5 @@ define(function (require, exports, module) {
         if (ev.config == "customThemes") updateList();
     });
     updateList();
-    updateSettings();
+    Tabs.afterClick(Tabs.active);
 }); /*_EndDefine*/

@@ -2,15 +2,12 @@ define(function (require, exports, module) {
     /*globals $*/
     var Docs = require('grace/docs/docs').Docs;
     var FileUtils = require('grace/core/file_utils').FileUtils;
-    var Editors = require('grace/editor/editors').Editors;
+    var Actions = require('grace/core/actions').Actions;
     var getEditor = require('grace/setup/setup_editors').getEditor;
     var getActiveDoc = require('grace/setup/setup_editors').getActiveDoc;
     var configure = require('grace/core/config').Config.configure;
     var Notify = require('grace/ui/notify').Notify;
-    var Form = require('grace/ui/forms').Forms;
     var Config = require('grace/core/config').Config;
-    var Menu = require('grace/setup/setup_main_menu').MainMenu;
-
     var appConfig = require('grace/core/config').Config.registerAll(
         {
             allowLiveReload: true,
@@ -21,7 +18,7 @@ define(function (require, exports, module) {
             forceRun: '',
             folderPrefix: null,
         },
-        'execute'
+        'execute',
     );
     require('grace/core/config').Config.registerInfo(
         {
@@ -46,7 +43,7 @@ define(function (require, exports, module) {
                     'Use this to map file paths to server paths, eg name/index.html will be mapped to <runPath>/index.html if folderPrefix is name/',
             },
         },
-        'execute'
+        'execute',
     );
 
     var api = (exports.Execute = {});
@@ -147,7 +144,7 @@ define(function (require, exports, module) {
                     values: Object.keys(runModes),
                 },
             },
-            'execute'
+            'execute',
         );
     };
 
@@ -161,7 +158,7 @@ define(function (require, exports, module) {
             var value = this.transform(doc.getValue());
             preview(
                 './preview.html?html=' + encodeURIComponent(btoa(value)),
-                this
+                this,
             );
         }.bind(this);
     }
@@ -185,7 +182,7 @@ define(function (require, exports, module) {
             location.origin +
             FileUtils.join(
                 location.pathname.replace('/index.html', ''),
-                'preview.html'
+                'preview.html',
             );
         var value = this.transform(this.doc.getValue());
         if (
@@ -199,7 +196,7 @@ define(function (require, exports, module) {
                     type: 'html',
                     data: value,
                 },
-                location.origin
+                location.origin,
             );
         } else
             frame.src =
@@ -236,12 +233,12 @@ define(function (require, exports, module) {
                 path = doc.getSavePath();
                 var folderPrefix = FileUtils.resolve(
                     FileUtils.getProject().rootDir,
-                    appConfig.folderPrefix
+                    appConfig.folderPrefix,
                 );
                 if (path && path.startsWith(folderPrefix)) {
                     path = FileUtils.join(
                         runPath,
-                        path.substring(folderPrefix.length)
+                        path.substring(folderPrefix.length),
                     );
                 }
             }
@@ -257,15 +254,19 @@ define(function (require, exports, module) {
                 configure('lastRun', path, 'execute', true);
             preview(path, this);
         },
+        runId: new Date().getTime(),
         reload: function (preview, path, live) {
             var a = getActiveDoc();
+            var id = this.runId++;
+            preview.src = 'about:none';
             if (live) {
                 Docs.saveDocs(a.id, function () {
-                    preview.src = path + '#' + new Date().getTime();
+                    preview.src = path + '#' + id;
                 });
             } else {
-                preview.src = path + '#' + new Date().getTime();
+                preview.src = path + '#' + id;
             }
+            if (preview.contentWindow) preview.contentWindow.location.reload();
         },
         getConfig: function () {
             return [
@@ -294,7 +295,7 @@ define(function (require, exports, module) {
                     'folderPrefix',
                     data['preview-prefix'],
                     'execute',
-                    true
+                    true,
                 );
             } else configure('folderPrefix', null, 'execute', true);
         },
@@ -313,7 +314,7 @@ define(function (require, exports, module) {
     };
     var ScriptRunner = new Preview('js', 'Script', function (value) {
         return (
-            '<html><body>Hello' +
+            '<html><body>' +
             this.scriptStub +
             "<script type='text/javascript'>eval(\"" +
             value
@@ -332,162 +333,131 @@ define(function (require, exports, module) {
         ScriptRunnerSnippets.log + ScriptRunnerSnippets.fallbackConsole;
     ScriptRunner.scriptStub = ScriptRunner.scriptStub.replace(
         'NUM_LINES',
-        ScriptRunner.scriptStub.split('\n').length - 1 + ''
+        ScriptRunner.scriptStub.split('\n').length - 1 + '',
     );
     api.registerRunMode(ScriptRunner.id, ScriptRunner);
 
     //Setup
-    FileUtils.registerOption(['file'], 'run-as', {
+    Actions.addAction({
         caption: 'Set as preview url',
+        showIn: ['editor', 'fileview.file'],
         extension: 'html',
-        onclick: function (ev) {
+        handle: function (ev) {
             ev.preventDefault();
             configure('runPath', ev.filepath, 'execute', true);
             configure('forceRun', HTMLFilePreview.id, 'execute', true);
         },
     });
-    Editors.addCommands([
-        {
-            name: 'run',
-            bindKey: {
-                win: 'F7',
-                mac: 'Command-Alt-N',
-            },
-            exec: api.runCode,
+    Actions.addAction({
+        name: 'run',
+        showIn: 'actionbar',
+        icon: 'play_arrow',
+        caption: 'Run',
+        bindKey: {
+            win: 'F7',
+            mac: 'Command-Alt-N',
         },
-    ]);
-    Menu.addOption(
-        'run-now',
-        {
-            icon: 'play_arrow',
-            caption: 'Preview',
-            onclick: api.runCode,
-            sortIndex: 1000,
-        },
-        false
-    );
-    Menu.extendOption(
-        'load-settings',
-        {
-            caption: 'Configuration',
-            subTree: {
-                'run-as': {
-                    icon: 'play_arrow',
-                    subIcon: 'settings',
-                    caption: 'Run Options',
-                    onclick: function () {
-                        var modal = $(
-                            Notify.modal({
-                                header: 'Preview Configuration',
-                                large: true,
-                                form: [
-                                    {
-                                        type: 'checkbox',
-                                        name: 'run-in-split',
-                                        caption: 'Live Preview',
-                                        value: !appConfig.useIframePreview,
-                                    },
-                                    {
-                                        type: 'select',
-                                        name: 'run-mode-select',
-                                        caption: 'Run as',
-                                    },
-                                ],
-                                footers: ['Save'],
-                            })
-                        );
-                        var content = modal.find('.modal-content')[0];
-                        var controller = modal.find('#run-mode-select');
-                        controller.append(
-                            "<option value='default'>Auto</option>"
-                        );
-                        for (var i in runModes) {
-                            if (runModes[i].getConfig) {
-                                content.appendChild(
-                                    Form.create(
-                                        runModes[i].getConfig(),
-                                        $(
-                                            "<div class='config config-" +
-                                                i +
-                                                "'></div>"
-                                        )[0]
-                                    )
-                                );
-                            }
-                            controller.append(
-                                '<option value="' +
-                                    i +
-                                    '">' +
-                                    runModes[i].name +
-                                    '</option>'
-                            );
-                        }
+        handle: api.runCode,
+        sortIndex: 1000,
+    });
 
-                        function update() {
-                            modal.find('.config').hide();
-                            var config = modal.find(
-                                '.config-' + controller.val()
-                            );
-                            config.show();
-                        }
-                        controller.change(update);
-
-                        //Todo Perharps Add these basic behaviours to Form.create
-                        if (appConfig.folderPrefix == null) {
-                            modal.find('#preview-prefix').val('./public/');
-                            modal
-                                .find('#preview-prefix')
-                                .attr('disabled', true);
-                        } else {
-                            modal
-                                .find('#preview-prefix')
-                                .val(appConfig.folderPrefix);
-                            modal.find('#add-prefix')[0].checked = true;
-                        }
-                        modal.find('#add-prefix').change(function () {
-                            modal
-                                .find('#preview-prefix')
-                                .attr('disabled', !this.checked);
-                        });
-
-                        modal
-                            .find('#run-preview-url')
-                            .attr('disabled', appConfig.runPath == '!norun');
-                        modal.find('#no-run').change(function () {
-                            modal
-                                .find('#run-preview-url')
-                                .attr('disabled', this.checked)
-                                .focus();
-                        });
-
-                        if (runModes[appConfig.forceRun]) {
-                            controller.val(appConfig.forceRun);
-                        } else controller.val('default');
-                        update();
-                        modal.submit(function (e) {
-                            e.stopPropagation();
-                            e.preventDefault();
-                            var id = controller.val();
-                            configure(
-                                'useIframePreview',
-                                !modal.find('#run-in-split')[0].checked,
-                                'execute',
-                                true
-                            );
-                            var data = Form.parse(modal[0]);
-                            if (runModes[id] && runModes[id].getConfig) {
-                                runModes[id].onConfigChanged(data);
-                            }
-                            configure('forceRun', id, 'execute', true);
-                            if (previewer) {
-                                previewer.hide();
-                            }
-                            modal.modal('close');
-                        });
+    Actions.addAction({
+        showIn: 'actionbar.settings',
+        icon: 'play_arrow',
+        subIcon: 'settings',
+        caption: 'Run options',
+        handle: function () {
+            Notify.modal({
+                header: 'Preview Configuration',
+                large: true,
+                form: [
+                    {
+                        type: 'checkbox',
+                        name: 'run-in-split',
+                        caption: 'Live Preview',
+                        value: !appConfig.useIframePreview,
                     },
-                },
-            },
+                    {
+                        type: 'select',
+                        name: 'run-mode-select',
+                        caption: 'Run as',
+                    },
+                ],
+                footers: ['Save'],
+                onCreate: setupModal,
+            });
         },
-        true
-    );
+    });
+    function setupModal(modal, Form) {
+        var content = modal.find('.modal-content')[0];
+        var controller = modal.find('#run-mode-select');
+        controller.append("<option value='default'>Auto</option>");
+        for (var i in runModes) {
+            if (runModes[i].getConfig) {
+                content.appendChild(
+                    Form.create(
+                        runModes[i].getConfig(),
+                        $("<div class='config config-" + i + "'></div>")[0],
+                    ),
+                );
+            }
+            controller.append(
+                '<option value="' + i + '">' + runModes[i].name + '</option>',
+            );
+        }
+
+        function update() {
+            modal.find('.config').hide();
+            var config = modal.find('.config-' + controller.val());
+            config.show();
+        }
+        controller.change(update);
+
+        //Todo Perharps Add these basic behaviours to Form.create
+        if (appConfig.folderPrefix == null) {
+            modal.find('#preview-prefix').val('./public/');
+            modal.find('#preview-prefix').attr('disabled', true);
+        } else {
+            modal.find('#preview-prefix').val(appConfig.folderPrefix);
+            modal.find('#add-prefix')[0].checked = true;
+        }
+        modal.find('#add-prefix').change(function () {
+            modal.find('#preview-prefix').attr('disabled', !this.checked);
+        });
+
+        modal
+            .find('#run-preview-url')
+            .attr('disabled', appConfig.runPath == '!norun');
+        modal.find('#no-run').change(function () {
+            modal
+                .find('#run-preview-url')
+                .attr('disabled', this.checked)
+                .focus();
+        });
+
+        if (runModes[appConfig.forceRun]) {
+            controller.val(appConfig.forceRun);
+        } else controller.val('default');
+        update();
+        modal.submit(function (e) {
+            e.stopPropagation();
+            e.preventDefault();
+            var id = controller.val();
+            configure(
+                'useIframePreview',
+                !modal.find('#run-in-split')[0].checked,
+                'execute',
+                true,
+            );
+            var data = Form.parse(modal[0]);
+            if (runModes[id] && runModes[id].getConfig) {
+                runModes[id].onConfigChanged(data);
+            }
+            configure('forceRun', id, 'execute', true);
+            if (previewer) {
+                previewer.hide();
+            }
+            modal.modal('close');
+        });
+    }
 }); /*_EndDefine*/

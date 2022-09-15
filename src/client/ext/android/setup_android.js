@@ -116,8 +116,8 @@ define(function(require, exports, module) {
             accessKey);
     };
     Env.newWindow = function(path) {
-        require("grace/docs/docs").Docs.tempSave();
-        storage.__doSync && storage.__doSync();
+        appEvents.pause();//The real pause comes later
+        appEvents.resume();
         app.runFile(path, config.runInExternalBrowser ? "browser" :
             config.runInNewProcess ? "process" :
             "webview", accessKey);

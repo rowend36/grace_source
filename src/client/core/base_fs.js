@@ -131,7 +131,7 @@ define(function (require, exports, module) {
                             path,
                             newpath,
                             fs,
-                            null,
+                            undefined,
                             function (e) {
                                 if (!e) fs.delete(path);
                                 cb && cb(e);

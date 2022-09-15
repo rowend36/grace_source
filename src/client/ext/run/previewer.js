@@ -1,4 +1,5 @@
 define(function (require, exports, module) {
+    /* globals $ */
     var Utils = require('grace/core/utils').Utils;
     var SplitManager = require('grace/ui/split_manager').SplitManager;
     var ajax = require('grace/core/ajax').ajax;
@@ -187,9 +188,11 @@ define(function (require, exports, module) {
             if (reloader) {
                 reloader.reload(preview, path, live);
             } else {
-                if (preview.src == path && preview.contentWindow)
+                if (preview.src == path && preview.contentWindow) {
                     preview.contentWindow.reload(true);
-                preview.src = path;
+                } else {
+                    preview.src = path;
+                }
             }
         }
 

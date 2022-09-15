@@ -1,5 +1,5 @@
 define(function (require, exports, module) {
-  "use strict";
+  'use strict';
   var entries = [];
   var current = null;
 
@@ -38,7 +38,7 @@ define(function (require, exports, module) {
   };
   //Records profile info using first argument
   exports.profileEvents = function (func) {
-    return _profileFunc("event-", func, true);
+    return _profileFunc('event-', func, true);
   };
 
   //Records profile info of listeners
@@ -49,10 +49,10 @@ define(function (require, exports, module) {
       var args = Array.prototype.slice.call(arguments, 0);
       if (!cb._profiled)
         cb._profiled = _profileFunc(
-          "on" +
+          'on' +
             e +
-            "-" +
-            (cb.name ? cb.name : new Error().stack.split("\n")[2]),
+            '-' +
+            (cb.name ? cb.name : new Error().stack.split('\n')[2]),
           cb,
           false
         );
@@ -71,11 +71,11 @@ define(function (require, exports, module) {
   //Records profile info of methods
   exports.profileObject = function (obj) {
     var label = obj.constructor && obj.constructor.name;
-    label = label ? label + "." : "";
+    label = label ? label + '.' : '';
     for (var i in obj) {
       if (obj.hasOwnProperty(i)) {
         var t = obj[i];
-        if (typeof t === "function") {
+        if (typeof t === 'function') {
           if (!t._original) obj[i] = exports.profileFunc(label + i, t);
         }
       }
@@ -90,34 +90,44 @@ define(function (require, exports, module) {
         t[o.label] = {
           pureRuntime: 0,
           totalRuntime: 0,
+          avgRuntime: 0,
+          worstRuntime: 0,
           called: 0,
           error: 0,
         };
       }
-      t[o.label].called++;
-      if (t[o.label].error) t[o.label].error++;
+      var l = t[o.label];
+      l.called++;
+      if (o.error) l.error++;
       else {
-        t[o.label].totalRuntime += o.t;
-        t[o.label].pureRuntime += o.t - o.m;
+        l.totalRuntime += o.t;
+        l.pureRuntime += o.t - o.m;
+        l.avgRuntime =
+          (l.avgRuntime * (l.called - l.error - 1) + o.t) /
+          (l.called - l.error);
+        l.worstRuntime = Math.max(o.t, l.worstRuntime);
       }
     });
     return t;
   };
 
   //Sorts and Displays results in table
-  exports.displayResults = function (sort, size) {
-    sort = sort || "pureRuntime";
+  exports.displayResults = function (sort, keys, size) {
+    sort = sort || 'pureRuntime';
+    keys = keys || ['called', 'pureRuntime', 'totalRuntime', 'worstRuntime'];
     size = size || 50;
-    var t = exports.computeResults();
-    var l = Object.keys(t)
-      .sort(function (a, b) {
-        return t[b][sort] - t[a][sort];
-      })
-      .slice(0, size)
-      .reduce(function (a, o) {
-        a[o] = t[o];
-        return a;
-      }, {});
+    var r = exports.computeResults();
+    var l = Object.keys(r).sort(function (a, b) {
+      return r[b][sort] - r[a][sort];
+    });
+    if (l.length < 1) return console.log('No recorded data');
+    l = l.slice(0, size).reduce(function (a, e) {
+      a[e] = {};
+      for (var i in keys) a[e][keys[i]] = r[e][keys[i]];
+      if (a[e].avgRuntime)
+        a[e].avgRuntime = Math.round(a[e].avgRuntime * 1000) / 1000;
+      return a;
+    }, {});
     console.table(l);
   };
   exports.clear = function () {

@@ -1,27 +1,17 @@
 define(function(require, exports, module) {
+    /* globals $ */
     var Split = require("../libs/js/splits.min.js");
     var events = require("../core/app_events").AppEvents;
-    var rootView = require("../setup/setup_root").rootView;
 
-    function resizeHandler(element) {
-        return function() {
-            var editors = element.find(".editor");
-            for (var i = 0; i < editors.length; i++) {
-                editors[i].env && editors[i].env.onResize();
-            }
-        };
+    function resizeHandler() {
+        events.trigger('layoutChanged');
     }
-
-    events.on("layoutChanged", function() {
-        resizeHandler(rootView.$el)();
-    });
 
     var splitters = new WeakMap();
 
     function createSplit(parent, children, direction, sizes,
     gutterSize) {
         gutterSize = parseInt(gutterSize) || 20;
-        var handler = resizeHandler(parent);
         var minSize = (children.length - 1) * (gutterSize + 35);
         var dimen = direction == "vertical" ? "Height" : "Width";
         children.forEach(function(e) {
@@ -36,9 +26,9 @@ define(function(require, exports, module) {
             direction: direction,
             sizes: sizes,
             gutterSize: gutterSize,
-            onDragEnd: handler,
+            onDragEnd: resizeHandler,
         }));
-        handler();
+        resizeHandler();
     }
 
     function addSplit(container, direction, gutterSize) {
@@ -114,7 +104,7 @@ define(function(require, exports, module) {
             createSplit(parent, parent.children(".pane").toArray(),
                 direction, sizes);
         }
-        resizeHandler(parent)();
+        resizeHandler();
         return true;
     }
     exports.SplitManager = {

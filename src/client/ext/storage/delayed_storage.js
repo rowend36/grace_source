@@ -1,7 +1,9 @@
 define(function (require, exports, module) {
     var Utils = require('grace/core/utils').Utils;
+    var appEvents = require('grace/core/app_events').AppEvents;
     var DelayedStorage = function (backend, delay) {
         var __queue = {};
+        appEvents.on('appPaused', doSync);
         var syncDelay = Utils.parseTime(delay);
         this.setItem = function (key, value) {
             __queue[key] = value;
@@ -52,7 +54,5 @@ define(function (require, exports, module) {
             __queue = {};
         });
     };
-    appEvents.on('appPaused', function () {
-        storage.__doSync && storage.__doSync();
-    });
+    exports.DelayedStorage = DelayedStorage;
 }); /*_EndDefine*/

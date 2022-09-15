@@ -18,15 +18,16 @@ define(function (require, exports, module) {
             icon: "redo",
             onhold: "repeat",
         },
-        openCommandPallete: {
-            icon: "more_horiz",
+        
+        startAutocomplete: {
+            icon: "fast_forward",
         },
         find: "search",
         gotoline: {
             icon: "call_made",
         },
-        startAutocomplete: {
-            icon: "fast_forward",
+        openCommandPallete: {
+            icon: "more_horiz",
         },
         esc: {
             caption: "esc",
@@ -62,17 +63,15 @@ define(function (require, exports, module) {
         end: {
             caption: "end",
         },
+        cut: "content_cut",
+        copy: "content_copy",
         paste: {
             icon: "content_paste",
-            onhold: "openClipboard",
+            onhold: "softClipboardOpen",
         },
-        copy: "content_copy",
-        cut: "content_cut",
         findprevious: "chevron_left",
         findnext: "chevron_right",
         goToNextError: "warning",
-        blockindent: "format_indent_increase",
-        blockoutdent: "format_indent_decrease",
         togglerecording: "fiber_manual_record",
         replaymacro: "replay",
         toggleFullscreen: "fullscreen",

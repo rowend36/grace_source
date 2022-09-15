@@ -166,10 +166,10 @@ define(function (require, exports, module) {
     truncate: function () {
       var baseIndex = this._getInsertPoint({ base: this.peek().base });
       if (baseIndex > 0) {
-        console.assert(this.nodes[baseIndex].version == this.peek().base);
-        console.assert(this.getChildOffset(baseIndex) == this.nodes.length);
+        // console.assert(this.nodes[baseIndex].version == this.peek().base);
+        // console.assert(this.getChildOffset(baseIndex) == this.nodes.length);
         this.remove(0, baseIndex);
-        console.assert(this.nodes[0].version == this.peek().base);
+        // console.assert(this.nodes[0].version == this.peek().base);
       }
     },
   });

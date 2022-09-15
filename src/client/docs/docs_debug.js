@@ -1,7 +1,7 @@
 define(function (require, exports, module) {
   'use strict';
   var storage = require('../core/config').storage;
-  var determineQuota = require('./mixin_docs_persist').$determineQuota;
+  var determineQuota = require('./mixin_docs_blob').$determineQuota;
   var openDoc = require('./mixin_tabs_populator').openDoc;
   var loadBlob = require('./mixin_docs_blob').loadBlob;
   var getBlobInfo = require('./mixin_docs_blob').getBlobInfo;

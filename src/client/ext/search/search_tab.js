@@ -11,6 +11,7 @@ define(function (require, exports, module) {
     var FindFileServer = require('grace/ext/fs/find_fs').FindFileServer;
     //var ViewportVisualizer = require("grace/ui/recycler").ViewportVisualizer;
     var Utils = require('grace/core/utils').Utils;
+    var Actions = require('grace/core/actions').Actions;
     var setImmediate = Utils.setImmediate;
     var plural = Utils.plural;
     var Docs = require('grace/docs/docs').Docs;
@@ -78,7 +79,7 @@ define(function (require, exports, module) {
 
         //region Setup
         /*Load configuration*/
-        this.search = new (ace.require('ace/search').Search)();
+        this.search = new (require('ace!search').Search)();
         var regExpOption = el.find('#toggleRegex');
         var caseSensitiveOption = el.find('#caseSensitive');
         var wholeWordOption = el.find('#toggleWholeWord');
@@ -707,21 +708,16 @@ define(function (require, exports, module) {
         appEvents.on('changeProject', function (e) {
             searchInFolder(e.project.rootDir, e.project.fileServer);
         });
-        var searchInFolderOption = {
-            id: 'search-in-folder',
-            caption: 'Search In Folder',
-            onclick: function (ev) {
-                searchInFolder(ev.filepath, ev.browser.fileServer);
+        Actions.addAction({
+            caption: 'Search in folder',
+            showIn: ['fileview.header', 'fileview.folder'],
+            handle: function (ev) {
+                searchInFolder(ev.filepath, ev.fs);
                 searchOpenDocs(false);
                 ev.preventDefault();
             },
-        };
+        });
         searchOpenDocs(searchConfig.searchOpenDocs);
-        FileUtils.registerOption(
-            ['folder', 'header'],
-            'search-in-folder',
-            searchInFolderOption
-        );
         $('#search_tab').show();
         ConfigEvents.on('search', function (ev) {
             switch (ev.config) {
@@ -760,7 +756,7 @@ define(function (require, exports, module) {
     }
     var createModal = function () {
         var modalEl = $(document.createElement('div'));
-        modalEl.addClass('modal modal-large');
+        modalEl.addClass('modal modal-large modal-fixed-height');
         modalEl.html(
             '\
 <button class="close-icon material-icons h-30">close</button>\

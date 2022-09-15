@@ -1,9 +1,8 @@
 define(function (require, exports, module) {
     'use strict';
-    var config = ace.require('ace/config');
-    var Editor = ace.require('ace/editor').Editor;
+    var Editors = require('grace/editor/editors').Editors;
     var Registry = require('grace/core/registry').Registry;
-    var hoverProviders = new Registry();
+    var hoverProviders = new Registry(null, 'intellisense.hover');
 
     var onCursorChange = function (e, editor) {
         clearTimeout(editor.$debounceArgHints);
@@ -24,7 +23,6 @@ define(function (require, exports, module) {
             }
             server.init(editor, function (instance) {
                 if (!instance) return;
-                editor[server.name] = instance;
                 instance.updateArgHints(editor);
             });
         });
@@ -43,13 +41,11 @@ define(function (require, exports, module) {
         }
     }
 
-    config.defineOptions(Editor.prototype, 'editor', {
-        enableArgumentHints: {
-            set: function () {
-                updateArgHints(this);
-            },
-            value: false,
+    Editors.getSettingsEditor().addOption('enableArgumentHints', {
+        set: function () {
+            updateArgHints(this);
         },
+        value: false,
     });
     exports.registerHoverProvider = hoverProviders.register;
     exports.unregisterHoverProvider = hoverProviders.unregister;

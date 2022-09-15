@@ -24,13 +24,13 @@ define(function (require, exports, module) {
     };
   }
 
-  function array(t) {
+  function ARRAY(t) {
     if (!t) return null;
     if (Array.isArray(t)) return JSON.stringify(t);
     throw Error("Invalid array prop " + (t.toString ? t.toString() : typeof t));
   }
 
-  function string(t) {
+  function STRING(t) {
     if (t === undefined || t === null) return null;
     if (typeof t === "string") return t;
     throw Error(
@@ -38,7 +38,7 @@ define(function (require, exports, module) {
     );
   }
 
-  function bool(t) {
+  function BOOL(t) {
     return !!t;
   }
   //Allows asynchronous calls between javascript
@@ -51,11 +51,10 @@ define(function (require, exports, module) {
     };
   }
 
-  function person(t) {
+  function PERSON(t) {
     return JSON.stringify(t);
   }
   var jsonParse = JSON.parse.bind(JSON);
-  var currentOp = null;
   var apply = Utils.spread(function apply(methodName, args, cb, parse) {
     var result, error;
     try {
@@ -77,7 +76,22 @@ define(function (require, exports, module) {
     }
     cb(error, result);
   });
-
+  
+  function call(methodName, args, parse) {
+    return new Promise(function (resolve, reject) {
+      apply(
+        methodName,
+        args,
+        function (e, r) {
+          if (e) reject(e);
+          else resolve(r);
+        },
+        parse
+      );
+    });
+  }
+  
+  var currentOp = null;
   function batchCall(methodName, arr, parse) {
     if (currentOp && currentOp.type === methodName) {
       currentOp.list.push(arr[0]);
@@ -93,7 +107,7 @@ define(function (require, exports, module) {
         {
           $getter: function () {
             if (i == currentOp) currentOp = null;
-            return [array(arr)];
+            return [ARRAY(arr)];
           },
         },
         parse
@@ -102,19 +116,6 @@ define(function (require, exports, module) {
     }
   }
 
-  function call(methodName, args, parse) {
-    return new Promise(function (resolve, reject) {
-      apply(
-        methodName,
-        args,
-        function (e, r) {
-          if (e) reject(e);
-          else resolve(r);
-        },
-        parse
-      );
-    });
-  }
   GitWrapper.prototype.init = function () {
     modified = true;
     return call("init");
@@ -141,9 +142,9 @@ define(function (require, exports, module) {
             isFetch == true ? "fetch" : "clone",
             [
               opts.singleBranch ? gitConfig.defaultBranch : null,
-              string(opts.url),
-              string(data.username),
-              string(data.password),
+              STRING(opts.url),
+              STRING(data.username),
+              STRING(data.password),
               onProgress,
               onComplete,
             ],
@@ -176,9 +177,9 @@ define(function (require, exports, module) {
     if (opts.noUpdateHead && !opts.filepaths) opts.filepaths = ["."];
     var onProgress = opts.onProgress && createCb(wrap(opts.onProgress));
     return call("checkout", [
-      array(opts.filepaths),
+      ARRAY(opts.filepaths),
       opts.ref,
-      bool(!opts.noUpdateHead),
+      BOOL(!opts.noUpdateHead),
       onProgress,
     ]).finally(clearCb(onProgress));
   };
@@ -190,7 +191,7 @@ define(function (require, exports, module) {
   };
   GitWrapper.prototype.commit = function (opts) {
     modified = true;
-    return call("commit", [string(opts.message), person(opts.author)]);
+    return call("commit", [STRING(opts.message), PERSON(opts.author)]);
   };
   GitWrapper.prototype.setConfig = function (opts) {
     modified = true;
@@ -200,7 +201,7 @@ define(function (require, exports, module) {
     return call("getConfig", [opts.path]);
   };
   // GitWrapper.prototype.addRemote = function(opts) {
-  //   return call("addRemote", [opts.remote, opts.url, bool(opts.force)]);
+  //   return call("addRemote", [opts.remote, opts.url, BOOL(opts.force)]);
   // };
   GitWrapper.prototype.listRemotes = function () {
     return call("listRemotes", null, jsonParse);
@@ -282,7 +283,7 @@ define(function (require, exports, module) {
     });
   };
   GitWrapper.prototype.statusAll = function (opts) {
-    return call("statusAll", [array(opts.filepaths)], jsonParse).then(function (
+    return call("statusAll", [ARRAY(opts.filepaths)], jsonParse).then(function (
       list
     ) {
       list = parseStatus(opts.filepaths, list);
@@ -303,7 +304,7 @@ define(function (require, exports, module) {
     return batchCall("resetIndex", [opts.filepath]);
   };
   GitWrapper.prototype.listFiles = function (opts) {
-    return call("listFiles", [string(opts && opts.ref)], jsonParse);
+    return call("listFiles", [STRING(opts && opts.ref)], jsonParse);
   };
   GitWrapper.prototype.log = function () {
     return call("log", null, jsonParse);
@@ -320,7 +321,7 @@ define(function (require, exports, module) {
     if (opts && opts.remote) {
       return Git.prototype.listBranches.call(this, opts);
     }
-    return call("listBranches", [string(opts && opts.remote)], jsonParse);
+    return call("listBranches", [STRING(opts && opts.remote)], jsonParse);
   };
   GitWrapper.prototype.currentBranch = function () {
     return call("currentBranch");

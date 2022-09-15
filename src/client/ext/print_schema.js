@@ -1,6 +1,6 @@
 define(function (require, exports, module) {
   'use strict';
-  var Schema = require('grace/core/schema');
+  var Schema = require('grace/core/schema').Schema;
   exports.printSchema = function (schema, indent) {
     schema = Schema.parse(schema);
     var lines = print(schema, indent, [], '');
@@ -13,7 +13,7 @@ define(function (require, exports, module) {
   function print(schema, indent, objs, initialIndent) {
     indent = indent || '  ';
     var tags = [];
-    var lines = [[]];
+    var lines = [tags];
     function eof() {
       lines.push((tags = [initialIndent]));
     }
@@ -73,9 +73,9 @@ define(function (require, exports, module) {
         break;
       case Schema.XValidIf:
         if (schema.name.indexOf(' ') > -1) {
-          add('"');
+          add("'");
           add(schema.name);
-          add('"');
+          add("'");
         } else add(schema.name);
         break;
       case Schema.XEnum:

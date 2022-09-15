@@ -11,8 +11,10 @@ define(function (require, exports, module) {
             backButtonDelay: '700ms',
             disableBackButtonTabSwitch: false,
         },
-        'ui'
+        'ui',
     );
+    var Actions = require('../core/actions').Actions;
+
     require('../core/config').Config.registerInfo({
         backButtonDelay: {
             type: 'time',
@@ -39,11 +41,11 @@ define(function (require, exports, module) {
         },
         function (state) {
             return state === 'tabs' || DocsTab.hasTab(state);
-        }
+        },
     );
     appEvents.on('appResumed', function () {
         State.ensure(
-            appConfig.disableBackButtonTabSwitch ? 'tabs' : DocsTab.active
+            appConfig.disableBackButtonTabSwitch ? 'tabs' : DocsTab.active,
         );
     });
     var DocsTab = new TabHost('docstab');
@@ -59,10 +61,12 @@ define(function (require, exports, module) {
                 oldTab: lastTab,
                 tab: id,
             },
-            true
+            true,
         ).defaultPrevented;
         if (!handled) return false;
-        State.ensure(appConfig.disableBackButtonTabSwitch ? 'tabs' : id);
+        State.ensure(
+            appConfig.disableBackButtonTabSwitch ? 'tabs' : DocsTab.active,
+        );
         return true;
     };
     exports.DocsTab = DocsTab;
@@ -77,30 +81,29 @@ define(function (require, exports, module) {
     exports.setTab = setTab;
 
     var lastTab;
-    exports.swapTab = function () {
-        if (!DocsTab.hasTab(lastTab))
-            lastTab =
-                DocsTab.tabs[DocsTab.indexOf(DocsTab.active) + 1] ||
-                DocsTab.tabs[0];
-        setTab(lastTab);
-    };
-
+    Actions.addAction({
+        name: 'swapTabs',
+        bindKey: {
+            win: 'Alt-Tab',
+            mac: 'Command-Alt-N',
+        },
+        exec: function () {
+            if (!DocsTab.hasTab(lastTab))
+                lastTab =
+                    DocsTab.tabs[DocsTab.indexOf(DocsTab.active) + 1] ||
+                    DocsTab.tabs[0];
+            setTab(lastTab);
+        },
+    });
     function closeTab(id) {
-        var res = appEvents.asyncTrigger(
-            'closeTab',
-            {
-                tab: id,
-            },
-            function (ev) {
-                if (ev.isDelayed) ev.repeat();
-                else if (!ev.defaultPrevented) {
-                    DocsTab.removeTab(id);
-                    appEvents.trigger('tabClosed', {
-                        tab: id,
-                    });
-                }
+        if (!DocsTab.hasTab(id)) return false;
+        var res = appEvents.asyncTrigger('closeTab', {tab: id}, function (ev) {
+            if (ev.isDelayed) return ev.repeat();
+            else if (!ev.defaultPrevented) {
+                DocsTab.removeTab(id);
+                appEvents.trigger('tabClosed', {tab: id}, false);
             }
-        );
+        });
         return !(res.isDelayed || res.defaultPrevented);
     }
     exports.closeTab = closeTab;

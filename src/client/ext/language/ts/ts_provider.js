@@ -3,8 +3,7 @@ define(function (require, exports, module) {
   var Utils = require('grace/core/utils').Utils;
 
   var loadFiles = ServerHost.loadAutocompleteFiles;
-  var BaseProvider = require('grace/ext/language/base_provider')
-    .BaseProvider;
+  var BaseProvider = require('grace/ext/language/base_provider').BaseProvider;
   var modules = [
     'none',
     'commonjs',
@@ -46,11 +45,17 @@ define(function (require, exports, module) {
     'webworker',
   ];
   var config = require('grace/core/config').Config.registerAll(
+    null,
+    'intellisense.typescript',
+  );
+  require('grace/core/config').Config.registerAll(
     {
       enableTypescriptLSP: true,
-      useWebWorkerForTs: false,
+      useWebWorkerForTs: true,
       tsPriority: 900,
       tsModuleKind: 'commonjs',
+      tsModuleResolution:
+        config.tsModuleKind == 'commonjs' ? 'node' : 'classic',
       tsLibs: 'default,dom,es5',
       noImplicitAny: false,
       allowUnreachableCode: false,
@@ -68,24 +73,16 @@ define(function (require, exports, module) {
       jsxFragmentFactory: undefined,
       baseUrl: undefined,
     },
-    'autocompletion.typescript'
+    'intellisense.typescript',
   );
-  require('grace/core/config').Config.registerAll(
+  require('grace/core/config').Config.registerInfo(
     {
       enableTypescriptLSP:
         'Enable inbuilt typescript language support. Supports js,jsx,ts,tsx files. \nWarning: May slow down application. Avoid loading too many files at once.\n For best performance, load files from only node_modules/@types and src folders',
-      tsModuleResolution:
-        config.tsModuleKind == 'commonjs' ? 'node' : 'classic',
-    },
-    'autocompletion.typescript'
-  );
-
-  require('grace/core/config').Config.registerInfo(
-    {
       tsModuleKind: {
         values: modules,
       },
-      tsModuleResolution: "Either 'classic' or 'node'",
+      tsModuleResolution: {values: ['classic', 'node']},
       tsLibs: {
         values: tsLibs,
         isList: true,
@@ -103,7 +100,7 @@ define(function (require, exports, module) {
         type: 'string|null',
       },
     },
-    'autocompletion.typescript'
+    'intellisense.typescript',
   );
 
   var restart = Utils.delay(function () {
@@ -111,41 +108,36 @@ define(function (require, exports, module) {
   }, 1000);
 
   require('grace/core/config').Config.on(
-    'autocompletion.typescript',
+    'intellisense.typescript',
     function (ev) {
       if (ev.config === 'tsPriority') {
         TS.priority = ev.value();
         return ServerHost.toggleProvider(TS);
-      }
-      else if (ev.config === 'useWebWorkerForTs') TS.destroy();
+      } else if (ev.config === 'useWebWorkerForTs') TS.destroyInstance();
       restart();
-    }
+    },
   );
 
   var TS = Object.assign(new BaseProvider(), {
     init: function (editor, cb) {
+      var prov = this;
       require(['./ts_client'], function (mod) {
         var initOptions = Object.assign(
-          {useWorker: config.useWebWorkerForTs},
-          this.options
+          {useWorker: config.useWebWorkerForTs, provider: TS},
+          prov.options,
         );
-        var reuse =
-          editor.tsClient ||
-          initOptions.instance ||
-          (initOptions.shared !== false && this.instance);
+        var reuse = editor.tsClient || prov.instance;
         if (reuse) {
-          this.attachToEditor(editor, reuse, cb);
+          prov.attachToEditor(editor, reuse, cb);
         } else {
           var instance = new mod.TsClient(initOptions);
-          if (initOptions.shared !== false) {
-            this.instance = instance;
-          }
-          this.attachToEditor(editor, instance, cb);
+          prov.instance = instance;
+          prov.attachToEditor(editor, instance, cb);
           loadFiles(function () {
             instance.updateAnnotations(editor);
           }, instance);
         }
-      }.bind(this));
+      });
     },
     isEnabled: function () {
       return config.enableTypescriptLSP;

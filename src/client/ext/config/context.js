@@ -3,6 +3,7 @@ define(function (require, exports, module) {
   var Schema = require('grace/core/schema').Schema;
   var Config = require('grace/core/config').Config;
   var FileUtils = require('grace/core/file_utils').FileUtils;
+  var Notify = require('grace/ui/notify').Notify;
   var appEvents = require('grace/core/app_events').AppEvents;
   var Configs = require('./configs').Configs;
   var debug = console;
@@ -14,7 +15,7 @@ define(function (require, exports, module) {
     {
       rules: [],
     },
-    '_triggers'
+    '_triggers',
   );
   Config.on('_triggers', function (ev) {
     if (ev.config === 'rules') return updateUserRules(ev.value());
@@ -31,7 +32,7 @@ define(function (require, exports, module) {
         contexts: TYPES,
       },
     },
-    '_triggers'
+    '_triggers',
   );
 
   var nodes = [],
@@ -49,10 +50,13 @@ define(function (require, exports, module) {
    * (Also by changing project because of globs)
    */
   function updateNode(e, cause) {
-    var compare = operators[e.rule.ctx]
-      ? operators[e.rule.ctx]
-      : Context.COMPARE;
-    var _true = compare(e.rule.op, e.rule.val, cause, e._cache, e.rule.ctx);
+    var _true = Context.COMPARE(
+      e.rule.op,
+      e.rule.val,
+      cause,
+      e._cache,
+      e.rule.ctx,
+    );
     // must be here not in merge rules because of not operator
     if (e._true === undefined) e._true = false;
     if (e._true !== _true) {
@@ -62,9 +66,9 @@ define(function (require, exports, module) {
           '[',
           e.options ? e._id : '.',
           '] ',
-          _printRule(e.rule),
+          _printRule(false, e.rule),
           ' => ',
-          e._true
+          e._true,
         );
 
       if (e.options) toggleNode(e);
@@ -155,14 +159,14 @@ define(function (require, exports, module) {
           u < o ? 'Removed rules ---\n-' : '',
           userRules
             .slice(u)
-            .map(e => '[' + e._id + ']' + _printRule(e.rule))
+            .map(e => '[' + e._id + ']' + _printRule(false, e.rule))
             .join('\n-'),
           u < n ? '\nAdded rules +++\n+' : '',
           newRules
             .slice(u)
-            .map(e => '[' + e._id + ']' + _printRule(e.rule))
+            .map(e => '[' + e._id + ']' + _printRule(false, e.rule))
             .join('\n+'),
-        ].join('')
+        ].join(''),
       );
     }
     userRules = newRules;
@@ -189,7 +193,7 @@ define(function (require, exports, module) {
     nodes.forEach(function (e) {
       if (e.rule.ctx === name && updateNode(e, value)) c++;
     });
-    if (c > 0 || force) Configs.commit();
+    if (c > 0 || force) Configs.withErrorHandler(Notify.inform, Configs.commit);
   };
   Context.getContext = function (name) {
     return name.indexOf('.') < 0 ? ctxs[name] : Configs.$getConfig(name);
@@ -222,7 +226,7 @@ define(function (require, exports, module) {
         },
         Context.setContext,
         name,
-        value
+        value,
       );
       return func(conf);
     } finally {
@@ -279,26 +283,26 @@ define(function (require, exports, module) {
       cache.glob.test(FileUtils.relative(FileUtils.getProject().rootDir, path))
     );
   };
-  Context.COMPARE = function (op, variable, curr, cache, name) {
+  Context.COMPARE = function (op, rvalue, curr, cache, name) {
     switch (op) {
       case '==':
-        return variable === curr;
+        return rvalue === curr;
       case '!=':
-        return variable != curr;
+        return rvalue != curr;
       case '!!':
         return !!curr;
       case '>':
-        return variable > curr;
+        return curr > rvalue;
       case '>=':
-        return variable >= curr;
+        return curr >= rvalue;
       case '<':
-        return variable < curr;
+        return curr < rvalue;
       case '<=':
-        return variable <= curr;
+        return curr <= rvalue;
       case '=~':
-        return Context.GLOB(variable, curr, cache, name);
+        return Context.GLOB(rvalue, curr, cache, name);
       default:
-        return operators[op](variable, curr, cache);
+        return operators[op](rvalue, curr, cache);
     }
   };
   function _checkGlobs() {
@@ -310,19 +314,60 @@ define(function (require, exports, module) {
     if (c > 0) Configs.commit();
   }
 
-  function _printRule(rule) {
+  function _printRule(hideValues, rule) {
     if (rule.ctx) {
-      if (rule.op !== '!!')
-        return (
-          '(' +
-          (rule.ctx + '<' + Context.getContext(rule.ctx) + '>') +
-          (rule.op + rule.val) +
-          ')'
-        );
-      else return rule.ctx + '<' + Context.getContext(rule.ctx) + '>';
-    } else if (rule.op === 'not') return '!' + _printRule(rule.val) + '';
-    else return '(' + rule.val.map(_printRule).join(' ' + rule.op + ' ') + ')';
+      var value =
+        hideValues === true ? '' : '<' + Context.getContext(rule.ctx) + '>';
+      if (rule.op !== '!!') {
+        var t = rule.val;
+        if (typeof t === 'string' && /[^\w]/.test(t))
+          t = "'" + t.replace(/\'/g, "\\'") + "'";
+        return '(' + rule.ctx + value + ' ' + rule.op + ' ' + t + ')';
+      } else return rule.ctx + value;
+    } else if (rule.op === 'not')
+      return '!' + _printRule(hideValues, rule.val) + '';
+    else {
+      var names = {and: '&&', or: '||'};
+      return (
+        '(' +
+        rule.val
+          .map(_printRule.bind(null, hideValues))
+          .join(' ' + (hideValues ? names[rule.op] : rule.op) + ' ') +
+        ')'
+      );
+    }
   }
+  function _printConfig(config, ctx, arr) {
+    return config._triggers.rules.some(function (node) {
+      if (arr.indexOf(node.rule) > -1) return true;
+      arr.push(node.rule);
+      if (node.options) {
+        var key =
+          '[' + _printRule(true, node.rule).replace(/^\(|\)$/g, '') + ']';
+        while (ctx[key]) {
+          key = key + ' ';
+        }
+        var m = node.options;
+        if (m._triggers || m.__n$x$t) m = Object.assign({}, m);
+        ctx[key] = m;
+        if (m.__n$x$t) {
+          m[''] = m.__n$x$t;
+          delete m.__n$x$t;
+        }
+        if (m._triggers) {
+          if (m._triggers.rules) {
+            var ret = _printConfig(m, m, arr);
+            delete m._triggers;
+            return ret;
+          }
+        }
+      }
+    });
+  }
+  Context.toJSON = function (ctx) {
+    //forgive the one-liner
+    return _printConfig(Config.allConfigs, ctx || (ctx = {}), []), ctx;
+  };
   appEvents.on('changeProject', _checkGlobs);
   appEvents.on('fullyLoaded', function () {
     var loadedRules = Config.allConfigs._triggers.rules;

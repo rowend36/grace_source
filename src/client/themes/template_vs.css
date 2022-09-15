@@ -259,7 +259,7 @@
 }
 
 .theme-vs .btn-flat:active {
-    color: "@textLink.activeForeground";
+    color: "@textLink.activeForeground|#2196f3";
 }
 
 .theme-vs input:not([type]),

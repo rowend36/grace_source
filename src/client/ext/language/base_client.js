@@ -2,14 +2,15 @@ define(function (require, exports, module) {
   var UI = require('./lsp_ui').LspUI;
   var debugCompletions = false;
   var Utils = require('grace/core/utils').Utils;
-  var TokenIterator = require('ace!token_iterator')
-    .TokenIterator;
+  var TokenIterator = require('ace!token_iterator').TokenIterator;
   var EventsEmitter = require('grace/core/events_emitter').EventsEmitter;
   var debug = console;
   var Notify = require('grace/ui/notify').Notify;
-
+  var modelist = require('ace!ext/modelist');
+  /** @namespace base_client */
   //TODO handle rename of documents
-  /**@constructor*/
+  
+  var FAILED = 'Operation failed';
   function BaseClient(options, iconClass) {
     BaseClient.super(this);
     this.docs = Object.create(null);
@@ -21,7 +22,7 @@ define(function (require, exports, module) {
           'tern.switchToDoc called but not defined (need to specify this in options to enable jumping between documents). name=' +
             name +
             '; start=',
-          start
+          start,
         );
       };
     this.$onDestroySession = this.$onDestroySession.bind(this);
@@ -35,6 +36,7 @@ define(function (require, exports, module) {
   BaseClient.PRIORITY_LOW = 200;
   BaseClient.prototype = {
     maxSize: 1000000,
+    functionHintTrigger: null,
     /*Abstract methods*/
     getCompletions: null,
     requestDefinition: null,
@@ -43,7 +45,10 @@ define(function (require, exports, module) {
     requestAnnotations: null,
     requestArgHints: null,
     requestType: null,
-    normalizeName: null,
+    normalizeName: function (name) {
+      //0 issues with unknown names
+      return name;
+    },
     genInfoHtml: null,
     genArgHintHtml: null,
     sendDoc: null,
@@ -83,9 +88,9 @@ define(function (require, exports, module) {
                 Env.newWindow(pos.url);
                 cb();
               },
-              cb
+              cb,
             );
-          else cb();
+          else cb(FAILED);
         } else {
           ts.markPos(editor);
           if (Array.isArray(pos)) {
@@ -101,12 +106,12 @@ define(function (require, exports, module) {
       if (editor.jumpStack) {
         var pos = editor.jumpStack.pop();
         if (pos) {
-          cb(true);
           //In case, this client did not put it there
           pos.file = this.normalizeName(pos.file);
-          this.goto(editor, pos, cb, true);
+          return this.goto(editor, pos, cb, true);
         }
       }
+      cb(FAILED);
     },
     markPos: function (editor) {
       var data = getDoc(this, editor.session);
@@ -119,7 +124,7 @@ define(function (require, exports, module) {
     },
     goto: function (editor, ref, cb, keepTips, ignoreClosed) {
       var data = this.docs[ref.file];
-      if (ignoreClosed && (!data || !data.doc)) return cb && cb();
+      if (ignoreClosed && (!data || !data.doc)) return cb && cb(FAILED);
       var current = getDoc(this, editor.session);
       if (current.name == ref.file) {
         setSelection(this, editor, ref);
@@ -130,41 +135,48 @@ define(function (require, exports, module) {
       }
       //hack for tern relative paths till we fix it
       return this.options.switchToDoc(
-        ('/' + ref.file).replace('//', '/'),
+        ref.file,
         null,
         null,
         data && data.doc,
-        function (err, edit) {
-          if (edit) setSelection(this, edit, ref);
-          cb();
-        }.bind(this)
+        function (err, editor) {
+          if (editor) setSelection(this, editor, ref);
+          cb(err || (!editor && FAILED));
+        }.bind(this),
       );
     },
     //Provider.hasAnnotations
-    updateAnnotations: function (editor) {
+    updateAnnotations: function (editor, cb) {
       var ts = this;
       var session = editor.session;
-      this.requestAnnotations(editor, function (r) {
-        ts.trigger('annotate', {
-          data: r,
-          session: session,
-        });
+      this.requestAnnotations(editor, function (e, r) {
+        if (e && !r) r = [];
+        if (r)
+          ts.trigger('annotate', {
+            data: r,
+            session: session,
+          });
+        if (cb) cb(e);
       });
     },
     //Provider.hasReferences
     findRefs: function (editor, cb) {
       var ts = this;
       this.requestReferences(editor, function (err, data) {
-        if (typeof cb === 'function') {
-          cb(err, data);
-          return;
-        } else if (err) ts.ui.showError(editor, err);
+        if (err) ts.ui.showError(editor, err);
         else if (!data) {
-          ts.ui.showInfo('Unable to find references at current position.');
+          ts.ui.showError(
+            editor,
+            'Unable to find references at current position.',
+          );
         } else {
           ts.loadFiles(data, function (err, data) {
             ts.ui.referenceDialog(ts, editor, data);
           });
+          return cb && cb();
+        }
+        if (typeof cb === 'function') {
+          cb(err || FAILED);
         }
       });
     },
@@ -182,7 +194,7 @@ define(function (require, exports, module) {
         },
         function () {
           cb(null, data);
-        }
+        },
       );
     },
     //Provider.hasArgHints
@@ -190,52 +202,59 @@ define(function (require, exports, module) {
     updateArgHints: function (editor) {
       showHoverTooltip(this, editor);
     },
+    /**
+     * @param {Editor} editor
+     * @param {AcePosition} pos
+     * @param {(err:any,callpos:(CallPosition|null))=>void} cb
+     */
     getCallPos: function (editor, pos, cb) {
       return cb(null, getCallPos(editor, pos));
     },
     //Provider.hasTypeInformation
-    showType: function (editor, pos, calledFromCursorActivity) {
+    showType: function (editor, pos, calledFromCursorActivity, _cb) {
       if (calledFromCursorActivity) {
         if (
           editor.completer &&
           editor.completer.popup &&
           editor.completer.popup.isOpen
         )
-          return;
+          return _cb && _cb();
       }
       var ts = this;
       if (ts.cachedArgHints && ts.cachedArgHints.isClosed)
         ts.cachedArgHints.isClosed = false;
       var cb = function (error, data) {
         if (error) {
-          if (calledFromCursorActivity) {
-            return;
+          if (!calledFromCursorActivity) {
+            ts.ui.showError(editor, error);
           }
-          return ts.ui.showError(editor, error);
+          return _cb(true);
         }
         if (!data) return;
         ts.ui.closeAllTips();
         var tip = ts.genInfoHtml(data, false, calledFromCursorActivity);
         //server is still busy
-        if (tip === '?') tip = this.ui.tempTooltip(editor, '?', 1000);
+        if (tip === '?') tip = ts.ui.tempTooltip(editor, '?', 1000);
         else if (tip) ts.ui.makeTooltip(null, null, tip, editor, true);
+        if (_cb) _cb();
       };
       try {
-        this.requestType(editor, pos, cb, calledFromCursorActivity);
+        ts.requestType(editor, pos, cb, calledFromCursorActivity);
       } catch (e) {
         debug.error(e);
       }
     },
     //Provider.hasRename
     /** Start rename by showing a dialog**/
-    rename: function (editor) {
+    rename: function (editor, cb) {
       var ts = this;
       this.requestRenameLocations(editor, null, function (e, r) {
         if (!r || r.refs.length === 0) {
           ts.ui.showError(editor, e || 'No references were found.');
-          return;
+          return cb && cb(e || FAILED);
         }
         ts.ui.renameDialog(ts, editor, r);
+        if (cb) cb();
       });
     },
     /**Prepare a document for renaming. Can also find additional refs.*/
@@ -246,9 +265,9 @@ define(function (require, exports, module) {
           if (!cache) ts.requestRenameLocations(editor, newName, n);
           else n(null, cache);
         },
-        function (done, err, data) {
-          if (!data) return ts.ui.showError(editor, err || 'Unable To rename');
-          ts.openFiles(data, done);
+        function (n, err, data) {
+          if (!data) return n(err, data);
+          ts.openFiles(data, n);
         },
         true,
         cb,
@@ -263,12 +282,11 @@ define(function (require, exports, module) {
         refs,
         function (ref, i, next, cancel) {
           var file = ref.file;
-          var data = ts.docs[file];
-          if (data.doc) return next();
+          var data = ts.docs[file] || ts.addDoc(file, '');
+          if (data && data.doc) return next();
           if (opened[file]) return next();
           opened[file] = true;
           //File might be deleted or renamed
-          console.log('Switching to doc ' + file);
           ts.options.switchToDoc(
             file,
             null,
@@ -279,21 +297,23 @@ define(function (require, exports, module) {
                 Notify.warn('Failed to open ' + data.name + ' for rename.');
               else if (data.name != getDoc(ts, editor.session).name)
                 cancel(
-                  'Internal error: Switch to Document ' + data.name + ' failed.'
+                  'Internal error: Switch to Document ' +
+                    data.name +
+                    ' failed.',
                 );
               else next();
-            }
+            },
           );
         },
         cb.bind(null, null, data),
-        5 //parallel
+        5, //parallel
       );
     },
     executeRename: function (editor, newName, cache) {
       var self = this;
       Utils.waterfall([
         function (n) {
-          this.setupForRename(editor, newName, n, cache);
+          self.setupForRename(editor, newName, n, cache);
         },
         function (n, error, data) {
           if (error) return self.ui.showError(editor, error);
@@ -368,11 +388,12 @@ define(function (require, exports, module) {
     },
     closeDoc: function (name) {
       name = this.normalizeName(name);
-      if (this.docs[name].doc) {
-        this.docs[name].doc.off('change', this.trackChange);
-        this.docs[name].doc.off('destroy', this.$onDestroySession);
-        this.docs[name].changed = true;
-        this.docs[name].doc = null;
+      var data = this.docs[name];
+      if (data && data.doc) {
+        data.doc.off('change', this.trackChange);
+        data.doc.off('destroy', this.$onDestroySession);
+        data.changed = true;
+        data.doc = null;
       }
     },
     removeDoc: function (name) {
@@ -389,12 +410,15 @@ define(function (require, exports, module) {
       } else return findData(this, name_or_session);
     },
     resetDocs: function (editor) {
-      var session = editor.session;
-      var oldData = findData(this, session);
+      var session, oldData;
+      if (editor) {
+        session = editor.session;
+        oldData = findData(this, session);
+      }
       for (var p in this.docs) {
         this.removeDoc(p);
       }
-      getDoc(this, session, oldData && oldData.name);
+      if (session) getDoc(this, session, oldData && oldData.name);
     },
     $onDestroySession: function (session) {
       var data = findData(this, session);
@@ -442,11 +466,17 @@ define(function (require, exports, module) {
   Utils.inherits(BaseClient, EventsEmitter);
 
   var debounce_updateArgHints = null;
-
+  /**
+   * @param {BaseClient} ts
+   * @param {Editor} editor
+   */
   function showHoverTooltip(ts, editor) {
     clearTimeout(debounce_updateArgHints);
     var cursor = editor.getSelectionRange().start;
-    if (editor.completer && editor.completer.activated) {
+    if (
+      somethingIsSelected(editor) ||
+      (editor.completer && editor.completer.activated)
+    ) {
       return ts.ui.closeAllTips();
     }
     if (ts.functionHintTrigger) {
@@ -477,35 +507,37 @@ define(function (require, exports, module) {
           return ts.ui.closeArgHints(ts);
       }
     }
+    //First request call position to know if we need new arg hints
     ts.getCallPos(editor, cursor, function (err, callPos) {
-      if (!callPos) {
-        return ts.ui.closeArgHints(ts);
-      }
-      var start = callPos.start;
-      var argpos = callPos.argpos;
-      var cache = ts.cachedArgHints;
+      if (!callPos) return ts.ui.closeArgHints(ts);
+      var cachedArgs = ts.cachedArgHints;
       if (
-        cache &&
-        cache.doc == editor.session &&
-        cmpPos(start, cache.start) === 0 &&
-        cache.name == callPos.name
+        cachedArgs &&
+        cachedArgs.doc == editor.session &&
+        cmpPos(callPos.start, cachedArgs.start) === 0 &&
+        cachedArgs.name == callPos.name
       ) {
-        return ts.ui.showArgHints(ts, editor, argpos);
-      } else ts.ui.closeArgHints(ts);
-      debounce_updateArgHints = setTimeout(inner, 500);
-      function inner() {
-        if (debugCompletions) {
-          debug.time('get definition');
-        }
-        ts.requestArgHints(editor, start, function (cache) {
-          ts.cachedArgHints = cache;
-          //warning race situation
-          cache.doc = cache.doc || editor.session;
-          cache.start = cache.start || callPos.start;
-          cache.name = cache.name || callPos.name;
-          ts.ui.showArgHints(ts, editor, argpos);
-          if (debugCompletions) debug.timeEnd('get definition');
-        });
+        return ts.ui.showArgHints(ts, editor, callPos.activeIndex);
+      } else {
+        ts.ui.closeArgHints(ts);
+        debounce_updateArgHints = setTimeout(function () {
+          if (debugCompletions) {
+            debug.time('get definition');
+          }
+          var session = editor.session;
+          ts.requestArgHints(editor, callPos.start, function (err, argHints) {
+            ts.cachedArgHints = argHints;
+            if (!argHints) return;
+            argHints.doc = argHints.doc || session;
+            argHints.start = argHints.start || callPos.start;
+            argHints.name = argHints.name || callPos.name;
+            argHints.activeIndex =
+              argHints.activeIndex || callPos.activeIndex || 0;
+            if (editor.session === session)
+              ts.ui.showArgHints(ts, editor, argHints.activeIndex);
+            if (debugCompletions) debug.timeEnd('get definition');
+          });
+        }, 500);
       }
     });
   }
@@ -539,12 +571,11 @@ define(function (require, exports, module) {
   }
 
   function getCallPos(editor, pos) {
-    if (somethingIsSelected(editor)) return;
     if (!pos) pos = editor.getSelectionRange().start;
     var iterator = new TokenIterator(editor.session, pos.row, pos.column);
     var timeOut = new Date().getTime() + 1000;
     var token = iterator.getCurrentToken();
-    if (!token) return;
+    if (!token) return null;
     //todo detect boundaries from syntax
     var maxLine = pos.row - 20;
     var start,
@@ -597,12 +628,12 @@ define(function (require, exports, module) {
                 return {
                   name: name.value,
                   start: start,
-                  argpos: numCommas,
+                  activeIndex: numCommas,
                 };
             }
-            return;
+            return null;
           } else {
-            return;
+            return null;
           }
         } else if (depth === 0) {
           if (token.value[i] == ',') numCommas++;
@@ -686,7 +717,7 @@ define(function (require, exports, module) {
       replaced: 0,
       status: '',
       errors: '',
-      total: changes.length
+      total: changes.length,
     };
 
     function compareRange(a, b) {
@@ -702,11 +733,11 @@ define(function (require, exports, module) {
       for (var i2 = 0; i2 < chs.length; ++i2) {
         try {
           var ch2 = chs[i2];
-          known.doc.replace(ch2, ch2.text || defaultText);
+          known.doc.replace(ch2, ch2.text || defaultText || '');
           result.replaced++;
         } catch (ex) {
           result.errors += '\n ' + file + ' - ' + ex.toString();
-          debug.log('error applying rename changes', ex);
+          debug.log('Error applying changes', ex);
         }
       }
     }
@@ -739,7 +770,7 @@ define(function (require, exports, module) {
          * @typedef {{
              name: string,
              start: AcePosition,
-             argpos: number
+             activeIndex: number
          }} CallPosition
          * @param {Editor} editor
          * @param {CallPosition} cursor
@@ -785,6 +816,12 @@ define(function (require, exports, module) {
      * Also sets lastJumpPosition
      */
     setSelection: setSelection,
+
+    getExtension: function (mode) {
+      var m = modelist.modesByName[mode];
+      if (!m) return '';
+      return m.extensions ? m.extensions.split('|').shift() : '';
+    },
   };
   exports.BaseClient = BaseClient;
   exports.ClientUtils = ClientUtils;

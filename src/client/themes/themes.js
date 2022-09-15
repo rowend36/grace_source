@@ -1,6 +1,6 @@
 define(function (require, exports, module) {
   'use strict';
-  /* globals $ */
+  /* globals $, ace */
   /*Theming - Spent a lot of time on this before I decided to just 
   port VSCode themes..*/
   require('css!./base');
@@ -16,7 +16,7 @@ define(function (require, exports, module) {
   });
   var getSettingsEditor = require('../editor/editors').Editors
     .getSettingsEditor;
-  var themelist = ace.require('ace/ext/themelist');
+  var themelist = require('ace!ext/themelist');
 
   require('../core/config').Config.registerInfo({
     useThemeForUI: {

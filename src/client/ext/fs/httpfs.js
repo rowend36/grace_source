@@ -42,11 +42,11 @@ define(function (require, exports, module) {
             },
             function (e) {
                 callback(getAjaxError(e.target, url, url /*, stack*/));
-            }
+            },
         );
     }
 
-    function _parseJSON(req, callback, stack, url) {
+    function _parseJSON(req, url, path, callback, stack) {
         var type = req.getResponseHeader('Content-Type');
         if (!type) return false;
         if (
@@ -59,7 +59,7 @@ define(function (require, exports, module) {
             } catch (e) {
                 err = e;
                 e.code = 'EUNKNOWN';
-                e.path = data.path;
+                e.path = path;
                 e._stack = stack;
                 e.syscall = url;
             }
@@ -68,7 +68,10 @@ define(function (require, exports, module) {
         }
     }
     function request(url, data, callback, asBuffer, stack) {
-        // stack = stack || new Error().stack;
+        // stack =
+        //     stack ||
+        //     Object.assign(new Error().stack, {data: asBuffer ? null : data});
+        // stack = data;
         ajax(url, {
             data: data,
             retryCount: 3,
@@ -76,12 +79,15 @@ define(function (require, exports, module) {
             responseType: asBuffer ? 'arraybuffer' : 'text',
         }).then(
             function (req) {
-                if (asBuffer || !_parseJSON(req, callback, stack, url))
+                if (
+                    asBuffer ||
+                    !_parseJSON(req, url, data.path, callback, stack)
+                )
                     callback(null, asBuffer ? req.response : req.responseText);
             },
             function (e) {
                 callback(getAjaxError(e.target, url, data.path, stack));
-            }
+            },
         );
     }
     function requestBuffer(url, data, callback) {
@@ -95,7 +101,7 @@ define(function (require, exports, module) {
                 var d = res[i];
                 if (!d.e) return e(null, d.r);
                 return e(
-                    FileUtils.createError({path: this.args[i].path, code: d.e})
+                    FileUtils.createError({path: this.args[i].path, code: d.e}),
                 );
             } catch (e) {
                 debug.error(e);
@@ -144,7 +150,7 @@ define(function (require, exports, module) {
             function (e, f) {
                 this.$encodingList = null;
                 if (!e) encodings = f;
-            }.bind(this)
+            }.bind(this),
         );
         this.icon = 'storage';
         this.getRoot = function () {
@@ -179,27 +185,27 @@ define(function (require, exports, module) {
                 requestBuffer(
                     server + '/open',
                     {path: path, password: password},
-                    callback
+                    callback,
                 );
             } else
                 request(
                     server + '/open',
                     {path: path, password: password, encoding: encoding},
-                    callback
+                    callback,
                 );
         };
         this.getFiles = function (path, callback) {
             request(
                 server + '/files',
                 {path: path, password: password, appendSlash: true},
-                callback
+                callback,
             );
         };
         this.readdir = function (path, callback) {
             request(
                 server + '/files',
                 {path: path, password: password},
-                callback
+                callback,
             );
         };
 
@@ -220,34 +226,39 @@ define(function (require, exports, module) {
             form.set('encoding', encoding);
             form.set('password', password);
             form.set('content', new Blob([content]), path);
-            sendBuffer(server, {path: path}, form, oneArgCallback(callback));
+            sendBuffer(
+                server + '/save',
+                {path: path},
+                form,
+                oneArgCallback(callback),
+            );
         };
         this.mkdir = function (path, callback) {
             request(
                 server + '/new',
                 {path: path, password: password},
-                oneArgCallback(callback)
+                oneArgCallback(callback),
             );
         };
         this.delete = function (path, callback) {
             request(
                 server + '/delete',
                 {path: path, password: password, recursive: true},
-                oneArgCallback(callback)
+                oneArgCallback(callback),
             );
         };
         this.unlink = this.rmdir = function (path, callback) {
             request(
                 server + '/delete',
                 {path: path, password: password},
-                oneArgCallback(callback)
+                oneArgCallback(callback),
             );
         };
         this.rename = function (path, dest, callback) {
             request(
                 server + '/rename',
                 {path: path, dest: dest, password: password},
-                oneArgCallback(callback)
+                oneArgCallback(callback),
             );
         };
         this.copyFile = function (path, dest, callback, overwrite) {
@@ -255,7 +266,7 @@ define(function (require, exports, module) {
                 server + '/copy',
                 {password: password},
                 {path: path, dest: dest, overwrite: overwrite || null},
-                oneArgCallback(callback)
+                oneArgCallback(callback),
             );
         };
         this.moveFile = function (path, dest, callback, overwrite) {
@@ -263,7 +274,7 @@ define(function (require, exports, module) {
                 server + '/move',
                 {password: password},
                 {path: path, dest: dest, overwrite: overwrite || null},
-                oneArgCallback(callback)
+                oneArgCallback(callback),
             );
         };
         this.$gitBlobOid = function (path, callback) {
@@ -271,7 +282,7 @@ define(function (require, exports, module) {
                 server + '/fastGetOid',
                 {password: password},
                 {path: path},
-                callback
+                callback,
             );
         };
         this.stat = function (path, opts, callback) {
@@ -287,7 +298,7 @@ define(function (require, exports, module) {
                 function (e, s) {
                     if (s) s = FileUtils.createStats(s);
                     callback(e, s);
-                }
+                },
             );
         };
         this.lstat = function (path, callback) {
@@ -321,7 +332,7 @@ define(function (require, exports, module) {
                 return (window.rfs = new RESTFileServer(
                     address,
                     root,
-                    password
+                    password,
                 ));
             },
             [
@@ -343,7 +354,7 @@ define(function (require, exports, module) {
                     value: '',
                     type: 'text',
                 },
-            ]
+            ],
         );
     }
 }); /*_EndDefine*/

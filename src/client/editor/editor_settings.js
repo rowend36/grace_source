@@ -1,12 +1,6 @@
 define(function (require, exports, module) {
-    var completionSettings = [
-        'enableSnippets',
-        'enableLiveAutocompletion',
-        'enableBasicAutocompletion',
-        'enableIntelligentAutocompletion',
-        'enableArgumentHints',
-    ];
-    var themelist = ace.require('ace/ext/themelist');
+    /* globals ace */
+    var themelist = require('ace!ext/themelist');
     var themes = themelist.themes.map(function (t) {
         return t.theme;
     });
@@ -21,16 +15,21 @@ define(function (require, exports, module) {
     var configure = require('../core/config').Config.configure;
     var setHandler = require('../core/config').Config.setHandler;
     var register = require('../core/config').Config.register;
+    var config = require('ace!config');
+    var Config = require('grace/core/config').Config;
+    var Editor = require('ace!editor').Editor;
 
     var editorConfig = require('../core/config').Config.registerAll(
         {
             sharedTheming: true,
-            sharedCompletion: true,
         },
-        'editor'
+        'editor',
     );
     require('../core/config').Config.registerInfo(
         {
+            '!root': {
+                type: new Schema.XMap(IsString, Schema.IsPlain),
+            },
             theme: {
                 doc: 'Editor syntax highlight theme.',
                 values: themes,
@@ -56,10 +55,16 @@ define(function (require, exports, module) {
                 'Allow dialog/splits editors to have separate themes',
             sharedCompletion:
                 'Allow dialog/splits editors to have separate completion settings',
+            maxLines: 'no-user-config',
+            minLines: 'no-user-config',
+            maxPixelHeight: 'no-user-config',
+            autoScrollEditorIntoView: 'no-user-config',
+            placeholder: 'no-user-config',
+            hasCssTransforms: 'no-user-config',
+            mode: 'no-user-config',
         },
-        'editor'
+        'editor',
     );
-
     //default settings for docs
     var sessionDefaults = {
         firstLineNumber: 1,
@@ -78,36 +83,63 @@ define(function (require, exports, module) {
         theme: 'ace/theme/cobalt',
         hideNonLatinChars: false,
         readOnly: false,
+        fontSize: 12,
         annotateScrollbar: true,
         wrap: false,
-        autoBeautify: true,
-        enableSnippets: true,
         useNativeContextMenu: true,
-        enableLiveAutocompletion: false,
-        enableArgumentHints: true,
-        enableBasicAutocompletion: true,
-        enableIntelligentAutocompletion: true,
     };
     //runtime class
     //there is only a single instance of this class
     //you need to remove its dependency on Docs
     Docs.$defaults = sessionDefaults;
     var aceOptions = ace.Editor.prototype.$options;
-    exports.add = function (edit) {
+    var Settings = exports;
+    Settings.add = function (edit) {
         edit.setOptions(editorDefaults);
     };
-    exports.editors = null;
-    exports.editor = null;
-    exports.$options = aceOptions; //needed by settings menu
-    exports.$defaults = editorDefaults;
-    exports.setOption = function (key, val) {
+    Settings.options = editorDefaults;
+    Settings.editors = null;
+    Settings.editor = null;
+    Settings.$options = aceOptions; //needed by settings menu
+    Settings.$defaults = editorDefaults;
+
+    Settings.addOption = function (key, option, type) {
+        if (!option) {
+            option = Editor.prototype.$options[key];
+        } else {
+            //Add to Ace Config
+            var temp = {};
+            temp[key] = option;
+            config.defineOptions(Editor.prototype, 'editor', temp);
+        }
+        //Add to Config
+        Config.register(key, 'editor', option.value);
+        editorDefaults[key] = editorConfig.hasOwnProperty(key)
+            ? editorConfig[key]
+            : option.value;
+
+        //Setup for optionsValidator
+        optionsValidator[key] = type ? Schema.parse(type) : IsBoolean;
+        if (!Settings.editors) return;
+        Settings.editors.forEach(function (e) {
+            var doc = Docs.forSession(e.session);
+            var val =
+                doc &&
+                doc.editorOptions &&
+                doc.editorOptions.hasOwnProperty(key)
+                    ? doc.editorOptions[key]
+                    : editorDefaults[key];
+            e.setOption(key, val);
+        });
+    };
+    Settings.setOption = function (key, val) {
         var isForSession;
         if (key.startsWith('session-')) {
             key = key.substring(8);
             isForSession = true;
         }
         if (!optionsValidator[key]) {
-            this.editor.setOption(key, val);
+            Settings.editor.setOption(key, val);
             return;
         }
         if (optionsValidator[key].validate(val)) {
@@ -122,17 +154,17 @@ define(function (require, exports, module) {
         var doc;
         if (isSessionValue) {
             if (val === 'default') val = sessionDefaults[key];
-            doc = Docs.forSession(this.editor.session);
+            doc = Docs.forSession(Settings.editor.session);
             if (!doc) {
-                this.editor.session.setOption(key, val);
+                Settings.editor.session.setOption(key, val);
             } else if (isForSession) {
                 doc.setOption(
                     key,
-                    val === sessionDefaults[key] ? undefined : val
+                    val === sessionDefaults[key] ? undefined : val,
                 );
             } else {
                 sessionDefaults[key] = val;
-                configure(key, val, 'editor');
+                configure(key, val, 'editor', true);
                 Docs.forEach(function (doc) {
                     if (!doc.options.hasOwnProperty(key)) {
                         doc.setOption(key, undefined);
@@ -141,52 +173,53 @@ define(function (require, exports, module) {
             }
         } else if (isForSession) {
             if (!editorDefaults.hasOwnProperty(key)) return false;
-            doc = Docs.forSession(this.editor.session);
-            this.editor.setOption(key, val);
+            doc = Docs.forSession(Settings.editor.session);
+            Settings.editor.setOption(key, val);
             if (!doc) return;
             doc.setOption(key, val === editorDefaults[key] ? undefined : val);
         } else {
             var isForAllEditors =
-                this.editors.length == 1 ||
+                Settings.editors.length == 1 ||
                 !(
                     key == 'mode' ||
-                    (!editorConfig.sharedCompletion &&
-                        completionSettings.indexOf(key) > -1) ||
                     (!editorConfig.sharedTheming && key === 'theme')
                 );
-            if (isForAllEditors || this.editor === this.editors[0]) {
+            if (isForAllEditors || Settings.editor === Settings.editors[0]) {
                 editorDefaults[key] = val;
-                configure(key, val, 'editor');
+                configure(key, val, 'editor', true);
             }
             if (isForAllEditors) {
-                this.editors.forEach(function (e) {
+                Settings.editors.forEach(function (e) {
                     e.setOption(key, val);
                 });
             }
-            if (!isForAllEditors || this.editors.indexOf(this.editor) < 0)
-                this.editor.setOption(key, val);
+            if (
+                !isForAllEditors ||
+                Settings.editors.indexOf(Settings.editor) < 0
+            )
+                Settings.editor.setOption(key, val);
         }
     };
-    exports.getOption = function (key) {
+    Settings.getOption = function (key) {
         if (key.startsWith('session-')) {
             key = key.substring(8);
-            return this.editor.getOption(key);
+            return Settings.editor.getOption(key);
         } else if (key == 'mode') {
-            return this.editor.session.getOption(key);
+            return Settings.editor.session.getOption(key);
         } else if (sessionDefaults.hasOwnProperty(key)) {
             return sessionDefaults[key];
         } else if (editorDefaults.hasOwnProperty(key)) {
             return editorDefaults[key];
         }
-        return this.editor.getOption(key);
+        return Settings.editor.getOption(key);
     };
-    exports.getOptions = function () {
-        return this.editor.getOptions();
+    Settings.getOptions = function () {
+        return Settings.editor.getOptions();
     };
-    exports.setOptions = function (optList) {
+    Settings.setOptions = function (optList) {
         Object.keys(optList).forEach(function (key) {
-            this.setOption(key, optList[key]);
-        }, this);
+            Settings.setOption(key, optList[key]);
+        });
     };
 
     var THEME = IsString;
@@ -197,6 +230,7 @@ define(function (require, exports, module) {
         new XEnum(['off', 'free', 'printMargin', 'default']),
         IsNumber,
     ]);
+    var KBHANDLER = new XOneOf([IsString, Schema.IsNull], 'undefined');
     var FOLD_STYLE = new XEnum(['markbegin', 'markbeginend', 'manual']);
     var LINE_SPACING = new XEnum(['wide', 'wider', 'normal', 'narrow']);
     var SCROLL_PAST_END = new Schema.XValidIf(function (val) {
@@ -205,7 +239,6 @@ define(function (require, exports, module) {
     var UNDO_DELTAS = new XOneOf([IsBoolean, new XEnum(['always'])]);
     var optionsValidator = {
         animatedScroll: IsBoolean,
-        autoBeautify: IsBoolean,
         annotateScrollbar: IsBoolean,
         behavioursEnabled: IsBoolean,
         copyWithEmptySelection: IsBoolean,
@@ -214,14 +247,8 @@ define(function (require, exports, module) {
         dragDelay: IsNumber,
         dragEnabled: IsBoolean,
         enableAutoIndent: IsBoolean,
-        enableBasicAutocompletion: IsBoolean,
         enableBlockSelect: IsBoolean,
-        enableIntelligentAutocompletion: IsBoolean,
-        enableLiveAutocompletion: IsBoolean,
-        enableArgumentHints: IsBoolean,
         enableMultiselect: IsBoolean,
-        enableSnippets: IsBoolean,
-        enableTabCompletion: IsBoolean,
         fadeFoldWidgets: IsBoolean,
         firstLineNumber: IsNumber,
         fixedWidthGutter: IsBoolean,
@@ -235,12 +262,11 @@ define(function (require, exports, module) {
         highlightSelectedWord: IsBoolean,
         hScrollBarAlwaysVisible: IsBoolean,
         indentedSoftWrap: IsBoolean,
-        keyboardHandler: IsString,
+        keyboardHandler: KBHANDLER,
         highlightErrorRegions: IsBoolean,
         keepRedoStack: IsBoolean,
         showErrorOnClick: IsBoolean,
         lineSpacing: LINE_SPACING,
-        maxPixelHeight: IsNumber,
         mergeUndoDeltas: UNDO_DELTAS,
         navigateWithinSoftTabs: IsBoolean,
         newLineMode: NEW_LINE_MODE,
@@ -269,37 +295,42 @@ define(function (require, exports, module) {
         wrap: WRAP_MODE,
         wrapBehavioursEnabled: IsBoolean,
     };
-    exports.validator = optionsValidator;
-    
+    Settings.validator = optionsValidator;
+    Config.getConfigInfo('editor').type.schemas = optionsValidator;
+
     setHandler('editor', {
         update: function (newValue, oldValue, path) {
             var success;
             for (var i in newValue) {
-                if (!optionsValidator[i]) {
-                    configure(newValue[i], oldValue[i], 'editor');
-                    if (i === 'sharedTheming' && i === 'sharedCompletion') {
-                        continue;
-                    }
-                }
-                else if (newValue[i] === undefined && oldValue[i] === undefined) {
+                if (i === 'sharedTheming') {
+                    configure(i, newValue[i], 'editor');
+                    continue;
+                } else if (
+                    newValue[i] === undefined &&
+                    oldValue[i] === undefined
+                ) {
                     continue; //fix for undefined as default value
-                } else if (exports.getOption(i) != newValue[i]) {
-                    if (exports.setOption(i, newValue[i]) === false)
+                } else if (!optionsValidator[i])
+                    Notify.inform('Unknown editor option ' + i);
+                else if (Settings.getOption(i) != newValue[i]) {
+                    if (
+                        Settings.setOption(
+                            i,
+                            newValue[i] === undefined
+                                ? editorDefaults[i]
+                                : newValue[i],
+                        ) === false
+                    )
                         success = false;
                 }
             }
             return success;
         },
-        toJSON: exports.getOptions,
+        toJSON: Settings.getOptions.bind(Settings),
     });
     //Does not listen for events.
     //Plugins should use getSettingsEditor
     (function () {
-        //All ace options must be loaded before this file is parsed
-        //for autoBeautify option
-        require('../ext/format/format_on_type');
-        //for enableArgHint option
-        require('../ext/language/services/hover');
         for (var i in optionsValidator) {
             if (i === 'mode') continue;
             var defaults;

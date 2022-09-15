@@ -6,31 +6,8 @@ define(function (require, exports, module) {
   var AutoCloseables = require('./auto_closeables').AutoCloseables;
   var Navigation = require('./navigation').Navigation;
   var setProp = Utils.setProp;
-
+  /** @typedef {import('ui/dropdown').DropdownData} DropdownData */
   /**
-   * @callback UpdateCallback
-   * @param {DropdownData} self - The dropdown being shown. Must not be modified directly.
-   * @param {function} update - Accepts two arguments, a property to update and its new value.
-   * 
-   * @typedef {{
-     "!update":[UpdateCallback],
-     [property]:({
-       "!update": UpdateCallback,
-       caption: string,
-       isHeader?: boolean,
-       sortIndex?: number,
-       className?: string,
-       icon?: string,
-       subIcon?: string,
-       subTree?: DropdownData,
-       rebase?: boolean - true if to anchor this item's subtree to the parent anchor
-       hasChild?: boolean,
-       anchor?: HTMLElement - set by this dropdown when an item 
-                              with hasChild is clicked
-       onclick: (ev: Event, id: string, item: HTMLElement)
-     }|string)
-   }} DropdownData
-   
    * @constructor
    * @property {function} [ondismiss],
    * @property {function} [onclick]
@@ -40,7 +17,7 @@ define(function (require, exports, module) {
   }
 
   /**
-   * @param {DropdownOpts} self
+   * @param {Partial<Dropdown>} self
    * @param {Boolean} keepFocus? - whether the overflow should avoid stealing focus
    * @param {string} align? - how to align . One of right(align with right edge),left (align with left edge), full (take the full screen), center (center on screen), responsive-right (align right on wide screens and take full screen on mobile)
    * @param {string} vAlign? - One of above,below,above_or_below,full
@@ -50,7 +27,7 @@ define(function (require, exports, module) {
     if (keepFocus === undefined) keepFocus = true;
     if (align === undefined) align = 'right';
     var isSmallScreen = window.innerWidth < 600;
-
+    var _clear = Utils.delay(clear, 3000);
     /** @type {HTMLElement} anchor */
     var anchor;
     var id = Utils.genID('o');
@@ -59,7 +36,8 @@ define(function (require, exports, module) {
     //prevent calling ondismiss while recreating
     var inRecreate;
 
-    /** @type {DropdownData} root,current */
+    /** @type {DropdownData} root */
+    /** @type {DropdownData} current */
     var root, current;
 
     function getElement() {
@@ -72,6 +50,7 @@ define(function (require, exports, module) {
         return;
       }
       if (current == root) {
+        _clear.cancel();
         isSmallScreen = window.innerWidth < 600;
         if (!inRecreate) {
           anchor = parent;
@@ -81,7 +60,7 @@ define(function (require, exports, module) {
         //remove previous overflows on small screens
       } else if (isSmallScreen) {
         Navigation.removeRoot(getElement());
-        $(getElement()).hide();
+        $(getElement()).finish().hide();
       }
       history.push(name);
       var items = current[name].subTree;
@@ -97,7 +76,7 @@ define(function (require, exports, module) {
           if (e(items, lazyAssign.bind(items))) items['!changed'] = true;
         });
       }
-      if (items['!changed'] && elem) {
+      if (items['!changed']) {
         items['!changed'] = false;
         $(elem).remove();
         elem = null;
@@ -134,13 +113,14 @@ define(function (require, exports, module) {
       --Dropdown.count;
       history.pop();
       current = getCurrent(root, history) || root;
-      if (inRecreate) $(b).hide();
+      if (inRecreate) $(b).finish().hide();
       else {
         if (history.length == 0) {
           //used for onOverlayClick
           removeOverlay();
           AutoCloseables.close(id);
           self.ondismiss && self.ondismiss(e);
+          _clear();
         }
         $(b).fadeOut();
       }
@@ -152,8 +132,9 @@ define(function (require, exports, module) {
       if (!overlay) {
         overlay = document.createElement('div');
         overlay.style.position = 'absolute';
-        overlay.style.top = overlay.style.left = overlay.style.right = overlay.style.bottom = 0;
-        overlay.style.opacity = 0;
+        overlay.style.top = overlay.style.left = overlay.style.right = overlay.style.bottom =
+          '0';
+        overlay.style.opacity = '0';
         $(overlay).click(handleOverlayClick);
         if (keepFocus) FocusManager.trap($(overlay), true);
       }
@@ -197,17 +178,13 @@ define(function (require, exports, module) {
       if (data.hasChild) {
         data.anchor = isSmallScreen ? anchor : span;
       }
-      if (self.onclick && self.onclick(e, id2, span, data)) {
-        //do nothing
-      } else if (data.onclick) {
-        data.onclick(e, id2, span);
-      }
+      self.onclick(e, id2, span, data, anchor);
       if (id2 == 'back') {
         hideOverflow();
       } else if (data.subTree) {
         FocusManager.hintNoChangeFocus();
-        showDropdown(id2, data.rebase ? anchor : span, true);
-      } else if (data.close !== false || (data.hasChild && isSmallScreen)) {
+        showDropdown(id2, data.rebase ? anchor : span);
+      } else if (!data.dontClose || (data.hasChild && isSmallScreen)) {
         while (history[0]) {
           hideOverflow();
         }
@@ -217,6 +194,15 @@ define(function (require, exports, module) {
     function hideAll() {
       while (history.length > 0) {
         hideOverflow();
+      }
+    }
+
+    function clear(invalidateRe) {
+      for (var i in cachedElements) {
+        if (!invalidateRe || invalidateRe.test(i)) {
+          $(cachedElements[i]).remove();
+          delete cachedElements[i];
+        }
       }
     }
 
@@ -237,11 +223,12 @@ define(function (require, exports, module) {
 
     //BackButton clears all dropdowns
     var autoCloseHandler = {
+      id: id,
       close: hideAll,
     };
 
-    self.show = function (el, shift) {
-      showDropdown('root', el, shift);
+    self.show = function (el) {
+      showDropdown('root', el);
     };
     self.hide = hideAll;
     self.close = hideOverflow;
@@ -275,7 +262,7 @@ define(function (require, exports, module) {
         };
       }
       current = getCurrent(root, history) || root;
-
+      clear(/^(?!root$).*$/);
       if (el) {
         var elem = Dropdown.createElement(w || root.root.subTree, id);
         //Could be more efficient, but the entire overflow could be more efficient
@@ -307,12 +294,7 @@ define(function (require, exports, module) {
         };
       }
       current = root;
-      for (var i in cachedElements) {
-        if (!invalidateRe || invalidateRe.test(i)) {
-          $(cachedElements[i]).remove();
-          delete cachedElements[i];
-        }
-      }
+      clear(invalidateRe);
       if (inRecreate) {
         for (var j = 0; current[store[j]] && j < store.length; j++) {
           showDropdown(
@@ -367,9 +349,7 @@ define(function (require, exports, module) {
   Dropdown.defaultLabel = function (label) {
     return {
       isHeader: true,
-      className: 'mt-10',
-      caption:
-        "<label class='sub-header'>" + Utils.htmlEncode(label) + '</label>',
+      caption: Utils.htmlEncode(label),
     };
   };
 
@@ -403,6 +383,7 @@ define(function (require, exports, module) {
       numIcons = 0;
     menu.setAttribute('id', id);
     menu.className = 'dropdown-content';
+    /** @type {[Array<string>]} */
     var sorted = [[]];
     var p = 0;
     //collect item
@@ -416,20 +397,20 @@ define(function (require, exports, module) {
       }
     }
     //sort sections
-    if (sorted[0][0] && sorted[0][0].isHeader) {
+    if (sorted[0][0] && items[sorted[0][0]].isHeader) {
       sorted.sort(function (a, b) {
-        var t = items[a].sortIndex || 100;
-        var l = items[b].sortIndex || 100;
-        return items[a].isHeader
+        var t = items[a[0]].sortIndex || 100;
+        var l = items[b[0]].sortIndex || 100;
+        return items[a[0]].isHeader
           ? -1
-          : items[b].isHeader
+          : items[b[0]].isHeader
           ? 1
           : l > t
           ? -1
           : l < t
           ? 1
-          : (items[a].caption || items[a]).localeCompare(
-              items[b].caption || items[b],
+          : (items[a[0]].caption || items[a[0]]).localeCompare(
+              items[b[0]].caption || items[b[0]],
             );
       });
     }
@@ -453,13 +434,24 @@ define(function (require, exports, module) {
     });
     var numHeaders = sorted.length - 1;
     //merge everything back
-    sorted = [].concat.apply([], sorted);
-    for (var j = 0; j < sorted.length; j++) {
-      var i = sorted[j];
+    var result = /** @type {string[]}*/ ([]).concat.apply(
+      [],
+      sorted.filter(function (e, i) {
+        return i === 0 || e.length > 1;
+      }),
+    );
+    for (var j = 0; j < result.length; j++) {
+      var i = result[j];
       var item = document.createElement('li');
       item.className = items[i].className || '';
       if (items[i].isHeader) {
-        item.innerHTML = items[i].caption;
+        var html = items[i].caption;
+        if (html[0] !== '<')
+          html = //default label style
+            "<label class='mt-10 sub-header'>" +
+            Utils.htmlEncode(html) +
+            '</label>';
+        item.innerHTML = html;
       } else {
         var a = document.createElement('a');
         a.className = 'dropdown-item';
@@ -492,7 +484,7 @@ define(function (require, exports, module) {
       menu.appendChild(item);
     }
     if (!noCaret) menu.className += ' dropdown-has-caret';
-    if (numIcons / (sorted.length - numHeaders) > Dropdown.minIconPercent)
+    if (numIcons / (result.length - numHeaders) > Dropdown.minIconPercent)
       menu.className += ' dropdown-has-icon';
     return menu;
   };
@@ -500,7 +492,7 @@ define(function (require, exports, module) {
    * Tries to align an element with size 'itemSize',
    * with one of the edges of an element with dimensions in 'box'.
    * Used by searchbox.
-   * @param {DOMRect} rect - a container element
+   * @param {DOMRect} box - a container element
    * @param itemSize {number} - size of item
    * @param size {number} - size of window whom the positions in box are relative to
    * @param {boolean} [vertical=false]
@@ -519,16 +511,18 @@ define(function (require, exports, module) {
       return [0, 0];
     }
   };
-
+  /**
+   * @type {"right"}
+   */
   Dropdown.defaultAlignment = 'right';
   /**
     Maximize screen usage on mobile with positionElement
    * @param {HTMLElement} element - the element to position
-   * @param {HTMLElement|[HTMLElement]} anchor - the button that triggered the dropdown
+   * @param {HTMLElement} anchor - the button that triggered the dropdown
    * @param {HTMLElement} [inside=document.body] - the bounding container
-   * @param {(right|left|full|center|responsive-right)} [align=Dropdown#defaultAlignment] - horizontal alignment
+   * @param {("right"|"left"|"full"|"center"|"responsive-right")} [align=Dropdown["defaultAlignment"]] - horizontal alignment
    * @param {boolean} allowBeside - allow desktop stacking behaviour on wide screens
-   * @param {(above|below|above_or_below|full|max)} [vertAlign='above_or_below'] - horizontal alignment
+   * @param {("above"|"below"|"above_or_below"|"full"|"max")} [vertAlign='above_or_below'] - horizontal alignment
    **/
   Dropdown.positionElement = function (
     element,

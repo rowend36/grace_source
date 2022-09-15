@@ -36,10 +36,10 @@ define(function (require, exports, module) {
                 'Font used by the editor and search results. Availability of fonts varies with device but the following are guaranteed to be available ' +
                 fonts
                     .map(function (e) {
-                        return e.name || e;
+                        return typeof e=='string'?e:e.name;
                     })
                     .join(', ') +
-                '.\n',
+                '.',
         },
         'editor'
     );

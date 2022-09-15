@@ -1,27 +1,48 @@
 define(function (require, exports, module) {
   var Docs = require('grace/docs/docs').Docs;
   var Doc = require('grace/docs/document').Doc;
-  var Config = require('grace/core/config');
+  var Config = require('grace/core/config').Config;
   var Configs = require('grace/ext/config/configs');
+  var Context = require('grace/ext/config/context').Context;
   var Utils = require('grace/core/utils').Utils;
-  var MainMenu = require('grace/setup/setup_main_menu').MainMenu;
+  var Actions = require('grace/core/actions').Actions;
   var openDoc = require('grace/docs/docs').openDoc;
   var app = require('grace/core/app_events').AppEvents;
   var JSONExt = require('grace/ext/json_ext').JSONExt;
   var Notify = require('grace/ui/notify').Notify;
   var getFormatter = require('grace/ext/format/formatters').getFormatter;
-  var regex = /(.{50})(.{0,30}$|.{0,20}([\.,]|(?= ))) ?/g;
+  //On a line greater than 40 characters
+  //After the first 40 characters ->.{40}
+  //If still more than 40 characters ->.(?!.{0,40}$)
+  //Then read 0 to 30 characters and a breaker ->([\.,|$]|\S(?= ))
+  //Collect any whitespace after the breaker -> *(?! )
+  //Prevent breaking at the end of a line ->(?!(?:\. *)?$)
+  //If no opportunity to break. Break at the nearest opportunity ->[^\.,|$ ]*
+  var regex = /.{40}(?!.{0,40}$)(?:.{0,30}(\.(?![a-z])|[,|$]|\S(?= )) *(?! )(?=([A-Z]?))(?!(?:\. *)?$)|[^\.,|$ ]*)/g;
   var wrap = function (text) {
-    return text.replace(regex, '$1$2\n');
+    if (text.indexOf('\n') > -1) return text.split('\n').map(wrap).join('\n');
+    // @ts-ignore
+    var indent = /^ */.exec(text)[0];
+    var mightBeKey = /^.{1,40}:/.test(text);
+    return text.replace(regex, function (match, breaker, caps, index) {
+      return (
+        match +
+        '\n' +
+        indent +
+        (breaker === '.' && !mightBeKey && caps ? '' : ' ')
+      );
+    });
   };
-  var INFO_START_TEXT = 'var _CONFIG_ = ';
+  var INFO_START_TEXT = '//Grace Config File\n';
   var INFO_END_TEXT = wrap(
-    "/**\n\
-    Specify options as either a single path e.g application.applicatonTheme or as nested objects.\n\
-    List data can be extended using (+/- syntax e.g 'paths+':[additional values])\n\
-    Except when specified otherwise, all relative filepaths are resolved relative to the current project while\
+    '\n/*\n\
+  Specify options as either a single path e.g application.applicatonTheme or as nested objects.\n\
+  List data can be extended using (+/- syntax e.g \'paths+\':[additional values])\n\
+  Settings can be scoped to context using selectors e.g\n\
+    "[editorMode == javascript]wrap": "free"\n\
+  Except when specified otherwise, all relative filepaths are resolved relative to the current project while\
 absolute paths are left as they are.\n\
-    Note: Modifications made in this document will be overriden by any loaded configuration files on application start.\n*/"
+  Note: Modifications made in this document can be overriden by any loaded configuration files on application start.\n*/',
   );
   /**
    * Grace stores configuration in the form of a single multilevel tree.
@@ -37,22 +58,22 @@ absolute paths are left as they are.\n\
     if (info.default) {
       var default_ = 'Default: ' + info.default;
       if (result) {
-        result = result + '    .' + default_;
+        result = result + '. ' + default_;
       } else result = default_;
     }
     if (info.values) {
       var valueHasInfo = false;
       var values = info.values.map(function (e) {
-        if (typeof e == 'object') {
+        if (Array.isArray(e)) {
           valueHasInfo = true;
           return e.join(' - ');
         }
-        return e;
+        return e + '';
       });
 
-      values =
-        'Possible values: ' + wrap(values.join(valueHasInfo ? '\n  ' : ','));
-      if (valueHasInfo) values = '\n  ' + values;
+      values = wrap(values.join(valueHasInfo ? '\n - ' : ', '));
+      if (valueHasInfo) values = '\n - ' + values;
+      values = 'Possible values: ' + values;
       if (result) {
         result =
           result +
@@ -73,7 +94,7 @@ absolute paths are left as they are.\n\
       }
       return info;
     });
-    return INFO_START_TEXT + str + ';\n' + INFO_END_TEXT;
+    return INFO_START_TEXT + str + INFO_END_TEXT;
   }
 
   function ConfigDoc() {
@@ -81,14 +102,14 @@ absolute paths are left as they are.\n\
     ConfigDoc.super(this, [
       '',
       'config.json',
-      'javascript',
+      'ace/mode/json5',
       t[3],
       t[4],
       t[5],
     ]);
     if (!t[3] /*id*/) {
       //no editor yet
-      this.refresh(null, true);
+      this.refresh(null, false);
     }
   }
   Utils.inherits(ConfigDoc, Doc);
@@ -100,38 +121,48 @@ absolute paths are left as they are.\n\
         try {
           json = JSONExt.parse(this.getValue(), null, false);
         } catch (e) {
+          console.error(e);
           Notify.error('Syntax Error ' + e.message);
           return;
         }
-        Configs.withErrorHandler(Notify.error, function () {
-          this.dirty = !Configs.apply(json);
-        });
-        if (!this.dirty) {
+        if (
+          Configs.withErrorHandler(
+            Notify.error,
+            Configs.apply.bind(Configs, json),
+          )
+        )
           this.setClean();
-        }
-      }.bind(this)
+        else if (!this.dirty) this.setDirty();
+      }.bind(this),
     );
   };
-  ConfigDoc.prototype.refresh = function (callback, force, ignoreDirty) {
+  ConfigDoc.prototype.refresh = function (callback, ignoreDirty, confirm) {
     //ignore autorefresh
     // this.setDirty(true);
     // if (force !== false) {
     var doc = this;
     app.on('fullyLoaded', function () {
-      var val = JSONExt.stringify(Configs.toJSON());
+      var val = insertComments(
+        JSONExt.stringify(Context.toJSON(Configs.toJSON()), null, 2),
+      );
       getFormatter('json')(
         val,
         {
-          mode: 'json',
+          mode: 'json5',
           'end-expand': true,
           wrap_line_length: 20,
         },
         function (val) {
-          val = insertComments(val);
-          if (val != doc.getValue() && force == false) {
-            doc.setDirty();
-          } else Docs.refreshValue(doc, val, callback, true, ignoreDirty);
-        }
+          Docs.onRefresh(
+            doc,
+            undefined /*error*/,
+            val,
+            false, //callback,
+            ignoreDirty,
+            (confirm && doc.dirty && (doc.getLength() > 1 || doc.getSize())) ||
+              false /*confirm*/,
+          );
+        },
       );
     });
     //Notify caller that this is an async op
@@ -142,22 +173,15 @@ absolute paths are left as they are.\n\
   ConfigDoc.prototype.getSavePath = function () {
     return null;
   };
-  MainMenu.extendOption(
-    'load-settings',
-    {
-      subTree: {
-        'app-settings': {
-          icon: 'edit',
-          subIcon: 'settings',
-          caption: 'Edit Settings',
-          onclick: function () {
-            openDoc(null, new ConfigDoc());
-          },
-        },
-      },
+  Actions.addAction({
+    icon: 'edit',
+    subIcon: 'settings',
+    showIn: 'actionbar.settings',
+    caption: 'Edit settings',
+    handle: function () {
+      openDoc('config.json', new ConfigDoc());
     },
-    true
-  );
+  });
   ConfigDoc.prototype.factory = 'settings-doc';
   Docs.registerFactory('settings-doc', ConfigDoc);
   exports.ConfigDoc = ConfigDoc;

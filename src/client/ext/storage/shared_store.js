@@ -1,16 +1,17 @@
 define(function (require, exports, module) {
-  "use strict";
-  var noop = require("grace/core/utils").Utils.noop;
-  var debounce = require("grace/core/utils").Utils.debounce;
-  var genID = require("grace/core/utils").Utils.genID;
-  var TreeStack = require("./shared_store/tree_stack").TreeStack;
-  var SetFormat = require("./shared_store/set_format").SetFormat;
-  var LSTransport = require("./shared_store/local_storage_transport")
+  'use strict';
+  var noop = require('grace/core/utils').Utils.noop;
+  var debounce = require('grace/core/utils').Utils.debounce;
+  var genID = require('grace/core/utils').Utils.genID;
+  var TreeStack = require('./shared_store/tree_stack').TreeStack;
+  var SetFormat = require('./shared_store/set_format').SetFormat;
+  var LSTransport = require('./shared_store/local_storage_transport')
     .LSTransport;
-  var MAX_PROPAGATION_TIME = 5;
+  var MAX_PROPAGATION_TIME = 10;
   /**
    * Implements a store in which each client is aware of all
    * changes to the store using deterministic ordered transforms.
+   * @constructor
    **/
   function SharedStore(key, format) {
     this._key = key;
@@ -20,7 +21,7 @@ define(function (require, exports, module) {
     this.transport = new LSTransport(this, key);
     this.stack.onModify = debounce(
       this.stack.truncate.bind(this.stack),
-      MAX_PROPAGATION_TIME
+      MAX_PROPAGATION_TIME,
     );
     if (format) this._format = format;
     //The separate storeValue means clients don't have to
@@ -44,7 +45,7 @@ define(function (require, exports, module) {
   SharedStore.prototype.get = function () {
     if (!this._hasRead) {
       this.stack.reset(
-        this.transport.getInitialValue() || this.createNode(this._format.NULL)
+        this.transport.getInitialValue() || this.createNode(this._format.NULL),
       );
       this.syncStore(false);
       this._hasRead = true;
@@ -108,12 +109,12 @@ define(function (require, exports, module) {
         this._createMerge(node);
       }
     } else if (node.version > head) {
-      console.debug(this.id, " force syncing to " + node.version);
+      console.debug(this.id, ' force syncing to ' + node.version);
       this.stack.reset(node);
       this.syncStore(false, false);
     } else {
       if (!node.isMerge)
-        console.warn(this.id, " discarded stale data:(" + node.version+")");
+        console.warn(this.id, ' discarded stale data:(' + node.version + ')');
     }
   };
   SharedStore.prototype._electMerge = function (index) {
@@ -236,13 +237,13 @@ define(function (require, exports, module) {
       nextLoser = attachPoint.loserNode;
       //TODO this._isSameMerge(loser, nextLoser);
       attachPoint.loserNode = null;
-      nextLoser.rebaseNode.version = "0.2"; //force after loser's rebaseNode
+      nextLoser.rebaseNode.version = '0.2'; //force after loser's rebaseNode
     }
     loser.originalPatches = loser.patches;
     loser.reverserNode = this.createNode();
-    loser.reverserNode.version = "0.0." + loser.version;
+    loser.reverserNode.version = '0.0.' + loser.version;
     loser.rebaseNode = this.createNode();
-    loser.base = loser.rebaseNode.version = "0.1." + loser.version;
+    loser.base = loser.rebaseNode.version = '0.1.' + loser.version;
 
     this._mergeRebase(loser, attachPoint);
 
@@ -303,20 +304,20 @@ define(function (require, exports, module) {
 
     var result = this.stack.walk(
       rootIndex,
-      function onEnter(ctx, i, parent) {
+      function onEnter(ctx, i, parentCtx) {
         var node = ctx.node;
-        var inBadMerge = parent
-          ? (node.isMerge && node.base === conflictBase) || parent.inBadMerge
+        var inBadMerge = parentCtx
+          ? (node.isMerge && node.base === conflictBase) || parentCtx.inBadMerge
           : false;
-        ctx.inherited = parent
+        ctx.inBadMerge = inBadMerge;
+        ctx.parentBefore = parentCtx
           ? !inBadMerge && node.isMerge
-            ? parent.inherited
-            : parent.before
+            ? parentCtx.parentBefore
+            : parentCtx.before
           : [];
         //Changes by previous nodes this change was not aware of
-        ctx.before = ctx.inherited.slice(0);
-        ctx.inBadMerge = inBadMerge;
-        if (!parent || inBadMerge) return;
+        ctx.before = ctx.parentBefore.slice(0);
+        if (!parentCtx || inBadMerge) return;
 
         var patches = node.patches;
         if (patches) {
@@ -329,20 +330,20 @@ define(function (require, exports, module) {
           if (patches)
             state = node.value = self.patch(
               node.isMerge ? ctx.parent.node.value : state,
-              patches
+              patches,
             );
           else node.value = state;
         } else state = node.value;
       },
-      function onExit(ctx, i, parent) {
-        parent.before = ctx.before;
-      }
+      function onExit(ctx, i, parentCtx) {
+        parentCtx.before = ctx.before;
+      },
     );
     var mergeNode = this.createNode(
       state,
       result.before,
       conflictBase,
-      nodeCount
+      nodeCount,
     );
     var index = this.stack.append(mergeNode);
     this.transport.submitNode(mergeNode);
@@ -353,7 +354,7 @@ define(function (require, exports, module) {
     value,
     patches,
     mergeBase,
-    patchCount
+    patchCount,
   ) {
     var node = {
       //Base we are working with
@@ -362,18 +363,18 @@ define(function (require, exports, module) {
       version:
         (mergeBase ? patchCount || 0 : 1) +
         (parseInt(mergeBase || this.stack.head) || 0) + //only used for force syncing
-        "." +
+        '.' +
         this.id +
-        "." +
+        '.' +
         this._counter++,
       //The changes between the base and version
       patches: patches || undefined,
       isMerge: !!mergeBase,
       //The final value
       value: value,
-      //A virtual node is not meant to be shared/counted
+      //A virtual node is not meant to be shared/counted e.g forwarders,rebaseNodes and reverserNodes.
       isVirtual: !value,
-      //A forwarder is a virtual node that points back at it's base
+      //A forwarder is a virtual node that merely points back at it's base
       isForwarder: false,
       loserNode: undefined,
       rebaseNode: undefined,
@@ -389,7 +390,15 @@ define(function (require, exports, module) {
   SharedStore.prototype.getPatches = function (oldValue, value) {
     return this._format.fuzzyDiff(oldValue, value);
   };
+  window['sstore'] = undefined;
   SharedStore.prototype.patch = function (from, changes) {
+    if (!from || !changes) {
+      //Loch Ness bug
+      window['sstore'] = this;
+      throw new Error(
+        'Invalid patch supplied for patch. Inspect window.sstore',
+      );
+    }
     return this._format.applyPatch(from, changes);
   };
   /**
@@ -410,7 +419,7 @@ define(function (require, exports, module) {
     var data = JSON.parse(str);
     return {
       base: data.b || TreeStack.ORIGIN,
-      version: data.v || "",
+      version: data.v || '',
       patches: data.p,
       isMerge: data.i,
       value: this._format.parse(data.c),

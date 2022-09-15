@@ -60,7 +60,8 @@ label {
 
 .app-theme-dark .ace_search {
   box-shadow: none;
-  border-bottom: 2px solid black;
+  border-bottom: 2px solid;
+  border-color: black;
 }
 
 .theme-dark .ace_prompt_container,
@@ -405,7 +406,25 @@ tr:hover,
 .theme-dark #opendocs .file-item:not(.activeTab)>.material-icons {
   color: #bbbbbb;
 }
+.theme-dark ::-webkit-input-placeholder {
+  color: #999999;
+}
 
+.theme-dark ::-moz-placeholder {
+  color: #999999;
+}
+
+.theme-dark :-ms-input-placeholder {
+  color: #999999;
+}
+
+.theme-dark ::-ms-input-placeholder {
+  color: #999999;
+}
+
+.theme-dark ::placeholder {
+  color: #999999;
+}
 /*theme-auto*/
 .app-theme-dark .border-inactive {
   border-color: #212121;
@@ -698,10 +717,13 @@ input[type='checkbox'].nav-focused+span,
 }
 
 /*region theme-auto - Modifications to use ace themes for application*/
-.theme-auto .color-inactive {
+.theme-auto .color-inactive,
+.theme-dark .tab>a:not(.active),
+.theme-dark .ace_button:not(.checked),
+.theme-dark #opendocs .file-item:not(.activeTab)>.material-icons {
   opacity: 0.6;
+  color: inherit;
 }
-
 .theme-auto :checked+.checkbox-filled-in:before {
   border-color: white;
 }
@@ -747,6 +769,9 @@ input[type='checkbox'].nav-focused+span,
 }
 
 /*region gruvbox*/
+.theme-ace-gruvbox{
+  color: #EBDAB4;
+}
 .theme-ace-gruvbox :checked+.checkbox-track:before,
 .theme-ace-gruvbox :checked+.checkbox-track:after,
 .theme-ace-gruvbox :checked+.checkbox-filled-in:after {
@@ -754,8 +779,12 @@ input[type='checkbox'].nav-focused+span,
   border-color: #8FBF7F;
 }
 
-.theme-ace-gruvbox .btn {
+.theme-ace-gruvbox .btn:not(.btn-flat) {
   background: #8FBF7F;
+}
+
+.theme-ace-gruvbox .btn-flat {
+  color: #8FBF7F;
 }
 
 .theme-ace-gruvbox .buttonBar span[ace_selected_button="true"] {
@@ -780,6 +809,7 @@ input[type='checkbox'].nav-focused+span,
 .theme-ace-gob :checked+.checkbox-filled-in:after {
   background: #303030;
   border-color: #303030;
+  opacity: 1;
 }
 
 .theme-ace-gob :checked+.checkbox-track:before {
@@ -799,15 +829,7 @@ input[type='checkbox'].nav-focused+span,
   border-color: rgb(3, 238, 3);
 }
 
-.theme-ace-gob .color-inactive,
-.theme-ace-gob .color-inactive,
-.theme-ace-gob .tab>a,
-.theme-ace-gob .ace_button:not(.checked),
-.theme-ace-gob #opendocs .file-item:not(.activeTab)>.material-icons {
-  color: #999999;
-}
-
-.theme-ace-gob .btn {
+.theme-ace-gob .btn:not(.btn-flat) {
   background: #303030;
   color: rgb(3, 238, 3);
 }
@@ -870,6 +892,7 @@ input[type='checkbox'].nav-focused+span,
 .theme-ace-gob .mod-key-active,
 .theme-ace-gob .checked {
   color: rgb(3, 238, 3);
+  opacity: 1;
 }
 
 .theme-ace-gob #runButton>.material-icons {

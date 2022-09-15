@@ -1,17 +1,20 @@
 define(function (require, exports, module) {
-    var EditSession = ace.require('ace/edit_session').EditSession;
-    var AceDocument = ace.require('ace/document').Document;
+    /* globals ace */
+    var EditSession = require('ace!edit_session').EditSession;
+    var AceDocument = require('ace!document').Document;
+    var Range = require('ace!range').Range;
     var Utils = require('../core/utils').Utils;
     var RefCounted = require('../core/ref_counted').RefCounted;
     var FileUtils = require('../core/file_utils').FileUtils;
     var Notify = require('../ui/notify').Notify;
     //Uses methods that will be added in docs
+    /** @type {import('./docs').Docs} Docs*/
+    // @ts-ignore
     var Docs = require('./docs_base').Docs;
     var cyclicRequire = require;
     cyclicRequire('./docs');
     var debug = console;
-
-    //an extension to Ace Document
+    //an extension to Ace Document.
     function Doc(content, path, mode, id, orphan) {
         Doc.super(this, [content || '']);
         RefCounted.call(this);
@@ -23,7 +26,6 @@ define(function (require, exports, module) {
         if (id && Docs.has(id)) {
             throw new Error('Creating doc with existing id');
         }
-
         if (orphan) {
             this.orphan = orphan;
         } else Docs.$set(this.id, this);
@@ -32,14 +34,22 @@ define(function (require, exports, module) {
         //circular reference
         this.session = new EditSession(this, mode);
         this.session.setOptions(Docs.$defaults);
+        //TODO stop sessions from starting workers until they are visible
         this.options = {};
+        if (mode) this.options.mode = mode;
         //needs saving
         this.dirty = false;
         //needs caching
-        this.safe = false;
+        if (orphan) return;
+        this.$safe = false;
+        // @ts-ignore
+        this.onChange = this.onChange.bind(this);
+        // @ts-ignore
+        this.syncMode = this.syncMode.bind(this);
+        this.on('change', this.onChange);
+        this.session.on('changeMode', this.syncMode);
     }
     Utils.inherits(Doc, AceDocument, RefCounted);
-
     //a unique path for all opened documents
     //uses duplicateId for duplicates
     //there is usually no reason to change this
@@ -49,9 +59,10 @@ define(function (require, exports, module) {
             ? this.path + '~~' + this.duplicateId
             : this.path;
     };
+
     Doc.prototype.setPath = function (path) {
         if (!path) {
-            path = 'temp:///' + this.id.substring(0);
+            path = 'temp:/' + this.id;
         }
         path = FileUtils.normalize(path);
         if (path == this.path) return;
@@ -64,7 +75,8 @@ define(function (require, exports, module) {
             var a;
             while ((a = Docs.forPath(path + '~~' + this.duplicateId))) {
                 this.duplicateId++;
-                if (a == this) throw new Error('Infinite Looping caught!!');
+                // @ts-ignore - Overlapping types
+                if (a === this) throw new Error('Infinite Looping caught!!');
             }
         }
         if (this.path) {
@@ -73,7 +85,6 @@ define(function (require, exports, module) {
         } else this.path = path;
         if (this.isTemp()) this.setDirty();
     };
-
     //the actual path that is used to save files
     //override save/refresh if you override this
     Doc.prototype.getSavePath = function () {
@@ -87,8 +98,8 @@ define(function (require, exports, module) {
     };
     Doc.prototype.setEncoding = function (encoding) {
         this.encoding = encoding;
-        this.safe = false;
-        Docs.$sessionSave();
+        this.$safe = false;
+        Docs.$persistDoc();
     };
     Doc.prototype.getFileServer = function () {
         return FileUtils.getFileServer(this.fileServer, true);
@@ -116,7 +127,7 @@ define(function (require, exports, module) {
             doc.getEncoding(),
             function (err, res) {
                 Docs.onRefresh(doc, err, res, callback, ignoreDirty, confirm);
-            }
+            },
         );
         //todo stat file first
         return true;
@@ -131,14 +142,14 @@ define(function (require, exports, module) {
 
     //State management
     function filterHistory(deltas) {
-        return deltas.filter(function (d) {
+        var m = deltas.filter(function (d) {
             return d.action != 'removeFolds';
         });
+        return m.length < deltas.length ? m : deltas;
     }
     Doc.prototype.saveState = function () {
         var session = this.session;
         var undoManager = session.getUndoManager();
-
         return {
             content: session.getValue(),
             selection: session.getSelection().toJSON(),
@@ -179,8 +190,9 @@ define(function (require, exports, module) {
                 }),
         };
     };
-    Doc.prototype.createUndoManager = function (state) {
+    Doc.prototype.createHistory = function (state) {
         var manager = new ace.UndoManager();
+        if (!state || !state.history) return manager;
         manager.$undoStack = state.history.undo || [];
         manager.$redoStack = state.history.redo || [];
         manager.$maxRev = state.history.m;
@@ -203,39 +215,37 @@ define(function (require, exports, module) {
             state.folds.forEach(function (fold) {
                 session.addFold(
                     fold.placeholder,
-                    Range.fromPoints(fold.start, fold.end)
+                    Range.fromPoints(fold.start, fold.end),
                 );
             });
         } catch (e) {
             debug.error('Fold exception: ' + e);
         }
     };
-    Doc.prototype.setUndoManager = function (undoManager, session) {
+    Doc.prototype.setHistory = function (undoManager, session) {
         if (!session) {
-            this.setUndoManager(undoManager, this.session);
+            this.setHistory(undoManager, this.session);
             if (this.clones)
-                this.clones.forEach(
-                    this.setUndoManager.bind(this, undoManager)
-                );
+                this.clones.forEach(this.setHistory.bind(this, undoManager));
         } else session.setUndoManager(undoManager);
     };
     Doc.prototype.restoreState = function (state, session) {
-        if (state.content === null) return;
+        if (state.checksum) return; //needs a content loader
         this.session.setValue(state.content);
         this.restoreView(state, session);
         if (state.history) {
-            this.setUndoManager(this.createUndoManager(state), session);
+            this.setHistory(this.createHistory(state), session);
         }
     };
     Doc.prototype.serialize = function () {
         var obj = this.saveState();
-        obj.lastSave = this.lastSave;
-        obj._LSC = this._LSC;
+        obj.saveRev = this.saveRev;
+        obj._LSC = this._LSC; //last saved checksum
         obj.dirty = this.dirty;
         obj.options = this.options;
         obj.fileServer = this.fileServer;
         obj.encoding = this.encoding;
-        obj.allowAutoSave = this.allowAutoSave;
+        obj.allowAutosave = this.allowAutosave;
         obj.editorOptions = this.editorOptions;
         obj.factory = this.factory; //prototype value
         return obj;
@@ -245,17 +255,17 @@ define(function (require, exports, module) {
         this.$fromSerial = true;
         this.restoreState(obj);
         this.$fromSerial = false;
-        this.lastSave = obj.lastSave;
+        this.saveRev = obj.saveRev;
         this._LSC = obj._LSC;
         this.dirty = obj.dirty;
         this.options = obj.options || {};
         this.session.setOptions(this.options);
         this.fileServer = obj.fileServer;
         this.encoding = obj.encoding;
-        this.allowAutoSave = obj.allowAutoSave;
+        this.allowAutosave = obj.allowAutosave;
         this.editorOptions = obj.editorOptions;
     };
-
+    Doc.prototype.factory = undefined;
     Doc.prototype.setValue = function (e, isClean) {
         var u = this.session.$undoManager;
         var hadValue =
@@ -270,28 +280,35 @@ define(function (require, exports, module) {
         if (u && !hadValue) this.session.$undoManager.reset();
         if (isClean && !this.isTemp()) this.setClean(null, e);
     };
-    Doc.prototype.updateValue = function (res, isClean) {
+    Doc.prototype.updateValue = function (res, isClean, minRowGap) {
         this.$detectNewLine(res);
         var a = Docs.generateDiff(this.getValue(), res);
-        var t = this;
-        for (var i in a) {
-            t.applyDelta(a[i]);
+        if (minRowGap === undefined) minRowGap = 5;
+        var lastRow = Infinity;
+        for (var i = 0; i < a.length; i++) {
+            var d = a[i];
+            if (d.start.row > lastRow) {
+                this.getRevision();
+            }
+            this.applyDelta(d);
+            lastRow = minRowGap + (d.action === 'delete' ? d.start.row : d.end.row);
         }
         if (this.getSize() !== res.length) {
             if (this.getNewLineCharacter() !== this.$autoNewLine) {
                 Notify.warn(
                     'Attempted to change newline character in ' +
                         Docs.getName(this.id) +
-                        '.'
+                        '.',
                 );
             } else if (
-                /\r(?:[^\n]|$)/.test(res) +
-                    /\r\n/.test(res) +
-                    /(?:^|[^\r])\n/.test(res) >
+                +/\r(?:[^\n]|$)/.test(res) +
+                    +/\r\n/.test(res) +
+                    +/(?:^|[^\r])\n/.test(res) >
                 1
             ) {
                 Notify.warn(
-                    Docs.getName(this.id) + ' had multiple new line characters.'
+                    Docs.getName(this.id) +
+                        ' had multiple new line characters.',
                 );
             } else {
                 debug.error('Generate diff failed length check');
@@ -317,7 +334,7 @@ define(function (require, exports, module) {
     };
     Doc.prototype.abortChanges = function (fromRevision) {
         if (fromRevision && typeof fromRevision === 'boolean')
-            fromRevision = this.lastSave;
+            fromRevision = this.saveRev;
         else if (!fromRevision) fromRevision = 0;
         var manager = this.session.getUndoManager();
         while (manager.canUndo() && manager.getRevision() > fromRevision) {
@@ -329,6 +346,7 @@ define(function (require, exports, module) {
         return this.session.getUndoManager().getDeltas(start || 0);
     };
     Doc.prototype.getRevision = function () {
+        Docs.$checkInit(this);
         return this.session.getUndoManager().startNewGroup();
     };
     Doc.prototype.redoChanges = function () {
@@ -353,27 +371,29 @@ define(function (require, exports, module) {
         var n = doc.session.getUndoManager().$undoStack;
         if (!n) return;
         n = n.length > 0 ? Number(n[n.length - 1][0].id) : 0;
-        if (doc.lastSave === n) {
+        if (doc.saveRev === n) {
             if (doc.dirty) {
                 doc.dirty = false;
                 Docs.$updateStatus(doc.id);
             }
         }
     }, 0);
+    //@ts-ignore - Will be bound in constructor
     Doc.prototype.onChange = function () {
         var self = this;
         if (self.$fromSerial) return;
         if (self.session.getUndoManager().$fromUndo) checkRevision(self);
         if (!self.dirty) self.setDirty(true);
         Docs.$autoSave();
-        self.safe = false;
-        Docs.$sessionSave();
+        self.$safe = false;
+        Docs.$persistDoc();
     };
     Doc.prototype.toggleAutosave = function (on) {
         this.allowAutosave = on;
-        this.safe = false;
-        Docs.$sessionSave();
+        this.$safe = false;
+        Docs.$persistDoc();
     };
+    //@ts-ignore - Will be bound in constructor
     Doc.prototype.syncMode = function () {
         var mode = this.session.getMode().$id;
         if (mode != this.options.mode) {
@@ -381,15 +401,16 @@ define(function (require, exports, module) {
         }
     };
     Doc.prototype.setOption = function (name, value) {
-        var data = Docs.$defaults.hasOwnProperty(name)
-            ? this.options
-            : this.editorOptions || (this.editorOptions = {});
-        if (value != data[name]) {
-            if (value === undefined) delete data[name];
-            else data[name] = value;
-            this.safe = false;
-            Docs.$sessionSave();
-            if (data === this.options) {
+        var opts =
+            name == 'mode' || Docs.$defaults.hasOwnProperty(name)
+                ? this.options
+                : this.editorOptions || (this.editorOptions = {});
+        if (value != opts[name]) {
+            if (value === undefined) delete opts[name];
+            else opts[name] = value;
+            this.$safe = false;
+            Docs.$persistDoc();
+            if (opts === this.options) {
                 this.session.setOption(name, value);
                 this.clones &&
                     this.clones.forEach(function (e) {
@@ -399,22 +420,17 @@ define(function (require, exports, module) {
         }
     };
     Doc.prototype.setDirty = function (fromChange) {
-        if (!fromChange) {
-            this.lastSave = null;
-        }
+        if (!fromChange) this.saveRev = null;
         this.dirty = true;
         Docs.$updateStatus(this.id);
     };
     Doc.prototype.setClean = function (rev, res) {
-        var doc = this;
-        doc.lastSave = rev || doc.getRevision();
-        //last save checksum, for now we use length
-        doc._LSC = doc.getChecksum(res);
-        doc.dirty = false;
-        //todo put this data elsewhere
-        //like in a smaller header
-        doc.safe = false;
-        Docs.$sessionSave();
+        if (rev === undefined) rev = null;
+        this.saveRev = rev === null ? this.getRevision() : rev;
+        this._LSC = this.getChecksum(res);
+        this.dirty = rev !== null && rev !== this.getRevision();
+        this.$safe = false;
+        Docs.$persistDoc();
         Docs.$updateStatus(this.id);
     };
 
@@ -424,24 +440,26 @@ define(function (require, exports, module) {
             this.getSavePath(),
             this.options.mode,
             undefined,
-            orphan
+            orphan,
         );
         var data = this.serialize();
         //Ace editor sometimes modifies undos
-        data.history = JSON.parse(JSON.stringify(data.history));
+        // data.history = JSON.parse(JSON.stringify(data.history));
         fork.unserialize(data);
         return fork;
     };
-    Doc.prototype.cloneSession = function () {
+    Doc.prototype.cloneSession = function (exclusive) {
+        //Duplicate this here for plugins using Docs that are not opened in tabs
+        Docs.$checkInit(this);
         var session = this.session;
         var s = new EditSession(this, session.getMode());
         s.setOptions(Docs.$defaults);
         s.setOptions(this.options);
         s.setWrapLimitRange(
             session.$wrapLimitRange.min,
-            session.$wrapLimitRange.max
+            session.$wrapLimitRange.max,
         );
-        s.setUndoManager(session.getUndoManager());
+        s.setUndoManager(session.$undoManager);
         s.setUseWorker(session.getUseWorker());
         // Copy over 'settings' from the session.
         // s.setTabSize(session.getTabSize());
@@ -451,29 +469,41 @@ define(function (require, exports, module) {
         // s.setUseWrapMode(session.getUseWrapMode());
 
         s.$foldData = session.$cloneFoldData();
+        s.$isMain = !exclusive;
         (this.clones || (this.clones = [])).push(s);
         return s;
     };
     Doc.prototype.closeSession = function (session) {
         if (session == this.session) {
-            if (this.clones && this.clones.length > 0) {
-                var temp = this.clones[0];
-                this.clones[0] = session;
-                this.session = temp;
+            if (this.clones) {
+                for (var i = 0; i < this.clones.length; i++)
+                    if (this.clones[i].$isMain) {
+                        this.session = this.clones[i];
+                        this.clones[i] = session;
+                        session.off('changeMode', this.syncMode);
+                        this.session.on('changeMode', this.syncMode);
+                        break;
+                    }
+                if (session === this.session) return false;
             }
             //don't close session while there are refs
             else return false;
         }
-
-        if (!this.clones || Utils.removeFrom(this.clones, session) < 0)
-            throw 'Asked to close session doc does not own!!';
+        if (!this.clones || Utils.removeFrom(this.clones, session) < 0) {
+            if (session.getDocument() !== this)
+                //Already closed
+                throw new Error('Asked to close session doc does not own!!');
+            else return true;
+        }
         session.destroy();
         return true;
     };
 
     Doc.prototype.destroy = function () {
         if (this.clones && this.clones.length > 1) {
-            console.warn('Destroying document that is still in use.');
+            debug.warn(
+                'Destroying document that is still in use. Acquire ref while using a document.',
+            );
         }
         Docs.$clearDocData(this.id);
         this.session.destroy();

@@ -1,52 +1,51 @@
 define(function (require, exports, module) {
   'use strict';
-  require('./libs/open_rpc_lsp');
-  var ServerHost = require('grace/ext/language/server_host').ServerHost;
-  var openRpc = window.lspDeps.OpenRPC;
+  var vsLspProtocol = require('./libs/open_rpc_lsp').VSCodeLSP;
+  var Notify = require('grace/ui/notify').Notify;
+  var Utils = require('grace/core/utils').Utils;
+  var openRpc = require('./libs/open_rpc_lsp').OpenRPC;
   var RequestManager = openRpc.RequestManager;
   var Client = openRpc.Client;
   var WebSocketTransport = openRpc.WebSocketTransport;
-  var vsLsp = window.lspDeps.VSCodeLSP;
-  var Notify = require('grace/ui/notify').Notify;
-  var Utils = require('grace/core/utils').Utils;
 
   // https://microsoft.github.io/language-server-protocol/specifications/specification-current/
+  /**
+   * @constructor
+   */
   function LspTransport(provider) {
     this.provider = provider;
     this.createConnection();
   }
-
-  LspTransport.prototype.reset = function () {
-    this.initialized = false;
-    this.initializing = false;
-  };
-  LspTransport.prototype.checkConnection = function () {
-    if (this.transport.connection.readyState !== WebSocket.OPEN) {
-      Notify.warn('Failed connection to ' + this.provider.address);
-    }
-  };
+  LspTransport.prototype._debug = true;
   LspTransport.prototype.createConnection = function () {
-    this.transport = new WebSocketTransport(this.provider.address);
-    this.client = new Client(new RequestManager([this.transport]));
-    this.$processNotification = this.processNotification.bind(this);
-    this.client.onNotification(this.$processNotification);
-    this.transport.connection.addEventListener(
-      'message',
-      function (message) {
-        const data = JSON.parse(message.data);
-        if (data.method && data.id) this.processRequest(data);
-      }.bind(this)
-    );
-
-    this.checkConnection = this.checkConnection.bind(this);
-    this.transport.connection.addEventListener('close', this.checkCcnnection);
     this.initializing = true; //wait for hasInitialized
     this.initialized = false;
-    setTimeout(this.checkConnection, 10000);
+    this.socket = new WebSocketTransport(this.provider.address);
+    this.client = new Client(new RequestManager([this.socket]));
+    this.$processNotification = this.processNotification.bind(this);
+    this.client.onNotification(this.$processNotification);
+    var checkConnection = Utils.delay(this.checkConnection.bind(this), 10000);
+    this.socket.connection.addEventListener(
+      'message',
+      function (message) {
+        //OpenRpc does not understand requests
+        const data = JSON.parse(message.data);
+        if (data.method && data.id) this.processRequest(data);
+      }.bind(this),
+    );
+
+    this.socket.connection.addEventListener('close', checkConnection.now);
+    checkConnection();
   };
-  LspTransport.prototype.destroy = function () {
-    this.transport.close();
-    this.provider = null;
+  LspTransport.prototype.checkConnection = function (err) {
+    if (this.socket.connection.readyState !== WebSocket.OPEN) {
+      if (this.initializing) {
+        this.initializing = false;
+        this.handleInit(new Error('Failed connection.'), null);
+      }
+      if (!this.provider) this.socket.close();
+      //TODO Retry connection
+    }
   };
   LspTransport.prototype.initialize = function (cb) {
     if (this.initialized) return cb();
@@ -65,7 +64,7 @@ define(function (require, exports, module) {
               willSave: false,
               didSave: false,
               willSaveWaitUntil: false,
-              change: vsLsp.TextDocumentSyncKind.Incremental, //can no longer find this in the protocol spec
+              change: vsLspProtocol.TextDocumentSyncKind.Incremental, //can no longer find this in the protocol spec
             },
 
             completion: {
@@ -147,7 +146,7 @@ define(function (require, exports, module) {
         workspaceFolders: [project],
       },
       90000,
-      this.handleInit.bind(this)
+      this.handleInit.bind(this),
     );
   };
   LspTransport.prototype.handleInit = function (err, res) {
@@ -156,67 +155,56 @@ define(function (require, exports, module) {
     this.initializing = false;
     this.initialized = !err;
     if (!this.provider) return; //has been destroyed
+    var has;
     if (err) {
-      console.error(err);
+      has = {failed: true};
       Notify.error('Failed to initialize Language Server');
     } else {
-      var has = (this.capabilities = res.capabilities);
+      has = res.capabilities;
       this.notify('initialized', {});
-      //send it either way
+      //send this regardless of source of capabilities
       this.notify('lspServer/didInitialize', res);
-      var prov = this.provider;
-      if (has.completionProvider) {
-        if (has.completionProvider.triggerCharacters) {
-          prov.triggerRegex = new RegExp(
-            '[' +
-              has.completionProvider.triggerCharacters
-                .map(Utils.regEscape)
-                .join('') +
-              ']$'
-          );
-        }
-      } else prov.hasCompletions = false;
-      if (!has.definitionProvider) prov.hasDefinition = false;
-      if (!has.referencesProvider) prov.hasReferences = false;
-      if (!has.signatureHelpProvider) prov.hasArgHints = false;
-      if (!has.documentFormattingProvider) prov.hasFormatting = false;
-      if (!has.documentRangeFormattingProvider) prov.hasRangeFormatting = false;
-      if (!has.renameProvider) prov.hasRename = false;
-      var syncKind =
-        has.textDocumentSync && typeof has.textDocumentSync === 'object'
-          ? has.textDocumentSync.changes
-          : has.textDocumentSync;
-      /**@see LspClient*/
-      if (syncKind !== vsLsp.TextDocumentSyncKind.Incremental)
-        prov.hasSynchronization = false;
-      ServerHost.toggleProvider(prov, prov.modes, true);
-      if (waiting)
-        waiting.forEach(function (e) {
-          e();
-        });
     }
+    this.capabilities = has;
+    var prov = this.provider;
+    /**@see LspClient*/
+    var syncKind =
+      has.textDocumentSync && typeof has.textDocumentSync === 'object'
+        ? has.textDocumentSync.changes
+        : has.textDocumentSync;
+    if (syncKind !== vsLspProtocol.TextDocumentSyncKind.Incremental)
+      prov.hasSynchronization = false;
+    prov.updateCapabilities(has);
+
+    if (waiting)
+      waiting.forEach(function (e) {
+        e();
+      });
   };
   LspTransport.prototype.request = function (method, params, timeout, cb) {
-    // cb = (function (cb) {
-    //   return function (err, res) {
-    //     console.log(method, ' got ', err ? 'error' : 'result', err || res);
-    //     cb.apply(this, arguments);
-    //   };
-    // })(cb);
+    if (this._debug) {
+      console.debug('Request ', method, params);
+      cb = (function (cb) {
+        return function (err, res) {
+          console.log(method, ' got ', err ? 'error' : 'result', err || res);
+          cb.apply(this, arguments);
+        };
+      })(cb);
+    }
     return this.client
       .request({method, params}, timeout)
       .then(cb.bind(this, null), cb.bind(this));
   };
 
   LspTransport.prototype.notify = function (method, params, cb) {
-    var conn = this.transport.connection;
+    var conn = this.socket.connection;
     this.client.requestManager.connectPromise.then(function () {
       conn.send(
         JSON.stringify({
           jsonrpc: '2.0',
           method: method,
           params: params,
-        })
+        }),
       );
       if (cb) {
         //The notify promise does not resolve on all browsers
@@ -235,12 +223,12 @@ define(function (require, exports, module) {
     });
   };
   LspTransport.prototype.processRequest = function (request) {
-    this.transport.connection.send(
+    this.socket.connection.send(
       JSON.stringify({
         jsonrpc: '2.0',
         id: request.id,
         result: null,
-      })
+      }),
     );
   };
 
@@ -252,7 +240,7 @@ define(function (require, exports, module) {
           if (instance)
             instance.onAnnotations(
               notification.params.uri,
-              notification.params.diagnostics
+              notification.params.diagnostics,
             );
           break;
         case 'lspServer/hasInitialized':
@@ -268,15 +256,27 @@ define(function (require, exports, module) {
         case 'window/logMessage':
           var d = notification.params;
           console[d.type === 1 ? 'error' : d.type === 2 ? 'warning' : 'debug'](
-            '>>>' + d.message
+            '>>>' + d.message,
           );
           break;
         default:
           console.log('Unhandled notification', notification);
       }
     } catch (error) {
-      console.log(error);
+      console.error(error);
       // console.error(new Error(error));
+    }
+  };
+  LspTransport.prototype.destroy = function () {
+    this.socket.close();
+    this.initialized = true;
+    if (this.waiting) {
+      var waiting = this.waiting;
+      this.waiting = null;
+      if (waiting)
+        waiting.forEach(function (e) {
+          e();
+        });
     }
   };
   exports.LspTransport = LspTransport;

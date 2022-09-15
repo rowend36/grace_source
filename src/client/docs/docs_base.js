@@ -28,6 +28,7 @@ define(function (require, exports, module) {
   Docs.$set = function (id, doc) {
     docs[id] = doc;
   };
+  Docs.$defaults = {};
   Docs.$delete = function (id) {
     delete docs[id];
   };
@@ -42,7 +43,7 @@ define(function (require, exports, module) {
   };
   Docs.forEach = function (cb, ctx) {
     for (var i in docs) {
-      cb.call(ctx, docs[i]);
+      cb.call(ctx, docs[i], i);
     }
   };
   Docs.numDocs = function () {

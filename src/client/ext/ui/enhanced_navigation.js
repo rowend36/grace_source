@@ -3,7 +3,7 @@ define(function (require, exports, module) {
     var nav = require('grace/ui/navigation').Navigation;
     var tabbable = require('./libs/tabbable').tabbable;
     var FocusManager = require('grace/ui/focus_manager').FocusManager;
-    var keys = ace.require('ace/lib/keys');
+    var keys = require('ace!lib/keys');
     var KeyListener = require('grace/ui/key_listener').KeyListener;
     var Utils = require('grace/core/utils').Utils;
     var uiConfig = require('grace/core/config').Config.registerAll(null, 'ui');
@@ -46,15 +46,9 @@ define(function (require, exports, module) {
             (key == keys.esc || /*direction keys 40-37*/ (key < 41 && key > 36))
         ) {
             //(key == direction + 1 || key == direction - 1)) {
-            var hash = keys.keyCodeToString(key);
             e.target.blur();
-            nav.$onKey(
-                {
-                    event: e,
-                    value: hash,
-                },
-                true
-            );
+            KeyListener.dispatchEvent(nav, event);
+
             FocusManager.focusIfKeyboard(nav.$receiver, true);
         } else if (key == keys.enter || key == keys.space) {
             e.stopPropagation();

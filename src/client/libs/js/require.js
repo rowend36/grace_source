@@ -1452,7 +1452,7 @@ var requirejs, require, define;
                         intakeDefines();
 
                         requireMod = getModule(makeModuleMap(null, relMap));
-
+            
                         //Store if map config should be applied to this require
                         //call for dependencies.
                         requireMod.skipMap = options.skipMap;

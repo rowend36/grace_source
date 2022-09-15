@@ -55,7 +55,7 @@ define(function (require, exports, module) {
         '.woff2',
       ],
     },
-    'files'
+    'files',
   );
   Config.registerInfo(
     {
@@ -67,7 +67,7 @@ define(function (require, exports, module) {
       binaryFilesExts:
         'The extensions in binaryFileExts are disabled for editting.',
     },
-    'files'
+    'files',
   );
   var codeFileExts = appConfig.codeFileExts;
   var binaryFileExts = appConfig.binaryFileExts;
@@ -140,22 +140,6 @@ define(function (require, exports, module) {
       configureObj('bookmarks', bookmarks.slice(0), 'files', true);
     },
     sort: sort,
-    /*
-      Accepts up to four arguments that will be passed to
-      channel owner
-      For filebrowsers,these are
-      @param types - [header,file,folder,project]
-      @param id - the id of the option
-      @param data {(string | {
-        extension?:string,
-        filename?:string,
-        onclick?:function
-      })}
-      @param func?: callback to be called when clicked
-    */
-    registerOption: function (types, id, data, func) {
-      FileUtils.postChannel('fileviews', types, id, data, func);
-    },
     isBinaryFile: function (name) {
       var match = 0;
       while ((match = name.indexOf('.', match) + 1) > 0) {
@@ -198,46 +182,43 @@ define(function (require, exports, module) {
         server,
         function (error, doc) {
           if (error) {
-            var et = '';
+            var et;
             if (callback) return callback(error);
             else if (error == 'binary') et = 'Binary file';
+            else et = error.message;
             return Notify.error(et);
           }
           openDoc(null, doc, null, {autoClose: true});
           doc.setClean();
           callback && callback(null, doc);
         },
-        factory
+        factory,
       );
     },
     getDocFromEvent: function (ev, callback, forceNew, justText) {
       var Docs = cyclicRequire('../docs/docs').Docs;
       var doc;
-      if (
-        !forceNew &&
-        (doc = Docs.forPath(ev.filepath, ev.browser.fileServer))
-      ) {
+      if (!forceNew && (doc = Docs.forPath(ev.filepath, ev.fs))) {
         Utils.setImmediate(function () {
-          callback(justText ? doc.getValue() : doc);
+          callback(null, justText ? doc.getValue() : doc);
         });
       } else {
         FileUtils[justText ? 'readFile' : 'getDoc'](
           ev.filepath,
-          ev.browser.fileServer,
-          callback
+          ev.fs,
+          callback,
         );
       }
     },
   };
-  exports.FileUtils = FileUtils;
 
   /*Add legacy APIs*/
-  Object.assign(
+  exports.FileUtils = Object.assign(
     FileUtils,
     path,
     require('./project_manager').ProjectManager,
     require('./file_servers').FileServers,
     require('./register_fs_extension'),
-    require('./channels').Channels
+    require('./channels').Channels,
   );
 }); /*_EndDefine*/

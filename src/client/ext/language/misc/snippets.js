@@ -1,6 +1,7 @@
 define(function (require, exports, module) {
   "use strict";
-  var Snippets = ace.require("ace/snippets").snippetManager;
+  require('./basic_completion');
+  var Snippets = require("ace!snippets").snippetManager;
   var Utils = require("grace/core/utils").Utils;
   var FileUtils = require("grace/core/file_utils").FileUtils;
   var Notify = require("grace/ui/notify").Notify;
@@ -11,13 +12,13 @@ define(function (require, exports, module) {
     {
       loadSnippetFiles: "grace.snippets",
     },
-    "autocompletion"
+    "intellisense"
   );
   Config.registerInfo({
     loadSnippetFiles:
       "Load tmsnippet files. Example files are on ace github repository. Specify snippets as filepath followed by optional list of scopes. path[:scope[,scope]] eg main.snippets:javascript,typescript",
   });
-  Config.on("autocompletion", function (e) {
+  Config.on("intellisense", function (e) {
     if (e.config === "loadSnippetFiles") {
       loadSnippets();
     }

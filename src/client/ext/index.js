@@ -3,66 +3,103 @@ define(function (require, exports, module) {
     //Such that bundling is also very easy
     'use strict';
     var appEvents = require('../core/app_events').AppEvents;
-    var b = performance.now();
-    appEvents.on('documentsLoaded', function () {
-        require([
-            './editor/setup_character_bar',
-            './fs/httpfs',
-            //saving checkpoints
-            './docs/setup_doc_exts',
-            //editting preferences
-            './config/key_binding',
-            './config/linter_options',
-            './config/editor_contexts',
-            './format/format',
-            './format/fmt_js_beautify',
-            './format/fmt_prettier',
-            //file colors
-            'css!grace/libs/css/materialize-colors',
-            './file_utils/glob',
+    var waterfall = require('../core/utils').Utils.waterfall;
+    var core = 0;
+    var b;
+    /*globals requirejs*/
+    waterfall([
+        function (start) {
+            appEvents.on('documentsLoaded', start);
+        },
+        function (n) {
+            core = Object.keys(requirejs.s.contexts._.defined).length;
+            b = performance.now();
+            require([
+                //Modules which extend core modules with methods only extensions use.
+                './parse_schema',
+                './file_utils/glob',
+                './config/editor_contexts',
+                './config/action_context',
+            ], n);
+        },
+        function (n) {
+            require([
+                //Delayed setup
+                '../setup/setup_menu_items',
+                '../setup/setup_sideview',
+                '../setup/setup_statusbar',
+                //character bar
+                './editor/setup_character_bar',
+                './editor/enhanced_clipboard',
+                //emmet
+                './editor/setup_emmet',
+                //saving checkpoints
+                './docs/setup_doc_exts',
+                //user preferences
+                './config/key_binding',
+                './config/linter_options',
+                //formatting
+                './format/format',
+                './format/fmt_js_beautify',
+                './format/fmt_prettier',
+                //file icon colors
+                'css!grace/libs/css/materialize-colors',
 
-            //Extensions
-            //runManager
-            './run/run_button',
-            './run/node',
-            './run/svg',
-            './run/markdown',
+                //run
+                './run/run_button',
+                './run/node',
+                './run/svg',
+                './run/markdown',
 
-            './editor/enhanced_clipboard',
+                './editor/enhanced_clipboard',
 
-            //autocompletion
-            './language/setup_services',
-            './language/misc/filename',
-            './language/misc/colors',
+                //intellisense
+                './language/setup_services',
+                './language/misc/filename',
+                './language/misc/colors',
 
-            //FileBrowsers
-            './fileview/setup_fileview',
+                //Fileviews
+                './fileview/setup_fileview',
 
-            './ui/swipe_n_drag',
+                './ui/swipe_n_drag',
 
-            //Split Editors
-            './ui/split_editors',
+                //Split Editors
+                './ui/split_editors',
 
-            //Settings Menu
-            './config/settings_menu',
+                //Settings Menu
+                './config/settings_menu',
 
-            //git
-            './git/git',
+                //git
+                './git/git',
 
-            //show diff
-            './diff/diff',
+                //show diff
+                './diff/diff',
 
-            //tools fxmising
-            './fix_missing_colons',
+                //tools fxmising
+                './fix_missing_colons',
 
-            //Search
-            './search/search_tab',
-            './search/search_box',
-            './ui/import_theme',
-            './preview_file',
-        ], function () {
+                //Search
+                './search/search_tab',
+                './search/search_box',
+                './ui/import_theme',
+                './preview_file',
+
+                //Fileservers can come last since we provide !requireURL in registerFsExtension
+                './fs/httpfs',
+            ], n);
+        },
+        true,
+        function () {
+            var extensions =
+                Object.keys(requirejs.s.contexts._.defined).length - core;
+
             appEvents.triggerForever('fullyLoaded');
-            console.debug('Extensions: ' + (performance.now() - b));
-        });
-    });
+            console.debug(
+                'Extensions ( ' +
+                    extensions +
+                    ' modules): ' +
+                    (performance.now() - b),
+            );
+        },
+    ]);
 });

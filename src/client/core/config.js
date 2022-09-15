@@ -28,7 +28,7 @@ define(function (require, exports, module) {
       enumerable: false,
     });
 
-    //Create virtual property in parent namespace
+    //Create virtual property in parent ns
     var idx = name.lastIndexOf('.');
     if (idx > 0) {
       Object.defineProperty(
@@ -37,44 +37,44 @@ define(function (require, exports, module) {
         {
           value: namespace,
           enumerable: false,
-        }
+        },
       );
     }
     return (namespaces[name] = namespace);
   }
 
-  //register a namespace
-  function registerAll(configs, namespace) {
-    if (!namespace) namespace = DEFAULT_NS;
-    var config = createNamespace(namespace);
+  //register a ns
+  function registerAll(configs, ns) {
+    if (!ns) ns = DEFAULT_NS;
+    var config = createNamespace(ns);
 
     for (var i in configs) {
       if (Array.isArray(configs[i])) {
-        registerObj(i, namespace, configs[i]);
+        registerObj(i, ns, configs[i]);
       } else if (configs[i] && typeof configs[i] == 'object') {
-        registerAll(configs[i], namespace + '.' + i);
+        registerAll(configs[i], ns + '.' + i);
       } else {
-        register(i, namespace, configs[i]);
+        register(i, ns, configs[i]);
       }
     }
     return config;
   }
 
   //register an object value
-  function registerObj(name, namespace, defaultValue) {
-    if (!namespace) namespace = DEFAULT_NS;
-    var store = namespaces[namespace];
+  function registerObj(name, ns, defaultValue) {
+    if (!ns) ns = DEFAULT_NS;
+    var store = namespaces[ns];
     return (store[name] = store.__memory[name] = getObj(
-      namespace + '.' + name,
-      defaultValue
+      ns + '.' + name,
+      defaultValue,
     ));
   }
 
   //register a plain value
-  function register(name, namespace, defaultValue) {
-    if (!namespace) namespace = DEFAULT_NS;
-    var store = namespaces[namespace];
-    var s = backend.getItem(namespaces + '.' + name);
+  function register(name, ns, defaultValue) {
+    if (!ns) ns = DEFAULT_NS;
+    var store = namespaces[ns];
+    var s = backend.getItem(ns + '.' + name);
     if (s) {
       if (s == 'true') s = true;
       else if (s == 'false') s = false;
@@ -83,31 +83,33 @@ define(function (require, exports, module) {
       else if (!isNaN(s)) s = parseFloat(s);
       else if (s == ':EMPTY:') s = '';
       if (defaultValue === s) {
-        backend.removeItem(namespaces + '.' + name);
+        backend.removeItem(ns + '.' + name);
       } else defaultValue = s;
     } else if (arguments.length === 2) return;
     return (store[name] = store.__memory[name] = defaultValue);
   }
-  function unregister(name, namespace) {
-    if (!namespace) namespace = DEFAULT_NS;
-    // var store = namespaces[namespace];
+  function unregister(name, ns) {
+    if (!ns) ns = DEFAULT_NS;
+    // var store = namespaces[ns];
     // delete store[name];
     // delete store._memory[name];
-    backend.removeItem(namespace + '.' + name);
+    backend.removeItem(ns + '.' + name);
   }
-  function registerInfo(info, namespace) {
-    if (!namespace) namespace = DEFAULT_NS;
-    if (typeof namespace === 'string' && typeof info === 'string') {
-      configInfo[namespace] = info;
+  function registerInfo(info, ns) {
+    if (!ns) ns = DEFAULT_NS;
+    if (typeof ns === 'string' && typeof info === 'string') {
+      configInfo[ns] && typeof configInfo[ns] === 'object'
+        ? (configInfo[ns].doc = info)
+        : (configInfo[ns] = info);
     } else {
-      var prefix = namespace + '.';
-      if (!namespaces[namespace])
-        throw new Error('Unknown namespace ' + namespace);
+      var prefix = ns + '.';
+      if (!namespaces[ns]) console.warn('Unknown namespace ' + ns);
       for (var i in info) {
-        if (i == '!root') configInfo[namespace] = info[i];
-        else {
-          configInfo[prefix + i] = info[i];
-        }
+        var t;
+        if (i == '!root') t = ns;
+        else t = prefix + i;
+        if (typeof info[i] === 'string') registerInfo(info[i], t);
+        else configInfo[t] = info[i];
       }
     }
   }
@@ -115,56 +117,55 @@ define(function (require, exports, module) {
   function getConfigInfo(i) {
     return configInfo[i];
   }
-  function _configure(key, value, namespace, fireEvents) {
+  function _configure(key, value, ns, fireEvents) {
     var t = key.lastIndexOf('.');
     if (t > -1) {
       var prefix = key.slice(0, t);
       key = key.slice(t + 1);
-      namespace = namespace ? namespace + '.' + prefix : prefix;
+      ns = ns ? ns + '.' + prefix : prefix;
     }
-    var config = namespaces[namespace];
+    var config = namespaces[ns];
     var oldValue = config[key];
     config[key] = value;
     if (saveToStorage) config.__memory[key] = value;
-    if (fireEvents && sendEvent(key, value, namespace, oldValue)) {
+    if (fireEvents && sendEvent(key, value, ns, oldValue)) {
       return true;
     }
     return !fireEvents;
   }
 
-  function configure(key, value, namespace, fireEvents) {
-    if (key.indexOf('.') < 0 && !namespace) namespace = DEFAULT_NS;
-    var passed = _configure(key, value, namespace, fireEvents);
+  function configure(key, value, ns, fireEvents) {
+    if (key.indexOf('.') < 0 && !ns) ns = DEFAULT_NS;
+    var passed = _configure(key, value, ns, fireEvents);
     if (passed && saveToStorage) {
-      backend.setItem(
-        (namespace ? namespace + '.' : '') + key,
-        '' + value || ':EMPTY:'
-      );
+      if (value && typeof value == 'object')
+        console.warn('Invalid value for ' + ns + '.' + key);
+      backend.setItem((ns ? ns + '.' : '') + key, '' + value || ':EMPTY:');
     }
     return passed;
   }
 
-  function configureObj(key, obj, namespace, fireEvents) {
-    if (key.indexOf('.') < 0 && !namespace) namespace = DEFAULT_NS;
-    var passed = _configure(key, obj, namespace, fireEvents);
+  function configureObj(key, obj, ns, fireEvents) {
+    if (key.indexOf('.') < 0 && !ns) ns = DEFAULT_NS;
+    var passed = _configure(key, obj, ns, fireEvents);
     if (passed && saveToStorage) {
-      putObj((namespace ? namespace + '.' : '') + key, obj);
+      putObj((ns ? ns + '.' : '') + key, obj);
     }
     return passed;
   }
 
   //Returns updated value
   var _value = function () {
-    return namespaces[this.namespace][this.config];
+    return namespaces[this.ns][this.config];
   };
   var handlingError;
-  function sendEvent(key, value, namespace, oldValue, isArr) {
+  function sendEvent(key, value, ns, oldValue, isArr) {
     var failed = true;
     try {
       /*prevent default or throw error to revert configuration*/
-      failed = Config.trigger(namespace, {
+      failed = Config.trigger(ns, {
         config: key,
-        namespace: namespace,
+        ns: ns,
         value: _value,
         saved: saveToStorage,
       }).defaultPrevented;
@@ -176,8 +177,8 @@ define(function (require, exports, module) {
     } finally {
       if (failed) {
         handlingError = true;
-        if (isArr) configureObj(key, oldValue, namespace);
-        else configure(key, oldValue, namespace);
+        if (isArr) configureObj(key, oldValue, ns);
+        else configure(key, oldValue, ns);
         handlingError = false;
       }
     }
@@ -210,6 +211,7 @@ define(function (require, exports, module) {
   }
 
   //Placeholder functions implemented in grace/ext/config.
+  /** @type {EventsEmitter & Any} */
   var Config = new EventsEmitter();
   Config.forPath = function (path, ns, key) {
     return ns ? (key ? namespaces[ns][key] : namespaces[ns]) : namespaces; //placeholder function
@@ -217,20 +219,23 @@ define(function (require, exports, module) {
 
   /**
    * @typedef {{
-      //display the configuration values in namespace 
+      //display the configuration values in ns 
       //e.g to add virtual keys, hide keys
       toJSON?: ()=>Object,
       
       //Implementations can apply key:value pairs themselves
-      update?: function(newValue,oldValue,path)=> boolean
+      update?: (newValue,oldValue,path)=> boolean
    }} ConfigHandler
    //They should also check for nested namespaces.
    */
   var handlers = Object.create(null);
-  Config.setHandler = function (namespace, handler) {
-    if (!namespaces[namespace])
-      throw new Error('Unknown namespace: ' + namespace);
-    handlers[namespace] = handler;
+  /**
+   * @param {string} ns
+   * @param {ConfigHandler} handler
+   */
+  Config.setHandler = function (ns, handler) {
+    if (!namespaces[ns]) throw new Error('Unknown ns: ' + ns);
+    handlers[ns] = handler;
   };
 
   Config.frozen = true;

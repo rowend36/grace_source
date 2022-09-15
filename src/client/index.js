@@ -9,7 +9,6 @@ var Env = {
   getCorsProxyUrl: null, //used by android application to provide git support
   // delayStorage: false
 };
-
 Env.newWindow =
   window.open &&
   function (path) {
@@ -19,60 +18,64 @@ if (/^file/i.test(window.location.host)) {
   //while developing
   Env.isLocalHost = true;
   Env.canLocalHost = true;
-  Env.server = "http:///localhost:3000";
+  Env.server = 'http:///localhost:3000';
 } else {
   Env.isLocalHost = true;
   Env.canLocalHost = true;
   Env.server = window.location.origin;
 }
 requirejs.config({
-  //By default load any module IDs from js/lib
-  baseUrl: ".",
-  //except, if the module ID starts with "app",
-  //load it from the js/app directory. paths
-  //config is relative to the baseUrl, and
-  //never includes a ".js" extension since
-  //the paths config could be for a directory.
-  waitSeconds: 30,
+  baseUrl: '.',
+  waitSeconds: 60,
   map: {
-    "*": {
-      text: "libs/js/text/text",
-      css: "libs/js/require-css/css",
-      "grace/core": "core",
-      "grace/ext": "ext",
-      "grace/docs": "docs",
-      "grace/ui": "ui",
-      "grace/libs": "libs",
-      "grace/setup": "setup",
-      "grace/themes": "themes",
-      "grace/editor": "editor",
-      "ace": "core/ace_loader"
+    '*': {
+      text: 'libs/js/text/text',
+      css: 'libs/js/require-css/css',
+      'grace/core': 'core',
+      'grace/ext': 'ext',
+      'grace/docs': 'docs',
+      'grace/ui': 'ui',
+      'grace/libs': 'libs',
+      'grace/setup': 'setup',
+      'grace/themes': 'themes',
+      'grace/editor': 'editor',
+      ace: 'core/ace_loader',
     },
   },
+  paths: {
+    fastdom: 'libs/js/fastdom.min',
+  },
+  shim: {
+    fastdom: {
+      exports: 'fastdom',
+    },
+    'setup/index': {
+      deps: ['libs/ace/ace', 'core/jquery_compat', 'libs/js/materialize'],
+    },
+    'core/jquery_compat': {
+      deps: ['libs/js/cash-dom.min'],
+    },
+    'libs/js/materialize':{
+      deps: ['libs/js/cash-dom.min']
+    }
+  },
 });
-var b;
 window.Env = Env;
-// Snippets.detectGlobals.exec(window);
-// document.getElementById('eruda-script').onload =
-// function() {
-
-//hide on android
-// }
-// console.log(Snippets.getUnusedCss.exec(window));
+// require(['ext/dev/snippets'], function (e) {
+//   e.Snippets.detectGlobals.exec(window);
+//   require(['grace/core/app_events'], function (f) {
+//     f.AppEvents.on('fullyLoaded', function () {
+//       console.log(e.Snippets.getUnusedCss.exec(window));
+//     });
+//   });
+// });
 //TODO get rid of materialize.js jquery api and make it a normal dependency like sidenav for modal,toast
 //TODO Make anime.js a separate dependency also
 //TODO move grace/libs/js/base64
-//TODO make core/polyfills to be loaded with cash-dom
-console.debug("Html: " + (b = performance.now()));
-require(["./libs/js/eruda.min.js", "./core/polyfills"], function (e) {
-  require(["./setup/index"], function () {
-    console.debug("Main: " + (performance.now() - b));
-  });
-  window.eruda = e;
-  window.eruda.init({
-    tool: ["console", "elements", "network", "resources"],
-  });
-
-  // window.eruda._entryBtn.hide();
-  //we rarely have issues on first run now
+require([
+  './core/logs',
+  // './setup/setup_console',
+  // './ext/dev/runtime_info',
+], function (e) {
+  require(['./setup/index']);
 });

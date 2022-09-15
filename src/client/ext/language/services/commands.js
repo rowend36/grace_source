@@ -1,43 +1,15 @@
 define(function (require, exports, module) {
   'use strict';
-  var IsKey = require('grace/core/schema').Schema.IsKey;
   var Utils = require('grace/core/utils').Utils;
-  var Editors = require('grace/editor/editors').Editors;
-  var config = require('grace/core/config').Config.registerAll(
-    {
-      jumpToDef: 'Alt-.',
-      rename: 'Ctrl-Shift-E',
-      findRefs: 'Ctrl-E',
-      markPosition: 'Alt-M',
-      showType: 'Ctrl-I',
-      refresh: 'Alt-R',
-      jumpBack: 'Alt-,',
-    },
-    'keyBindings.intellisense'
-  );
-  var keyValue = {
-    type: IsKey,
-  };
-  require('grace/core/config').Config.registerInfo(
-    {
-      '!root': 'Keybindings used by language providers',
-      jumpToDef: keyValue,
-      rename: keyValue,
-      findRefs: keyValue,
-      markPosition: keyValue,
-      showType: keyValue,
-      refresh: keyValue,
-      jumpBack: keyValue,
-    },
-    'keyBindings.intellisense'
-  );
+  var Actions = require('grace/core/actions').Actions;
+
   var commandHandlers = new (require('grace/core/registry').Registry)(
     null,
-    'intellisense'
+    'intellisense.commands',
   );
   var getActiveHandlers = commandHandlers.getActive;
   var isHandlerAvailable = function (editor) {
-    return getActiveHandlers().some(function (e) {
+    return getActiveHandlers(editor).some(function (e) {
       return e && editor[e.name];
     });
   };
@@ -48,15 +20,13 @@ define(function (require, exports, module) {
       if (!server[method]) return n();
       hasMain = hasMain || !server.isSupport;
       instance = editor[server.name];
-
       if (instance)
-        cb(instance, function (t) {
-          if (!t) n();
+        cb(instance, function (err) {
+          if (err) n();
         });
       else
         server.init(editor, function (instance) {
           if (!instance) return;
-          editor[server.name] = instance;
           cb(instance, function (t) {
             if (!t) n();
           });
@@ -64,72 +34,68 @@ define(function (require, exports, module) {
     });
   };
 
-  function createCommands(prefix) {
+  (function createCommands() {
     var commands = {};
-    prefix = 'lsp';
     commands.markPosition = {
       exec: function (editor) {
         callHandlers(editor, 'hasDefinitions', function (e) {
           e.markPos(editor);
         });
       },
-      bindKey: config.markPosition,
+      showIn: ['actionbar.go'],
     };
     commands.jumpBack = {
-      name: prefix + 'JumpBack',
-      isAvailable: isHandlerAvailable,
+      name: 'jumpBack',
       exec: function (editor) {
         callHandlers(editor, 'hasDefinitions', function (e, n) {
           e.jumpBack(editor, n);
         });
       },
-      bindKey: config.jumpBack,
+      showIn: ['actionbar.go'],
+      bindKey: 'Alt-,',
     };
     commands.jumpToDef = {
-      name: prefix + 'JumpToDef',
-      isAvailable: isHandlerAvailable,
+      name: 'jumpToDefinition',
       exec: function (editor) {
         callHandlers(editor, 'hasDefinitions', function (e, n) {
           e.jumpToDef(editor, n);
         });
       },
-      bindKey: config.jumpToDef,
+      showIn: ['actionbar.go'],
+      bindKey: 'Alt-.',
     };
     commands.showType = {
-      name: prefix + 'ShowType',
-      isAvailable: isHandlerAvailable,
+      name: 'showType',
       exec: function (editor) {
         callHandlers(editor, 'hasTypeInformation', function (e, n) {
-          e.showType(editor, n);
+          e.showType(editor, null, false, n);
         });
       },
-      bindKey: config.showType,
+      bindKey: 'Ctrl-I',
     };
     commands.findRefs = {
-      name: prefix + 'FindRefs',
-      isAvailable: isHandlerAvailable,
+      name: 'findReferences',
       exec: function (editor) {
         callHandlers(editor, 'hasReferences', function (e, n) {
           e.findRefs(editor, n);
         });
       },
-      bindKey: config.findRefs,
+      bindKey: 'Ctrl-E',
     };
     commands.rename = {
-      name: prefix + 'Rename',
-      isAvailable: isHandlerAvailable,
+      name: 'rename',
       exec: function (editor) {
         callHandlers(editor, 'hasRename', function (e, n) {
           e.rename(editor, n);
         });
       },
-      bindKey: config.rename,
+      showIn: ['actionbar.edit'],
+      bindKey: 'Ctrl-Shift-E',
     };
     commands.refresh = {
-      name: prefix + 'Refresh',
-      isAvailable: isHandlerAvailable,
+      name: 'refresh',
       exec: function (editor) {
-        getActiveHandlers().forEach(function (s) {
+        getActiveHandlers(editor).forEach(function (s) {
           var e = editor[s.name];
           if (e) {
             var full = false;
@@ -144,32 +110,10 @@ define(function (require, exports, module) {
           }
         });
       },
-      bindKey: config.refresh,
+      bindKey: 'Alt-R',
     };
-    var noConf = {};
-    //hide them from normal keybindings since they change depending on client
-    for (var i in commands) {
-      noConf[commands[i].name] = 'no-user-config';
-    }
-    require('grace/core/config').Config.registerInfo(noConf, 'keyBindings');
-    return commands;
-  }
-  var commands = createCommands('do');
-  Editors.addCommands(commands);
-  require('grace/core/config').Config.on(
-    'keyBindings.intellisense',
-    Utils.debounce(function () {
-      //Plugin editors cannot react to this.
-      Editors.forEach(function (e) {
-        for (var i in commands) {
-          e.commands.removeCommand(commands[i]);
-        }
-      });
-      Object.assign(commands, createCommands());
-      Editors.addCommands(commands);
-    }, 30)
-  );
-  exports.LanguageServiceCommands = commands;
+    Actions.addActions(commands, {isAvailable: isHandlerAvailable});
+  })();
   exports.registerProvider = commandHandlers.register;
   exports.unregisterProvider = commandHandlers.unregister;
 });

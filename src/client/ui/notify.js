@@ -3,16 +3,15 @@ define(function (require, exports, module) {
     //dependency
     /*globals $, M*/
     require('../libs/js/materialize');
-    var warningClasses = 'red-text';
-    var infoClasses = 'blue';
-    var errorClasses = 'red';
     var AutoCloseables = require('./auto_closeables').AutoCloseables;
     var setImmediate = require('../core/utils').Utils.setImmediate;
+    var removeFrom = require('../core/utils').Utils.removeFrom;
     var pending = [];
     var active = 0;
     var genID = require('../core/utils').Utils.genID;
     var FocusManager = require('./focus_manager').FocusManager;
 
+    //Toasts
     function doPending() {
         active--;
         if (pending.length > 0) show(pending.pop());
@@ -22,12 +21,10 @@ define(function (require, exports, module) {
         if (opts.len < 250) {
             M.toast(opts);
         } else {
-            $(modal({body: opts.html}, opts.completeCallback))
-                .find('.toast-icon')
-                .remove();
+            $(modal({body: opts.html}, opts.completeCallback));
         }
     }
-    var batchView = false;
+    var batchView;
 
     var notify = function (text, duration) {
         var len = text.length;
@@ -60,8 +57,8 @@ define(function (require, exports, module) {
                         },
                         function () {
                             batchView = false;
-                        }
-                    )
+                        },
+                    ),
                 ).find('.modal-content');
                 pending.length = 0;
             }
@@ -72,14 +69,12 @@ define(function (require, exports, module) {
             "<i class='orange-text material-icons toast-icon'>warning</i>" +
                 text,
             duration,
-            warningClasses
         );
     };
     var info = function (text, duration) {
         notify(
-            "<i class='white-text material-icons toast-icon'>error</i>" + text,
+            "<i class='info-text material-icons toast-icon'>error</i>" + text,
             duration,
-            infoClasses
         );
     };
     var error = function (error, duration) {
@@ -87,15 +82,23 @@ define(function (require, exports, module) {
         notify(
             "<i class='red-text material-icons toast-icon'>error</i>" + err,
             duration,
-            errorClasses
         );
+    };
+    var errors = {};
+    var inform = function (error, duration) {
+        var lastT = errors[error] || 0;
+        var now = new Date().getTime();
+        if (now - lastT > 60000) {
+            errors[error] = now;
+            warn(error, duration);
+        }
     };
     var direction = function (info, ondismiss) {
         var el = $(document.createElement('div'));
         document.body.appendChild(el[0]);
         el.addClass('toast modal-direction');
         el.append(
-            "<span class='material-icons toast-icon blue-text'>info</span>"
+            "<span class='material-icons toast-icon blue-text'>info</span>",
         );
         el.append('<div>' + info + '</div>');
         el.append("<button class='pl-15 material-icons'>close</button>");
@@ -121,22 +124,32 @@ define(function (require, exports, module) {
         el.children('button').click(ondismiss);
         return dismiss;
     };
-    var ask = function (text, yes, no) {
+    var modals = [];
+    var ask = function (text, yes, no, force) {
+        var t = arguments;
+        modals.push(t);
+        if (!force && modals.length > 1) return;
         modal(
             {
                 body: text,
                 footers: ['Yes', 'No'],
                 onCreate: function (el) {
-                    el.on('click', '.modal-yes', yes);
-                    el.on('click', '.modal-no', no);
-                    el.on('click', '.btn', function () {
+                    el.find('.btn').addClass('btn-flat');
+                    el.one('click', '.modal-yes', yes);
+                    el.one('click', '.modal-no', no);
+                    el.one('click', '.btn', function () {
                         el.modal('close');
                     });
                 },
             },
             function (el) {
                 el.off();
-            }
+                removeFrom(modals, t);
+                if (modals.length) {
+                    var p = modals.shift();
+                    ask(p[0], p[1], p[2], true);
+                }
+            },
         );
     };
     //First rule of maintainaibility,
@@ -145,9 +158,11 @@ define(function (require, exports, module) {
         var el = opts.listEl;
         if (!el) {
             var header = [
-                '<h6 class="modal-header">',
-                opts.header,
-                '</h6>',
+                opts.header !== false
+                    ? ['<h6 class="modal-header">', opts.header, '</h6>'].join(
+                          '',
+                      )
+                    : '',
                 '<div class="modal-content">',
                 opts.body || '',
                 '</div>',
@@ -171,7 +186,7 @@ define(function (require, exports, module) {
                     : '',
             ].join('');
             el = document.createElement(opts.form ? 'form' : 'div');
-            el.id = genID('a');
+            el.id = genID('w');
             el.className = 'modal modal-container';
             $(el).append(header);
             document.body.appendChild(el);
@@ -183,21 +198,23 @@ define(function (require, exports, module) {
                 });
             if (opts.form) {
                 require(['./forms'], function (mod) {
-                    mod.Form.create(
+                    mod.Forms.create(
                         opts.form,
-                        el.getElementsByClassName('modal-content')[0]
+                        el.getElementsByClassName('modal-content')[0],
                     );
-                    if (opts.onCreate) opts.onCreate($(el));
+                    if (opts.onCreate) opts.onCreate($(el), mod.Forms);
                     else
                         console.error(
-                            'Failed to provide onCreate for modal with .form option'
+                            'Failed to provide onCreate for modal with .form option',
                         );
                 });
                 $(el).submit(false);
             } else if (opts.onCreate) opts.onCreate($(el));
         }
-
         var modalEl = $(el);
+        if (opts.large) modalEl.addClass('modal-large');
+        FocusManager.trap(modalEl.find('button'));
+        FocusManager.trap(modalEl.find('select'));
         if (!opts.footers) modalEl.addClass('modal-no-footer');
         var options = {
             centerY: !opts.large,
@@ -221,13 +238,14 @@ define(function (require, exports, module) {
             require('./navigation').Navigation.addRoot(
                 el,
                 instance.close.bind(instance),
-                true
+                true,
             );
         };
         //set this after to avoid wierd key event trapping
         options.dismissible = opts.dismissible !== false;
         modalEl.modal(options);
         var instance = M.Modal.getInstance(el);
+        FocusManager.trap(instance.$overlay, true);
         instance.$preventDismiss = opts.dismissible === false;
         if (opts.autoOpen !== false) {
             modalEl.modal('open');
@@ -250,24 +268,55 @@ define(function (require, exports, module) {
         onchang,
         getValue,
         ondismis,
-        complete
+        complete,
     ) {
         if (!inputDialog) {
-            var dialog =
-                "<div class='modal-content'>" +
-                "<div class='prompt-text'></div>" +
-                '<input></input>' +
-                "</div><div class='modal-footer modal-footer-2'>" +
-                "<a href='#!' class='modal-cancel waves-effect waves-green btn-flat'>Cancel</a>" +
-                "<a href='#!' class='modal-done waves-effect waves-green btn-flat'>Done</a>" +
-                '</div>';
-            var creator = document.createElement('div');
-            creator.innerHTML = dialog;
-            creator.className = 'modal modal-alert';
-            creator.addEventListener('click', function (e) {
+            var dialog = modal(
+                {
+                    body:
+                        "<div class='prompt-text'></div>" +
+                        '<input></input>' +
+                        "</div><div class='modal-footer modal-footer-2'>" +
+                        "<a href='#!' class='modal-cancel waves-effect waves-green btn-flat'>Cancel</a>" +
+                        "<a href='#!' class='modal-done waves-effect waves-green btn-flat'>Done</a>",
+                    autoOpen: false,
+                    keepOnClose: true,
+                    header: false,
+                    centerY: true, //ignored
+                },
+                function () {
+                    if (!changed && onDialogClose) {
+                        try {
+                            onDialogClose();
+                        } catch (e) {
+                            console.error(e);
+                        }
+                    }
+                    if (queued.length) {
+                        setImmediate(function () {
+                            changed = false;
+                            var item = queued.shift();
+                            inputDialog.modal('open');
+                            completer = item.pop();
+                            onDialogClose = item.pop();
+                            input.value = item.pop()() || '';
+                            onchange = item.pop();
+                            promptText.innerHTML = item.pop();
+                        }, 20);
+                    } else {
+                        returnFocus();
+                        Dropdown.hide();
+                        isOpen = false;
+                        completer = onDialogClose = onchange = null;
+                    }
+                },
+            );
+            dialog.className = 'modal modal-alert';
+            dialog.addEventListener('click', function (e) {
                 e.stopPropagation();
             });
-            input = creator.getElementsByTagName('input')[0];
+            inputDialog = $(dialog);
+            input = dialog.getElementsByTagName('input')[0];
             input.addEventListener('keydown', function (e) {
                 switch (e.keyCode) {
                     case ENTER:
@@ -298,54 +347,22 @@ define(function (require, exports, module) {
                     } else Dropdown.hide();
                 }
             });
-            Dropdown = new (require('./dropdown').Dropdown)(true, 'left');
-            Dropdown.onclick = function (ev, id, element, item) {
-                completer.update(input, item);
-            };
-            promptText = creator.getElementsByClassName('prompt-text')[0];
-            var save = creator.getElementsByClassName('modal-done')[0];
+            var save = dialog.getElementsByClassName('modal-done')[0];
             save.addEventListener('click', function () {
                 changed = true;
                 if (onchange(input.value) !== false) {
                     inputDialog.modal('close');
                 } else input.focus();
             });
-            var hide = creator.getElementsByClassName('modal-cancel')[0];
+            var hide = dialog.getElementsByClassName('modal-cancel')[0];
             hide.addEventListener('click', function () {
                 inputDialog.modal('close');
             });
-            document.body.appendChild(creator);
-            inputDialog = $(creator).modal({
-                centerY: true,
-                onCloseStart: function () {
-                    if (!changed && onDialogClose) {
-                        try {
-                            onDialogClose();
-                        } catch (e) {
-                            console.error(e);
-                        }
-                    }
-                    if (queued.length) {
-                        setImmediate(function () {
-                            changed = false;
-                            var item = queued.shift();
-                            inputDialog.modal('open');
-                            completer = item.pop();
-                            onDialogClose = item.pop();
-                            input.value = item.pop()() || '';
-                            onchange = item.pop();
-                            promptText.innerHTML = item.pop();
-                        }, 20);
-                    } else {
-                        returnFocus();
-                        Dropdown.hide();
-                        isOpen = false;
-                        completer = onDialogClose = onchange = null;
-                    }
-                },
-                onCloseEnd: AutoCloseables.onCloseEnd,
-                onOpenEnd: AutoCloseables.onOpenEnd,
-            });
+            Dropdown = new (require('./dropdown').Dropdown)(true, 'left');
+            Dropdown.onclick = function (ev, id, element, item) {
+                completer.update(input, item);
+            };
+            promptText = dialog.getElementsByClassName('prompt-text')[0];
         }
         return {
             caption: caption,
@@ -398,7 +415,7 @@ define(function (require, exports, module) {
                               return (input.value = text);
                           },
                       }
-                    : value_completer)
+                    : value_completer),
         );
         dialog.show();
     };
@@ -408,7 +425,7 @@ define(function (require, exports, module) {
             list.containerClass = 'modal';
             list.headerText = name;
             list.createElement();
-            list.$el.modal(require('./state_manager').AutoCloseables);
+            list.$el.modal(require('./auto_closeables').AutoCloseables);
             list.render();
             list.on('select', function (e) {
                 if (onItemSelected(e.item, e.index) !== false) {
@@ -424,7 +441,7 @@ define(function (require, exports, module) {
                     listEl: list.el,
                     dismissible: ondismiss !== false,
                 },
-                ondismiss
+                ondismiss,
             );
         });
     };
@@ -437,6 +454,8 @@ define(function (require, exports, module) {
         error: error,
         //Show warning
         warn: warn,
+        //Warn but throttles
+        inform: inform,
         //Like info but stays until dismissed
         direct: direction,
         //Collect input
@@ -445,7 +464,7 @@ define(function (require, exports, module) {
         modal: modal,
         //Choose between items in a list
         pick: pick,
-        //Simpler form of getText
+        //Simpler form of dialog
         prompt: getText,
         //Yes or no alert
         ask: ask,

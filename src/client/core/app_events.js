@@ -2,9 +2,12 @@ define(function (require, exports, module) {
   'use strict';
   //See FileUtils, ConfigEvents, ItemList for more events
   var EventsEmitter = require('./events_emitter').EventsEmitter;
+  /**
+   * @type {EventsEmitter & Any} 
+   */
   var app = new EventsEmitter();
   app.checkEvents = true;
-  app._debug = true;
+  // app._debug = true;
   app.paused = false;
   app.pause = function () {
     if (!this.paused) {

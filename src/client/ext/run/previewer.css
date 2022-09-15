@@ -1,6 +1,7 @@
 .theme-dark .preview iframe {
     background: #888888;
 }
+
 .preview iframe,
 .iframe-wrapper {
     width: 100%;
@@ -15,7 +16,8 @@
     display: inline-block;
 }
 
-.preview {
+.preview,
+.pane>.preview {
     padding-top: 40px;
 }
 

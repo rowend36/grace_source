@@ -9,6 +9,7 @@ define(function (require, exports, module) {
     var ScrollLock = require('./scroll_lock').ScrollLock;
     var RepeatDetector = require('./repeat_detector').RepeatDetector;
     var FocusManager = require('grace/ui/focus_manager').FocusManager;
+    var allTools = require('./all_tools').allTools;
     var appConfig = require('grace/core/config').Config.registerAll(
         {
             showCharacterBar: !Env.isHardwareKeyboard,
@@ -43,13 +44,12 @@ define(function (require, exports, module) {
                 '--S--',
             ],
         },
-        'toolbars'
+        'toolbars',
     );
 
     var configEvents = require('grace/core/config').Config;
     var Utils = require('grace/core/utils').Utils;
     var View = require('grace/ui/view').View;
-    var allTools = require('./all_tools').allTools;
     var MOD_KEYS = ['shift', 'ctrl', 'alt', 'esc', 'home', 'end'];
     require('grace/core/config').Config.registerInfo(
         {
@@ -74,7 +74,7 @@ It's a bit similar to snippets. But with a different syntax\n\
             enableLockScrolling: 'Allows character bar to jump to clamp scroll',
             enableArrowKeys: 'Whether to show directional keys',
         },
-        'toolbars'
+        'toolbars',
     );
     var postRebuild;
     configEvents.on('toolbars', function (e) {
@@ -107,12 +107,12 @@ It's a bit similar to snippets. But with a different syntax\n\
             setCls(
                 name,
                 'mod-key-active',
-                !isMod || (ev.pressed[key] && !ev.held[key])
+                !isMod || (ev.pressed[key] && !ev.held[key]),
             );
             setCls(
                 name,
                 'color-inactive',
-                isMod && !(ev.held[key] || ev.pressed[key])
+                isMod && !(ev.held[key] || ev.pressed[key]),
             );
             target.className = name.join(' ').replace('  ', ' '); //:)
         } else {
@@ -187,19 +187,19 @@ It's a bit similar to snippets. But with a different syntax\n\
             floatingToggle = $(
                 '<button id="toolbar-toggle" class="shadow-top opaque-on-hover">' +
                     '<i class="material-icons">keyboard_arrow_down</i>' +
-                    '</button>'
+                    '</button>',
             );
             floatingToggle.click(function (e) {
                 bottomView.toggle();
                 if (bottomView.hidden) {
                     this.style.bottom = '10px';
                     floatingToggle.html(
-                        '<i class="material-icons">keyboard_arrow_up</i>'
+                        '<i class="material-icons">keyboard_arrow_up</i>',
                     );
                 } else {
                     this.style.bottom = bottomBar.css('height');
                     floatingToggle.html(
-                        '<i class="material-icons">keyboard_arrow_down</i>'
+                        '<i class="material-icons">keyboard_arrow_down</i>',
                     );
                 }
                 e.stopPropagation();
@@ -276,6 +276,7 @@ It's a bit similar to snippets. But with a different syntax\n\
                 break;
             case 'find':
             case 'gotoline':
+            // @ts-ignore
             case 'openCommandPallete':
                 //require focus-
                 //may later decide to use settimeout
@@ -314,7 +315,7 @@ It's a bit similar to snippets. But with a different syntax\n\
             if (i.indexOf('--N--') > -1) {
                 t = i.split('--N--');
                 caption = t[0];
-                i = t[t.length - 1].replace();
+                i = t[t.length - 1];
             }
             var el = "<button value='";
             if (i.indexOf('--L--') > -1) {
@@ -332,7 +333,7 @@ It's a bit similar to snippets. But with a different syntax\n\
                     .replace('--W--', '')
                     .replace(
                         /\t/g,
-                        "<i class='material-icons'>keyboard_tab</i>"
+                        "<i class='material-icons'>keyboard_tab</i>",
                     )
                     .replace(/\n/g, '&rdsh;');
             el += caption + '</button>';
@@ -400,10 +401,9 @@ It's a bit similar to snippets. But with a different syntax\n\
             tools.splice(tools.indexOf('a-left'), 4);
             totalMods -= 4;
         }
-        if (appConfig.enableModKeys) {
-            var items = Utils.parseList(appConfig.enableModKeys);
-            toRemove = toRemove.filter(Utils.notIn(items));
-        }
+        var items = Utils.parseList(appConfig.enableModKeys || '');
+        toRemove = toRemove.filter(Utils.notIn(items));
+
         var filtered = tools.filter(Utils.notIn(toRemove));
         totalMods -= tools.length - filtered.length;
         tools = filtered;
@@ -421,7 +421,7 @@ It's a bit similar to snippets. But with a different syntax\n\
                 'alt',
                 'home',
                 'end',
-            ];
+            ].filter(Utils.notIn(toRemove));
             tools = tools.filter(Utils.notIn(modtools));
         }
 
@@ -440,14 +440,14 @@ It's a bit similar to snippets. But with a different syntax\n\
             toolbar = $(
                 createToolsView(tools, [
                     ['esc', 'shift', 'ctrl', 'a-left'],
-                    'paste',
-                ])
+                    ['cut', 'copy', 'paste'],
+                ]),
             );
-        if (modtools) {
+        if (modtools && modtools.length) {
             metabar = $(createToolsView(modtools));
         }
         Mods.setClipboard(
-            require('grace/ext/editor/enhanced_clipboard').clipboard
+            require('grace/ext/editor/enhanced_clipboard').clipboard,
         );
 
         if (toolbar || metabar) {
@@ -488,7 +488,7 @@ It's a bit similar to snippets. But with a different syntax\n\
             else createFloatingToggle();
             $('#status-filename').css('left', '60px');
         } else {
-            floatingToggle.hide();
+            if (floatingToggle) floatingToggle.hide();
             $('#status-filename').css('left', '10px');
         }
         if (bottomBar && bottomEls.length < 1) {
@@ -529,9 +529,11 @@ It's a bit similar to snippets. But with a different syntax\n\
         } else if (topEl) {
             if (!topView) {
                 topView = new View(topBar);
-                rootView.addView(topView, 1.5, 40, 0, 1);
+                rootView.addView(topView, 1.5, 40, 0);
             } else topView.show();
         }
+        updateRecordingIcon();
+        updateSaveIcon();
     }
 
     function setChars(char) {
@@ -545,34 +547,31 @@ It's a bit similar to snippets. But with a different syntax\n\
             $('#togglerecording', toolbar).addClass('blink');
         } else $('#togglerecording', toolbar).removeClass('blink');
     }, 100);
+    var updateSaveIcon = function () {
+        var saveBtn = $('#save', toolbar);
+        var doc = getActiveDoc();
+        if (!doc) saveBtn.attr('disabled', true);
+        else saveBtn.removeAttr('disabled');
+        if (doc && doc.dirty) saveBtn.addClass('indicator-unsaved');
+        else saveBtn.removeClass('indicator-unsaved');
+    };
     var trackStatus = function (e) {
         (e.editor || e).on('changeStatus', updateRecordingIcon);
     };
-
-    exports.CharBar = {
-        setEditor: function (e) {
-            editor = e;
-            Mods.setEditor(e);
-        },
-        addCommand: function (command, data) {
-            allTools[command] = data;
-        },
-        setTools: function (tool_list) {
-            var bar = createToolsView(tool_list);
-            toolbar && toolbar.html(bar.innerHTML);
-        },
-        setChars: setChars,
-    };
+    var getActiveDoc = require('grace/setup/setup_editors').getActiveDoc;
     var appEvents = require('grace/core/app_events').AppEvents;
     var getEditor = require('grace/setup/setup_editors').getEditor;
-    var forEachEditor = require('grace/editor/editors').Editors.forEach;
+    var onEachEditor = require('grace/editor/editors').Editors.onEach;
 
     appEvents.on('changeEditor', updateRecordingIcon);
-    appEvents.on('createEditor', trackStatus);
-    forEachEditor(trackStatus);
-    exports.CharBar.setEditor(getEditor());
+    appEvents.on('changeDoc', updateSaveIcon);
+    appEvents.on('docStatusChanged', updateSaveIcon);
+    onEachEditor(trackStatus);
+    editor = getEditor();
+    Mods.setEditor(editor);
     appEvents.on('changeEditor', function (e) {
-        exports.CharBar.setEditor(e.editor);
+        editor = e.editor;
+        Mods.setEditor(e.editor);
     });
     rebuild();
 }); /*_EndDefine*/
