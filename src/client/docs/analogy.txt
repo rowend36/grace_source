@@ -1,0 +1,30 @@
+Docs is supposed to be the equivalent of Editors
+for documents. However, it turned out to be a very
+large module instead simply because, there are a lot
+things you can do with a document e.g search, edit,
+file opearations, diff etc. while there are only a few
+things you can do with an editor.
+This is further worsened by the fact that it is one of the 
+oldest parts of this codebase ie from the time when Grace
+had not forgotten it is in fact, just a pet project.
+
+Hence, Docs is a messy area.
+
+Attempts to organise it have yielded limited success
+in the form of mixins.
+base - The minimum functionality for docs as originally planned.
+blob - is a safer wrapper for Config.storage
+persist - handles saving and loading documents from storage
+save - handles file operations e.g save, rename
+tabs - handles tab management
+document_commands - Adds useful commands to the editor when a Doc is active
+
+Additional mixins
+ext/docs/checkpoints
+ext/docs/partial_undo
+
+Doc vs ace.EditSession vs ace.Document
+Doc fires app events, can be persisted easily and integrates
+better with the rest of the application. A lot of stuff
+just bail out once they realise they are not dealing with
+a Doc.

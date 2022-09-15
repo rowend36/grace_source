@@ -1,64 +1,68 @@
-define(function(require, exports, module) {
+define(function (require, exports, module) {
     //Extra files in a simple import format
     //Such that bundling is also very easy
-    "use strict";
-    require("./fileserver/httpfs");
-    //saving checkpoints
-    require("./checkpoints/setup_checkpoints");
-    //editting preferences
-    require("./prefs/key_binding");
-    require("./prefs/linter_options");
-    require("./prefs/auto_settings");
-    //file colors
-    require("css!./libs/css/materialize-colors");
-    require("./glob/glob");
+    'use strict';
+    var appEvents = require('../core/app_events').AppEvents;
+    var b = performance.now();
+    appEvents.on('documentsLoaded', function () {
+        require([
+            './editor/setup_character_bar',
+            './fs/httpfs',
+            //saving checkpoints
+            './docs/setup_doc_exts',
+            //editting preferences
+            './config/key_binding',
+            './config/linter_options',
+            './config/editor_contexts',
+            './format/format',
+            './format/fmt_js_beautify',
+            './format/fmt_prettier',
+            //file colors
+            'css!grace/libs/css/materialize-colors',
+            './file_utils/glob',
 
-    //Extensions
-    //runManager
-    require("./run/run_button");
-    require("./run/node");
-    require("./run/svg");
-    require("./run/markdown");
-    
-    require("./clipboard/enhanced_clipboard");
-    
-    //autocompletion
-    require(
-        "./autocompletion/manager");
-    require(
-        "./autocompletion/misc/filename");
-    require(
-        "./autocompletion/misc/colors");
+            //Extensions
+            //runManager
+            './run/run_button',
+            './run/node',
+            './run/svg',
+            './run/markdown',
 
+            './editor/enhanced_clipboard',
 
-    //FileBrowsers
+            //autocompletion
+            './language/setup_services',
+            './language/misc/filename',
+            './language/misc/colors',
 
-    require("./fileview/setup_fileview");
+            //FileBrowsers
+            './fileview/setup_fileview',
 
-    //StatusBar SearchBox
+            './ui/swipe_n_drag',
 
-    require("./searchbox");
+            //Split Editors
+            './ui/split_editors',
 
-    require("./swipe_n_drag/swipe_n_drag");
+            //Settings Menu
+            './config/settings_menu',
 
-    //Split Editors
+            //git
+            './git/git',
 
-    require("./split_editors");
-    //Settings Menu
+            //show diff
+            './diff/diff',
 
-    require("./prefs/settings-menu");
-    //git
-    require("./git/git");
+            //tools fxmising
+            './fix_missing_colons',
 
-    //show diff
-
-    require("./diff/diff");
-    //tools fxmising
-
-    require("./fix_colons");
-
-
-    //SearchPanel
-    require("./search/search_tab");
-    require("./preview_file");
+            //Search
+            './search/search_tab',
+            './search/search_box',
+            './ui/import_theme',
+            './preview_file',
+        ], function () {
+            appEvents.triggerForever('fullyLoaded');
+            console.debug('Extensions: ' + (performance.now() - b));
+        });
+    });
 });

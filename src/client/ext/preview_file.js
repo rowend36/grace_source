@@ -4,6 +4,7 @@ define(function(require,exports,module) {
     var Notify = require("grace/ui/notify").Notify;
     var table = require("grace/ui/ui_utils").tabulate;
     var FileUtils = require("grace/core/file_utils").FileUtils;
+    var Fileviews = require("grace/ext/fileview/fileviews").Fileviews;
 
     function preview(ondismiss) {
         return Notify.modal({
@@ -189,7 +190,7 @@ define(function(require,exports,module) {
         'woff': previewFont,
         'woff2': previewFont
     };
-    FileUtils.on('open-file', function(ev) {
+    Fileviews.on('open-file', function(ev) {
         if (FileUtils.isBinaryFile(ev.filename)) {
             var ext = FileUtils.extname(ev.filename).toLowerCase();
             if (previewers[ext]) {

@@ -67,7 +67,8 @@ define(function(require,exports,module) {
             name);
         }
       }
-      for (var j of args[name]) {
+      for (var k in args[name]) {
+        var j = args[k];
         if (j.startsWith("?")) continue;
         if (!opts.hasOwnProperty(j)) throw new Error('Missing interface value ' + j + ' for ' + name);
       }

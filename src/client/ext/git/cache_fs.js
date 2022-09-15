@@ -5,6 +5,7 @@ define(function(require,exports,module) {
     var setImmediate = Utils.setImmediate;
     var normalize = require("grace/core/file_utils").FileUtils.normalize;
     var dirname = require("grace/core/file_utils").FileUtils.dirname;
+    var createError = require("grace/core/file_utils").FileUtils.createError;
     var filename = require("grace/core/file_utils").FileUtils.filename;
     var current = 0;
     var activate = function(i, size) {
@@ -260,7 +261,7 @@ define(function(require,exports,module) {
                 });
             } else if (enoents[path]) {
                 setImmediate(function() {
-                    cb(require("grace/core/config").createError({
+                    cb(createError({
                         code: 'ENOENT'
                     }));
                 });
@@ -356,14 +357,14 @@ define(function(require,exports,module) {
                 }
                 //unlikely
                 return setImmediate(function() {
-                    cb(require("grace/core/config").createError({
+                    cb(createError({
                         code: 'ENOTDIR'
                     }));
                 });
             }
             if (enoents[path]) {
                 return setImmediate(function() {
-                    cb(require("grace/core/config").createError({
+                    cb(createError({
                         code: 'ENOENT'
                     }));
                 });
@@ -375,14 +376,14 @@ define(function(require,exports,module) {
                 var name = filename(path);
                 if (t.indexOf(name + "/") < 0) {
                     if (t.indexOf(name) > -1) {
-                        return cb(require("grace/core/config").createError({
+                        return cb(createError({
                             code: 'ENOTDIR'
                         }));
                     }
                     //unlikely
                     console.error(path + ' not found in', t);
                     return setImmediate(function() {
-                        cb(require("grace/core/config").createError({
+                        cb(createError({
                             code: 'ENOENT'
                         }));
                     });
@@ -422,7 +423,7 @@ define(function(require,exports,module) {
                 }
             } else if (enoents[path]) {
                 setImmediate(function() {
-                    cb(require("grace/core/config").createError({
+                    cb(createError({
                         code: 'ENOENT'
                     }));
                 });

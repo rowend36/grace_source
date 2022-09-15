@@ -1,0 +1,97 @@
+.remote-list>.modal-content {
+  padding: 0 10px;
+}
+
+.remote-list .list-item {
+  border-style: none;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  padding: 5px;
+  margin: 5px 0;
+}
+
+.remote-list .list-item:first-child {
+  margin-top: 0;
+}
+
+.git-commit-sha {
+  padding: 3px;
+  font-family: arial;
+  background: #222;
+  color: yellow;
+}
+
+.git-status {
+  position: absolute;
+  font-size: 0.8rem;
+  line-height: 0.8rem;
+  right: 40px;
+  top: 0.5em;
+  background: #777777;
+  color: white;
+  padding: 3px 5px;
+  border-radius: 5px;
+}
+
+.git-warning {
+  background: #e51c23;
+}
+
+.stage-group-header {
+  line-height: 36px;
+  height: 36px;
+}
+
+.git-added {
+  color: green;
+}
+
+.git-item {
+  padding-left: 0;
+  padding-right: 10px;
+  white-space: pre;
+  margin-bottom: 5px;
+  list-style-type: circle;
+}
+
+.git-modified {
+  color: #1976D2;
+}
+
+.git-deleted {
+  color: red;
+}
+
+.git-absent {
+  color: #353535;
+}
+
+.git-undeleted {
+  color: #e65100;
+}
+
+.git-undeletemodified {
+  color: #e65100;
+}
+
+.theme-dark .git-undeleted {
+  color: orange;
+}
+
+.theme-dark .git-absent {
+  color: #dddddd;
+}
+
+.theme-dark .git-modified {
+  color: #90caf9;
+}
+
+.theme-dark .git-undeletemodified {
+  color: orange;
+}
+
+.git-conflict-item {
+  margin-bottom: 10px;
+  padding-left: 10px;
+  overflow: hidden;
+}

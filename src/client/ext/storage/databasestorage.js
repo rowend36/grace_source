@@ -1,9 +1,9 @@
-define(function(require,exports,module) {
+define(function (require, exports, module) {
     var Utils = require("grace/core/utils").Utils;
-    var appStorage = require("grace/core/config").appStorage;
+    var storage = require("grace/core/config").storage;
+    var SharedStore = require("grace/ext/storage/shared_store").SharedStore;
     var storages = {};
-    var ITEM_LIST = ":L:";
-    var ITEM = ":I:";
+    var ITEM = ":";
     var BAD_ID = "Invalid ID";
     var JOIN = ",";
     var KEY = ":";
@@ -19,34 +19,45 @@ define(function(require,exports,module) {
             var char = id.charCodeAt(i);
             sum += char * (i + 1);
         }
-        sum = (sum % 67 + sum % 23 + sum % 11 + sum % 2);
+        sum = (sum % 67) + (sum % 23) + (sum % 11) + (sum % 2);
 
         //put a bit of resemblance
-        var _id = id.substring(0, 3) + JOIN + sum;
+        var _id = id.substring(0, 3) + sum;
 
         return _id;
     }
 
-    function Storage(id) {
+    function DBStorage(id) {
         id = id.toLowerCase();
         Utils.assert(id.indexOf(KEY) < 0, BAD_ID + " " + id);
         Utils.assert(id.indexOf(JOIN) < 0, BAD_ID + " " + id);
         this._id = half(id);
+        Utils.assert(
+            !storages[this._id],
+            storages[this._id] == id
+                ? "ID already exists"
+                : "Internal error: ID Conflict, contact plugin maintainer"
+        );
+        this._store = new SharedStore(this._id + ITEM);
+        //stop changes to this item from corrupting it
+        this._store.transport.connect();
         //Bad coding
-        Utils.assert(!storages[this._id], storages[this._id] == id ? "ID already exists" :
-            "Internal error: ID Conflict, contact plugin maintainer");
         storages[this._id] = id;
     }
-    Storage.prototype.load = function(onLoadItem, onNoItem, onLostItem) {
+    DBStorage.prototype.load = function (
+        onLoadItem,
+        onLostItem,
+        onNoItem,
+        onFinish
+    ) {
         this.changedItems = {};
         this.itemList = [];
         this.items = {};
-        var items = appStorage.getItem(this._id + ITEM_LIST);
+        var items = this._store.get();
         if (items) {
-            items = items.split(JOIN);
             for (var i = 0; i < items.length; i++) {
                 var id = items[i];
-                var state = appStorage.getItem(this._id + ITEM + id);
+                var state = storage.getItem(this._id + ITEM + id);
                 if (state) {
                     this.itemList.push(id);
                     var data = this.itemAdapter.parse(state);
@@ -59,39 +70,37 @@ define(function(require,exports,module) {
         } else {
             onNoItem && onNoItem();
         }
+        onFinish && onFinish();
     };
-    Storage.prototype.persist = function() {
-        if (this._inTransaction === false) return;
-        appStorage.setItem(this._id + ITEM_LIST, this.itemList.join(JOIN));
-    };
-
-    Storage.prototype.beginTransaction = function() {
-        this._inTransaction = true;
+    DBStorage.prototype.persist = function () {
+        if (this._inBatch === false) return;
+        this._store.set(this.itemList);
     };
 
-    Storage.prototype.withinTransaction = function(func, ctx) {
-        var before = this._inTransaction;
-        this._inTransaction = true;
+    DBStorage.prototype.beginBatch = function () {
+        this._inBatch++;
+    };
+
+    DBStorage.prototype.withinBatch = function (func, ctx) {
+        this.beginBatch();
         try {
             func.apply(ctx);
-        } catch (Exception) {
+        } finally {
+            this.endBatch();
             //cancel??
         }
-        this._inTransaction = before;
-        if (before) return;
-        this.endTransaction();
     };
-    Storage.prototype.endTransaction = function() {
-        this._inTransaction = false;
+    DBStorage.prototype.endBatch = function () {
+        this._inBatch--;
+        if (this._inBatch) return;
         for (var i in this.changedItems) {
-            if (this.changedItems[i])
-                this.saveItem(i);
+            if (this.changedItems[i]) this.saveItem(i);
             else {
                 this.needsPersist = true;
                 this.removeItem(i);
             }
         }
-        delete this.inTransaction;
+        delete this.inBatch;
         if (this.needsPersist) {
             this.persist();
             this.needsPersist = false;
@@ -99,53 +108,59 @@ define(function(require,exports,module) {
         this.changedItems = {};
     };
 
-    Storage.prototype.saveItem = function(id) {
-        Utils.assert(this.itemList.indexOf(id) > -1, "Saving item that does not exist");
-        if (this._inTransaction) this.changedItems[id] = true;
+    DBStorage.prototype.saveItem = function (id) {
+        Utils.assert(
+            this.itemList.indexOf(id) > -1,
+            "Saving item that does not exist"
+        );
+        if (this._inBatch) this.changedItems[id] = true;
         else {
             try {
-                appStorage.setItem(this._id + ITEM + id, this.itemAdapter.stringify(this
-                    .getItem(id)));
+                storage.setItem(
+                    this._id + ITEM + id,
+                    this.itemAdapter.stringify(this.getItem(id))
+                );
             } catch (e) {
-                debug.error('Exception while saving:' + e);
+                debug.error("Exception while saving:" + e);
             }
         }
     };
-    Storage.prototype.itemAdapter = JSON;
+    DBStorage.prototype.itemAdapter = JSON;
 
-    Storage.prototype.getItem = function(id) {
+    DBStorage.prototype.getItem = function (id) {
         return this.items[id];
     };
-    Storage.prototype.$setItem = function(id, data) {
+    DBStorage.prototype.$setItem = function (id, data) {
         this.items[id] = data;
     };
-    Storage.prototype.setItem = function(id, data,noNew) {
+    DBStorage.prototype.setItem = function (id, data, noNew) {
         if (this.itemList.indexOf(id) > -1) {
             this.$setItem(id, data);
             this.saveItem(id);
-        } else if(noNew){
-            throw new Error('Item does not exist');
-        }
-        else this.createItem(id, data);
+        } else if (noNew) {
+            throw new Error("Item does not exist");
+        } else this.createItem(id, data);
     };
-    Storage.prototype.removeItem = function(id) {
-        Utils.assert(this.itemList.indexOf(id) > -1,
-            "Removing item that does not exist");
+    DBStorage.prototype.removeItem = function (id) {
+        Utils.assert(
+            this.itemList.indexOf(id) > -1,
+            "Removing item that does not exist"
+        );
         this.itemList.splice(this.itemList.indexOf(id), 1);
 
-        if (this._inTransaction) {
+        if (this._inBatch) {
             this.changedItems[id] = false;
         } else {
             this.persist();
-            appStorage.removeItem(this._id + ITEM + id);
+            storage.removeItem(this._id + ITEM + id);
         }
     };
-    Storage.prototype.createItem = function(id, data) {
+    DBStorage.prototype.createItem = function (id, data) {
         Utils.assert(this.itemList.indexOf(id) < 0, "Key already exists " + id);
         Utils.assert(id.indexOf(KEY) < 0, BAD_ID + " " + id);
         Utils.assert(id.indexOf(JOIN) < 0, BAD_ID + " " + id);
         this.itemList.push(id);
-        if (this._inTransaction) {
+        if (this._inBatch) {
             this.needsPersist = true;
         } else this.persist();
         if (data != undefined) {
@@ -153,5 +168,5 @@ define(function(require,exports,module) {
             this.saveItem(id);
         }
     };
-    exports.DBStorage = Storage;
+    exports.DBStorage = DBStorage;
 }); /*_EndDefine*/

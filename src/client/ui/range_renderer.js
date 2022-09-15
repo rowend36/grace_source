@@ -1,6 +1,6 @@
 define(function(require,exports,module) {
     /*globals $*/
-    var OverlayTokenizer = require("./overlay_mode").OverlayTokenizer;
+    var OverlayTokenizer = require("./overlay_tokenizer").OverlayTokenizer;
 
     function RangeRenderer(session) {
         this.session = session;

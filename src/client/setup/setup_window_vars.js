@@ -1,5 +1,5 @@
 define(function(require, exports, module) {
-    var getActiveDoc = require("../docs/active_doc").getActiveDoc;
+    var getActiveDoc = require("./setup_editors").getActiveDoc;
     var getEditor = require("./setup_editors").getEditor;
     var FileUtils = require("../core/file_utils").FileUtils;
     var Utils = require("../core/utils").Utils;
@@ -11,8 +11,8 @@ define(function(require, exports, module) {
             close: true,
             sortIndex: 1000,
             onclick: function() {
-                eruda._entryBtn.show();
-                eruda._devTools.toggle();
+                window.eruda._entryBtn.show();
+                window.eruda._devTools.toggle();
             }
         }, true);
 

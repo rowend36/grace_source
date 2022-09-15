@@ -1,9 +1,9 @@
-define(function(require,exports,module) {
+define(function (require, exports, module) {
     "use strict";
     var isDirectory = require("grace/core/file_utils").FileUtils.isDirectory;
     var setImmediate = require("grace/core/utils").Utils.setImmediate;
     var noop = require("grace/core/utils").Utils.noop;
-    var SearchList = function(folder, fileServer, allowDirectory, files) {
+    var SearchList = function (folder, fileServer, allowDirectory, files) {
         this._files = files || [];
         //this._next = [];
         this._index = 0;
@@ -18,16 +18,15 @@ define(function(require,exports,module) {
         this.tag = 0;
     };
     SearchList.prototype.onDir = noop;
-    SearchList.prototype.eatBack = function(file) {
+    SearchList.prototype.eatBack = function (file) {
         if (this._index == 0) {
             this._current.unshift(file);
-        }
-        else {
+        } else {
             this._index--;
             this._current[this._index] = file;
         }
     };
-    SearchList.prototype.addFolder = function(folder) {
+    SearchList.prototype.addFolder = function (folder) {
         for (var i in this._folders)
             if (folder.startsWith(this._folders[i])) {
                 throw "Cannot add child folder";
@@ -38,7 +37,7 @@ define(function(require,exports,module) {
             }
         this._folders.push(folder);
     };
-    SearchList.prototype.reset = function(clearCache) {
+    SearchList.prototype.reset = function (clearCache) {
         if (clearCache) {
             this._files = [];
             this._folders = [this._argfolder];
@@ -48,9 +47,8 @@ define(function(require,exports,module) {
             this._waiting = [];
             this._errors = [];
             this.tag++;
-        }
-        else{
-            for(var i in this._errors){
+        } else {
+            for (var i in this._errors) {
                 this._folders.push(this._errors[i]);
             }
             this._errors.length = 0;
@@ -58,9 +56,8 @@ define(function(require,exports,module) {
             this._waiting = [];
         }
         this._index = 0;
-
     };
-    function afterLoad(self, files,empty,throttle) {
+    function afterLoad(self, files, empty, throttle) {
         self._current = files;
         self._loading = false;
         self._index = 0;
@@ -72,37 +69,49 @@ define(function(require,exports,module) {
             self.getNext(b[e], empty, Math.min(70, (throttle || 1) * 2));
         }
     }
-    SearchList.prototype.getNext = function(callback, empty, throttle) {
+    SearchList.prototype.getNext = function (callback, empty, throttle) {
         if (this._index >= this._current.length) {
             if (!this._loading) {
                 this._loading = true;
                 var self = this;
                 var now = throttle && new Date().getTime();
-                var hasNext = this._nextFolder(throttle ? function(files) {
-                    var diff = throttle - (new Date().getTime() - now);
-                    setTimeout(afterLoad.bind(null, self,files,empty,throttle), Math.max(0, diff));
-                } : function(files){
-                    afterLoad(self,files,empty,throttle);
-                });
+                var hasNext = this._nextFolder(
+                    throttle
+                        ? function (files) {
+                              var diff =
+                                  throttle - (new Date().getTime() - now);
+                              setTimeout(
+                                  afterLoad.bind(
+                                      null,
+                                      self,
+                                      files,
+                                      empty,
+                                      throttle
+                                  ),
+                                  Math.max(0, diff)
+                              );
+                          }
+                        : function (files) {
+                              afterLoad(self, files, empty, throttle);
+                          }
+                );
                 if (!hasNext) {
                     setImmediate(empty);
                     this._loading = false;
                 }
             }
             this._waiting.push(callback);
-        }
-        else {
+        } else {
             setImmediate(callback.bind(undefined, this._current[this._index]));
             this._index += 1;
         }
     };
-    SearchList.prototype._nextFolder = function(callback) {
+    SearchList.prototype._nextFolder = function (callback) {
         var a;
         //if (this._next.length < 1) {
         if (this._folders.length < 1) {
             return false;
-        }
-        else {
+        } else {
             a = this._folders.shift();
             this.onDir(a);
             this._init(a, callback);
@@ -116,11 +125,11 @@ define(function(require,exports,module) {
         //     return true;
         // }
     };
-    SearchList.prototype._init = function(folder, callback) {
+    SearchList.prototype._init = function (folder, callback) {
         var self = this;
         var tag = this.tag;
-        var a = function(err, res) {
-            if(!nextLoop)setImmediate(a.bind(null,err,res));
+        var a = function (err, res) {
+            if (!nextLoop) setImmediate(a.bind(null, err, res));
             if (tag != self.tag) {
                 return;
             }
@@ -131,16 +140,16 @@ define(function(require,exports,module) {
             res.sort();
             var files = [];
 
-            for (var i of res) {
-                if (isDirectory(i)) {
+            for (var i in res) {
+                var path = res[i];
+                if (isDirectory(path)) {
                     if (self._allowDir) {
-                        self._files.push(folder + i);
+                        self._files.push(folder + path);
                     }
-                    self._folders.push(folder + i);
-                }
-                else {
-                    files.push(folder + i);
-                    self._files.push(folder + i);
+                    self._folders.push(folder + path);
+                } else {
+                    files.push(folder + path);
+                    self._files.push(folder + path);
                 }
             }
             // if (!callback) {
@@ -157,4 +166,4 @@ define(function(require,exports,module) {
         nextLoop = true;
     };
     exports.SearchList = SearchList;
-})/*_EndDefine*/;
+}) /*_EndDefine*/;

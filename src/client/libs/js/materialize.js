@@ -1248,8 +1248,8 @@ M.anime = (function(unsafeAnime){
 })(window);
 
 (function() {
-    window.jQuery = $;
-    M.jQueryLoaded = !!window.jQuery;
+    var jQuery = $;
+    M.jQueryLoaded = !!jQuery;
     var _get = function get(object, property, receiver) {
         if (object === null) object = Function.prototype;
         var desc = Object.getOwnPropertyDescriptor(object, property);
@@ -1315,7 +1315,7 @@ M.anime = (function(unsafeAnime){
             throw new TypeError("Cannot call a class as a function");
         }
     }
-    var cash = jQuery;
+    var cash = $;
 
     var Component = function() {
         /**

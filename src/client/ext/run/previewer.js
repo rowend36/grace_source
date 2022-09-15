@@ -1,18 +1,21 @@
-define(function(require, exports, module) {
-    var Utils = require("grace/core/utils").Utils;
-    var SplitManager = require("grace/ui/splits").SplitManager;
-    var ajax = require("grace/ui/ajax").ajax;
-    var watchTheme = require("grace/themes/theme").watchTheme;
-    var AutoCloseable = require("grace/core/autocloseable")
-        .AutoCloseable;
-    var Editors = require("grace/editor/editors").Editors;
-    var DocsTab = require("grace/setup/setup_tab_host").DocsTab;
-    var getTabWindow = require("grace/ext/tab_window").getTabWindow;
-
+define(function (require, exports, module) {
+    var Utils = require('grace/core/utils').Utils;
+    var SplitManager = require('grace/ui/split_manager').SplitManager;
+    var ajax = require('grace/core/ajax').ajax;
+    var watchTheme = require('grace/themes/themes').watchTheme;
+    var AutoCloseables = require('grace/ui/auto_closeables').AutoCloseables;
+    var Editors = require('grace/editor/editors').Editors;
+    var DocsTab = require('grace/setup/setup_tab_host').DocsTab;
+    var getTabWindow = require('grace/ext/ui/tab_window').getTabWindow;
+    require('css!./previewer.css');
     function createIcon(id, name) {
-        return "<button style='width:35px' id='" + id +
-            "' class='material-icons'>" + name +
-            "</button>";
+        return (
+            "<button style='width:35px' id='" +
+            id +
+            "' class='material-icons'>" +
+            name +
+            '</button>'
+        );
     }
 
     function loadConsole(win, loadOnly) {
@@ -22,37 +25,35 @@ define(function(require, exports, module) {
             }
             win.eruda._entryBtn.hide();
         } else {
-            ajax("./libs/js/eruda.min.js", {
-                responseType: "text"
-            }).then(
-                function(req) {
-                    var script = req.responseText;
-                    win.eval(script);
-                    if (win.eruda) {
-                        win.eruda.init(win.erudaPanes || []);
-                        loadConsole(win);
-                    }
+            ajax('./libs/js/eruda.min.js', {
+                responseType: 'text',
+            }).then(function (req) {
+                var script = req.responseText;
+                win.eval(script);
+                if (win.eruda) {
+                    win.eruda.init(win.erudaPanes || []);
+                    loadConsole(win);
                 }
-            );
+            });
         }
     }
 
     function createNavBar(navBar, icons, prefix) {
-        navBar.className = "editor-primary preview-navbar";
-        var addressBar = document.createElement("div");
-        addressBar.className = "addressBar";
+        navBar.className = 'editor-primary preview-navbar';
+        var addressBar = document.createElement('div');
+        addressBar.className = 'addressBar';
         navBar.appendChild(addressBar);
         var iconContainer = document.createElement('div');
-        iconContainer.className = "iconContainer";
+        iconContainer.className = 'iconContainer';
         for (var i in icons) {
-            $(iconContainer).append(createIcon((prefix || "") + icons[i]
-                .id, icons[i]
-                .icon));
+            $(iconContainer).append(
+                createIcon((prefix || '') + icons[i].id, icons[i].icon),
+            );
         }
         navBar.appendChild(iconContainer);
         return {
             addressBar: addressBar,
-            iconContainer: iconContainer
+            iconContainer: iconContainer,
         };
     }
     //should this be moved to the run modes
@@ -61,106 +62,102 @@ define(function(require, exports, module) {
     }
 
     function getCurrentMode(editor) {
-        var scope = editor.session.$mode.$id || "";
-        scope = scope.split("/").pop();
-        if (scope === "html" || scope === "php") {
-            if (scope === "php") scope = "html";
-            var c = editor.getCursorPosition();
-            var state = editor.session.getState(c.row);
-            if (typeof state === "object") {
-                state = state[0];
-            }
-            if (state.substring) {
-                if (state.substring(0, 3) == "js-") scope =
-                    "javascript";
-                else if (state.substring(0, 4) == "css-") scope = "css";
-                else if (state.substring(0, 4) == "php-") scope = "php";
-            }
-        }
-        return scope;
+        return editor.session.getInnerMode();
     }
 
     function checkInCssHtmlOrString(editor) {
-        if (!inJavascriptMode(editor)) { //|| inSafeJs(editor)) {
+        if (!inJavascriptMode(editor)) {
+            //|| inSafeJs(editor)) {
             return true;
         } else {
             return false;
         }
     }
 
-    require("./run").Execute.createPreview = function(edit) {
-        var previewContainer = document.createElement("div");
+    require('./run').Execute.createPreview = function (edit) {
+        var previewContainer = document.createElement('div');
         var navBar = createNavBar(
-            $(previewContainer).append("<div></div>")
-            .children().last()[0], [{
-                id: "backward",
-                icon: "keyboard_arrow_left"
-            }, {
-                id: "forward",
-                icon: "keyboard_arrow_right"
-            }, {
-                id: "reload",
-                icon: "refresh"
-            }, {
-                id: "close",
-                icon: "close"
-            }, {
-                id: "console",
-                icon: "bug_report"
-            }, {
-                id: "full",
-                icon: "fullscreen"
-            }, {
-                id: "desktop",
-                icon: "computer"
-            }, {
-                id: "zoom",
-                icon: "zoom_out"
-            }], "preview-"
+            $(previewContainer).append('<div></div>').children().last()[0],
+            [
+                {
+                    id: 'backward',
+                    icon: 'keyboard_arrow_left',
+                },
+                {
+                    id: 'forward',
+                    icon: 'keyboard_arrow_right',
+                },
+                {
+                    id: 'reload',
+                    icon: 'refresh',
+                },
+                {
+                    id: 'close',
+                    icon: 'close',
+                },
+                {
+                    id: 'console',
+                    icon: 'bug_report',
+                },
+                {
+                    id: 'full',
+                    icon: 'fullscreen',
+                },
+                {
+                    id: 'desktop',
+                    icon: 'computer',
+                },
+                {
+                    id: 'zoom',
+                    icon: 'zoom_out',
+                },
+            ],
+            'preview-',
         );
-        previewContainer.className = "preview";
+        previewContainer.className = 'tab-window preview';
         var previewWrapper = document.createElement('div');
-        previewWrapper.className = "iframe-wrapper";
+        previewWrapper.className = 'iframe-wrapper';
         var preview = document.createElement('iframe');
         previewContainer.appendChild(previewWrapper);
         previewWrapper.appendChild(preview);
-        navBar.iconContainer.onclick = function(e) {
+        navBar.iconContainer.onclick = function (e) {
             var win = preview.contentWindow;
-            switch (e.target.getAttribute("id").substring(8)) {
-                case "backward":
+            var a = e.target.getAttribute('id');
+            if (!a) return;
+            switch (a.substring(8)) {
+                case 'backward':
                     win.history.back();
                     break;
-                case "forward":
+                case 'forward':
                     win.history.forward();
                     break;
-                case "console":
+                case 'console':
                     loadConsole(win);
                     break;
-                case "reload":
+                case 'reload':
                     updatePreview(false);
                     break;
-                case "close":
+                case 'close':
                     hide();
                     break;
-                case "zoom":
-                    $(previewContainer).toggleClass(
-                        'preview-zoom');
+                case 'zoom':
+                    $(previewContainer).toggleClass('preview-zoom');
                     break;
-                case "desktop":
-                    if (!$(previewContainer).toggleClass(
-                            'preview-desktop')
-                        .hasClass('preview-container')) {
-                        $(previewContainer).removeClass(
-                            'preview-zoom');
-                    } else $(previewContainer.addClass(
-                        'preview-zoom'));
+                case 'desktop':
+                    if (
+                        !$(previewContainer)
+                            .toggleClass('preview-desktop')
+                            .hasClass('preview-desktop')
+                    ) {
+                        $(previewContainer).removeClass('preview-zoom');
+                    } else $(previewContainer).addClass('preview-zoom');
                     break;
-                case "full":
+                case 'full':
                     if (lastLayout) {
                         show(false);
-                        e.target.innerHTML = "fullscreen";
+                        e.target.innerHTML = 'fullscreen';
                     } else {
-                        e.target.innerHTML = "fullscreen_exit";
+                        e.target.innerHTML = 'fullscreen_exit';
                         show(true);
                     }
                     break;
@@ -168,8 +165,7 @@ define(function(require, exports, module) {
         };
         var addressBar = navBar.addressBar;
 
-
-        var path = "";
+        var path = '';
         var live = false;
         // var hot = false;
         var lastLayout = false;
@@ -177,15 +173,14 @@ define(function(require, exports, module) {
         var editor = null;
         var reloader, container;
         var splitMode;
-        var liveUpdatePreview = Utils.debounce(function() {
-            if (checkInCssHtmlOrString(editor))
-                updatePreview(true);
+        var liveUpdatePreview = Utils.debounce(function () {
+            if (checkInCssHtmlOrString(editor)) updatePreview(true);
         }, 1000);
 
         function getSplitMode(container) {
-            return container.clientWidth > Math.min(container
-                    .clientHeight, 720) ?
-                "horizontal" : "vertical";
+            return container.clientWidth > Math.min(container.clientHeight, 720)
+                ? 'horizontal'
+                : 'vertical';
         }
 
         function updatePreview(live) {
@@ -196,7 +191,6 @@ define(function(require, exports, module) {
                     preview.contentWindow.reload(true);
                 preview.src = path;
             }
-
         }
 
         function setEditor(edit) {
@@ -204,8 +198,7 @@ define(function(require, exports, module) {
                 return;
             } else {
                 if (live) {
-                    if (editor)
-                        stopLiveUpdate();
+                    if (editor) stopLiveUpdate();
                     editor = edit;
                     startLiveUpdate();
                 } else {
@@ -217,27 +210,26 @@ define(function(require, exports, module) {
 
         function stopLiveUpdate() {
             live = false;
-            editor.off("change", liveUpdatePreview);
+            editor.off('change', liveUpdatePreview);
         }
 
         function startLiveUpdate() {
             live = true;
-            editor.on("change", liveUpdatePreview);
+            editor.on('change', liveUpdatePreview);
         }
 
         function hide() {
             hidden = true;
             if (lastLayout) {
                 if (lastLayout == FULL) {
-                    $(previewContainer).removeClass("fullscreen");
-                    AutoCloseable.remove("preview");
+                    $(previewContainer).removeClass('fullscreen');
+                    AutoCloseables.remove('preview');
                 } else if (lastLayout == TABBED) {
                     if (DocsTab.hasTab('preview')) {
                         Editors.closeTabWindow('preview');
                     }
                 }
-                previewContainer.parentNode.removeChild(
-                    previewContainer);
+                previewContainer.parentNode.removeChild(previewContainer);
             } else {
                 container = null;
                 SplitManager.remove($(previewContainer));
@@ -262,10 +254,8 @@ define(function(require, exports, module) {
                 layout = lastLayout;
             }
             if (!hidden) {
-                if (lastLayout != layout)
-                    hide();
-                else
-                    return;
+                if (lastLayout != layout) hide();
+                else return;
             }
             watchTheme($(previewContainer));
             if (layout instanceof HTMLElement) {
@@ -274,19 +264,20 @@ define(function(require, exports, module) {
                 switch (+layout) {
                     case FULL:
                         container = document.body;
-                        previewContainer.className += " fullscreen";
-                        AutoCloseable.add("preview", {
-                            close: hide
+                        previewContainer.className += ' fullscreen';
+                        AutoCloseables.add('preview', {
+                            close: hide,
                         });
                         break;
                     case SPLIT:
-                        container = SplitManager.add($(editor
-                                .container), splitMode ||
-                            getSplitMode(editor.container));
+                        container = SplitManager.add(
+                            $(editor.container),
+                            splitMode || getSplitMode(editor.container),
+                        );
                         break;
                     case TABBED:
-                        container = getTabWindow('preview',
-                            'PREVIEW', '', hide).element;
+                        container = getTabWindow('preview', 'PREVIEW', '', hide)
+                            .element;
                 }
             }
             hidden = false;
@@ -295,12 +286,12 @@ define(function(require, exports, module) {
         }
 
         var API = {
-            isHidden: function() {
+            isHidden: function () {
                 return hidden;
             },
             show: show,
             hide: hide,
-            setSplitDirection: function(dir) {
+            setSplitDirection: function (dir) {
                 if (splitMode == dir) return;
                 else {
                     splitMode = dir;
@@ -314,12 +305,12 @@ define(function(require, exports, module) {
             stopLiveUpdate: stopLiveUpdate,
             startLiveUpdate: startLiveUpdate,
             container: previewContainer,
-            setPath: function(p, reload) {
+            setPath: function (p, reload) {
                 path = p;
                 addressBar.innerHTML = p;
                 reloader = reload;
                 updatePreview(false);
-            }
+            },
         };
         return API;
     };

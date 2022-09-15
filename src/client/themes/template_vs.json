@@ -158,10 +158,8 @@
   },
   "tokenColors": [
     /**
-      These are mostly ignored since ace editor 
-      which Grace uses generates tokens which are not exactly
-      the same as VSCode due to less language support.
-      If you feel the need to generate them anyway, set generateTokens to true.
+      These is a best effort attempt since ace editor 
+      which Grace uses generates less specific tokens.
     */
     {
       "settings": {

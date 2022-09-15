@@ -10,9 +10,9 @@ define(function(require, exports, module) {
         'markdown': true
     };
     MarkdownPreview.modes = {
-        'ace/mode/markdown': true
+        'markdown': true
     };
-    MarkdownPreview.run = Depend.define(function(cb) {
+    MarkdownPreview.run = Depend.after(function(cb) {
         require(["grace/ext/run/libs/markdown-it"],
             function(markdownit) {
                 MarkdownPreview.md = markdownit();

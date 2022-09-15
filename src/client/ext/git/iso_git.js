@@ -9,7 +9,7 @@ define(function(require, exports, module) {
       }, reject);
     });
   };
-  var gc = require("grace/core/events").AppEvents;
+  var gc = require("grace/core/app_events").AppEvents;
   var Utils = require("grace/core/utils").Utils;
   var http = require("./libs/isomorphic-http").http;
   var cache;

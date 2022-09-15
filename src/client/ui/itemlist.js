@@ -1,9 +1,9 @@
-define(function(require, exports, module) {
+define(function (require, exports, module) {
     /*globals $*/
-    var FocusManager = require("../core/focus_manager").FocusManager;
-    var KeyListener = require("../ui/key_listener").KeyListener;
+    var FocusManager = require("./focus_manager").FocusManager;
+    var KeyListener = require("./key_listener").KeyListener;
 
-    var EventsEmitter = require("../core/events").EventsEmitter;
+    var EventsEmitter = require("../core/events_emitter").EventsEmitter;
     var Utils = require("../core/utils").Utils;
     /*
       Events: moveSelect - called on keyboard focus,
@@ -18,198 +18,169 @@ define(function(require, exports, module) {
         }
     }
     Utils.inherits(ItemList, EventsEmitter);
-    ItemList.prototype.blur = function(el) {
+    ItemList.prototype.blur = function (el) {
         this.selected = null;
-        $(el).removeClass('selected');
+        $(el).removeClass("item-selected");
     };
-    ItemList.prototype.moveTo = function(newEl, oldEl) {
-        $(oldEl).removeClass('selected');
+    ItemList.prototype.moveTo = function (newEl, oldEl) {
+        $(oldEl).removeClass("item-selected");
         this.selected = newEl;
-        $(newEl).addClass('selected');
-        var index = newEl.getAttribute('item-list-index');
+        $(newEl).addClass("item-selected");
+        var index = newEl.getAttribute("item-list-index");
         if (index || index === 0) {
-            this.trigger('moveSelect', this.getItem(index), true);
+            this.trigger("moveSelect", this.getItem(index), true);
         }
     };
-    ItemList.prototype.selectAll = function() {
-
-    };
+    ItemList.prototype.selectAll = function () {};
     ItemList.prototype.shiftTo = ItemList.prototype.moveTo;
-    ItemList.prototype.getNext = function(current, root) {
+    ItemList.prototype.getNext = function (current, root) {
         var elements = this.getElements(root);
         var lastIndex = indexOf(elements, current);
         return elements[lastIndex + 1] || current;
     };
-    ItemList.prototype.getElements = function(root) {
-        return root.getElementsByClassName('tabbable');
+    ItemList.prototype.getElements = function (root) {
+        return root.getElementsByClassName("tabbable");
     };
-    ItemList.prototype.getCurrentElement = function(root) {
+    ItemList.prototype.getCurrentElement = function (root) {
         if (this.selected) {
             return this.selected;
         }
         return root;
     };
-    ItemList.prototype.getPrev = function(current, root) {
+    ItemList.prototype.getPrev = function (current, root) {
         var elements = this.getElements(root);
         var lastIndex = indexOf(elements, current);
         return elements[lastIndex - 1] || elements[0];
     };
-    ItemList.prototype.select = function(index) {
+    ItemList.prototype.select = function (index) {
         var current = this.selected;
-        if (current)
-            $(current).removeClass('selected');
+        if (current) $(current).removeClass("item-selected");
         this.selected = this.getElementAtIndex(index);
-        if (this.selected)
-            $(this.selected).addClass('selected');
-        this.trigger('select', {
-            index: index,
-            item: this.getItem(index)
-        }, true);
+        if (this.selected) $(this.selected).addClass("item-selected");
+        this.trigger(
+            "select",
+            {
+                index: index,
+                item: this.getItem(index),
+            },
+            true
+        );
     };
 
-    ItemList.prototype.getLength = function() {
+    ItemList.prototype.getLength = function () {
         return this.items.length;
     };
     ItemList.prototype.blur = Utils.noop;
-    ItemList.prototype.getHtml = function(index) {
+    ItemList.prototype.getHtml = function (index) {
         return this.items[index];
     };
-    ItemList.prototype.getItem = function(index) {
+    ItemList.prototype.getItem = function (index) {
         return this.items[index];
     };
-    ItemList.prototype.createItem = function(index) {
-        var el = document.createElement('li');
+    ItemList.prototype.createItem = function (index) {
+        var el = document.createElement("li");
         el.className = this.itemClass + " tabbable";
-        el.setAttribute('tabIndex', 0);
+        el.setAttribute("tabIndex", 0);
         el.innerHTML = this.getHtml(index);
         return el;
     };
-    ItemList.prototype.getElementAtIndex = function(index) {
-        return this.listEl.getElementsByClassName(this.itemClass)[
-            index];
+    ItemList.prototype.getElementAtIndex = function (index) {
+        return this.listEl.getElementsByClassName(this.itemClass)[index];
     };
-    ItemList.prototype.createElement = function() {
-        var root = this.el = document.createElement('div');
+    ItemList.prototype.createElement = function () {
+        var root = (this.el = document.createElement("div"));
 
-        root.setAttribute('id', this.id);
-        var toId = function(name) {
+        root.setAttribute("id", this.id);
+        var toId = function (name) {
             return name.toLowerCase().replace(/\s/g, "_");
         };
         this.container.appendChild(root);
         root.className = this.containerClass;
         KeyListener.attach(this.el, this);
-        $(root).append("<h6 class='modal-header'></h6>" +
-            "<div class='modal-content'>" +
-            "<ul class='item-list-items'>" +
-            "</ul>" +
-            "</div>" +
-            (this.footer ?
-                "<div class='modal-footer align-right'>" + this
-                .footer.map(function(name) {
-                    return '<a id="item-list-' + toId(
-                        name) +
-                        '" href="#!" class="tabbable waves-effect btn-flat">' +
-                        name + '</a>';
-                }).join("") + '</div>' : ""));
-        this.listEl = root.getElementsByClassName(
-            'item-list-items')[0];
+        $(root).append(
+            "<h6 class='modal-header'></h6>" +
+                "<div class='modal-content'>" +
+                "<ul class='" +
+                this.listClass +
+                "'>" +
+                "</ul>" +
+                "</div>" +
+                (this.footer
+                    ? "<div class='modal-footer align-right'>" +
+                      this.footer
+                          .map(function (name) {
+                              return (
+                                  '<a id="item-list-' +
+                                  toId(name) +
+                                  '" href="#!" class="tabbable waves-effect btn-flat">' +
+                                  name +
+                                  "</a>"
+                              );
+                          })
+                          .join("") +
+                      "</div>"
+                    : "")
+        );
+        this.listEl = $(root).find("ul")[0];
         var self = this;
         this.$el = $(this.el);
-        this.$el.on('click', '.list-item', function(e) {
+        this.$el
+            .on("click", ".list-item", function (e) {
                 FocusManager.focusIfKeyboard(self.$receiver);
                 e.stopPropagation();
-                var index = $(this).attr('item-list-index');
+                var index = $(this).attr("item-list-index");
                 self.select(index);
             })
-            .on('click', function(e) {
+            .on("click", function (e) {
                 FocusManager.focusIfKeyboard(self.$receiver);
                 e.stopPropagation();
             });
         if (this.footer)
-            this.footer.forEach(function(name) {
-                this.$el.on('click', '#item-list-' + toId(name),
-                    self["$" + toId(name)] || false);
+            this.footer.forEach(function (name) {
+                this.$el.on(
+                    "click",
+                    "#item-list-" + toId(name),
+                    self["$" + toId(name)] || false
+                );
             }, this);
     };
-    ItemList.prototype.onenter = function(e) {
+    ItemList.prototype.onenter = function (e) {
         e.click();
     };
-    ItemList.prototype.getRoot = function() {
+    ItemList.prototype.getRoot = function () {
         return this.container;
     };
-    ItemList.prototype.containerClass = 'modal modal-container';
-    ItemList.prototype.itemClass = "item-list-item border-inactive";
+    ItemList.prototype.containerClass = "modal modal-container";
+    ItemList.prototype.itemClass = "item_list-item border-inactive";
+    ItemList.prototype.listClass = "item-list-items";
     ItemList.prototype.headerText = "";
     ItemList.prototype.emptyText = "No items";
-    ItemList.prototype.render = function() {
+    ItemList.prototype.render = function () {
         if (!this.el) {
             this.createElement();
         }
-        var header = this.$el.find('.modal-header')[0];
+        var header = this.$el.find(".modal-header")[0];
         header.innerHTML = this.headerText;
         var content = this.listEl;
         var item;
         content.innerHTML = "";
-        if (this.selected)
-            $(this.selected).removeClass('selected');
+        if (this.selected) $(this.selected).removeClass("item-selected");
         this.selected = null;
         if (this.getLength() > 0) {
             for (var i = 0; i < this.getLength(); i++) {
                 item = this.createItem(i);
                 item.className += " list-item";
-                item.setAttribute('item-list-index', i);
+                item.setAttribute("item-list-index", i);
                 content.appendChild(item);
             }
         } else {
-            item = document.createElement('li');
-            item.setAttribute("class", 'item-list-empty');
+            item = document.createElement("li");
+            item.setAttribute("class", "item-list-empty");
             item.innerHTML = this.emptyText;
             content.appendChild(item);
         }
     };
 
-    function QuickList( /*id, items, container*/ ) {
-        QuickList.super(this, arguments);
-        this.$clear = (function(e) {
-            this.items.length = 0;
-            this.trigger('clear', null, true);
-            this.hide(e);
-        }).bind(this);
-        this.$close = this.hide.bind(this);
-    }
-    QuickList.prototype.getHtml = function(index) {
-        return Utils.htmlEncode(String(this.items[index]).substring(
-            0, 10000)).replace(/(?:\r\n|\r|\n)+/g,
-            "<br/>");
-    };
-    QuickList.prototype.containerClass = "modal bottom-list";
-    QuickList.prototype.itemClass = "bottom-list-item";
-    QuickList.prototype.footer = ["Clear", "Close"];
-    QuickList.prototype.hide = function(e) {
-        if (e) e.stopPropagation();
-        if (!this.shown) return;
-        this.shown = false;
-        this.trigger('dismiss', null, true);
-        this.$el.fadeOut();
-        this.lastFocus();
-        this.lastFocus = null;
-    };
-    QuickList.prototype.blur = function() {
-        this.hide();
-    };
-    QuickList.prototype.show = function() {
-        if (this.shown) return;
-        this.shown = true;
-        this.render();
-        this.$el.fadeIn();
-        this.$el.css("z-index", 500);
-        this.$el.css("position", "absolute");
-        this.lastFocus = FocusManager.visit(this.$receiver);
-    };
-    Utils.inherits(QuickList, ItemList);
-
-    var indexOf = Array.prototype.indexOf.call.bind(Array.prototype
-        .indexOf);
-    exports.BottomList = QuickList;
+    var indexOf = Array.prototype.indexOf.call.bind(Array.prototype.indexOf);
     exports.ItemList = ItemList;
 }); /*_EndDefine*/

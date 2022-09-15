@@ -1,5 +1,5 @@
 define(function(require, exports, module) {
-    var FocusManager = require("../core/focus_manager").FocusManager;
+    var FocusManager = require("./focus_manager").FocusManager;
     var InvisibleTextArea = require("./textarea").InvisibleTextArea;
     var event = ace.require("ace/lib/event");
     var keys = ace.require("ace/lib/keys");

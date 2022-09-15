@@ -1,2 +1,2 @@
 #!usr/bin/node
-require("./server/server");
+require("./server/");

@@ -1,133 +1,139 @@
-define(function(require, exports, module) {
-    var getActiveDoc = require("./active_doc").getActiveDoc;
-    var addDoc = require("./docs").addDoc;
-    var Docs = require("./docs").Docs;
-    var Notify = require("../ui/notify").Notify;
-    var FocusManager = require("../core/focus_manager").FocusManager;
-    var Fileviews = require("../ext/fileview/fileviews").Fileviews;
+define(function (require, exports, module) {
+    var openDoc = require('./docs').openDoc;
+    var Docs = require('./docs').Docs;
+    var Notify = require('../ui/notify').Notify;
+    var FocusManager = require('../ui/focus_manager').FocusManager;
 
-    function save() {
-        var mainDoc = getActiveDoc();
-        if (mainDoc) {
-            if (mainDoc.isTemp()) {
-                FocusManager.hintChangeFocus();
-                Fileviews.saveAs(mainDoc.id);
-            } else {
-                Docs.saveDocs(mainDoc.id);
-            }
-        }
+    function getDoc(editor) {
+        return Docs.forSession(editor.session);
     }
-
-    exports.DocumentCommands = [{
-            name: "refreshFile",
+    var checkpointsLoaded = function () {
+        return getDoc() && getDoc().$loadCheckpoints;
+    };
+    var partialUndoLoaded = function () {
+        return getDoc() && getDoc().session.partialUndo;
+    };
+    exports.DocumentCommands = [
+        {
+            name: 'refreshFile',
             bindKey: {
-                win: "Ctrl-R",
-                mac: "Command-Alt-R",
+                win: 'Ctrl-R',
+                mac: 'Command-Alt-R',
             },
-            exec: function() {
-                var mainDoc = getActiveDoc();
+            exec: function (editor) {
+                var mainDoc = getDoc(editor);
                 mainDoc && mainDoc.refresh();
             },
         },
         {
-            name: "openFile",
+            name: 'openFile',
             bindKey: {
-                win: "Ctrl-O",
-                mac: "Command-O",
+                win: 'Ctrl-O',
+                mac: 'Command-O',
             },
-            exec: function() {
-                //Fileviews.pickFile(null, require("../core/utils").Utils.noop);
-            },
-        },
-        {
-            name: "newFile",
-            bindKey: {
-                win: "Ctrl-N",
-                mac: "Command-Alt-N",
-            },
-            exec: function newDoc(editor) {
-                return addDoc("unsaved*", "", {
-                    mode: editor ? editor.getOption(
-                        "mode") : null,
+            exec: function () {
+                require(['../ext/fileview/fileviews'], function (mod) {
+                    mod.Fileviews.pickFile(
+                        null,
+                        require('../core/utils').Utils.noop
+                    );
                 });
             },
         },
         {
-            name: "Undo All Changes",
-            isAvailable: getActiveDoc,
-            exec: function() {
-                var mainDoc = getActiveDoc();
+            name: 'newFile',
+            bindKey: {
+                win: 'Ctrl-N',
+                mac: 'Command-Alt-N',
+            },
+            exec: function newDoc(editor) {
+                return openDoc('unsaved*', '', {
+                    mode: editor ? editor.getOption('mode') : null,
+                });
+            },
+        },
+        {
+            name: 'undoAllChanges',
+            isAvailable: checkpointsLoaded,
+            exec: function (editor) {
+                var mainDoc = getDoc(editor);
                 if (mainDoc) {
-                    if (mainDoc.saveCheckpoint("last undo")) {
-                        Notify.info(
-                            "Added checkpoint automatically"
-                        );
-                    } else Notify.error(
-                        "Unable to add checkpoint");
-                    mainDoc.abortChanges();
+                    mainDoc.saveCheckpoint('last undo', function (pass) {
+                        if (pass) {
+                            Notify.info('Added checkpoint automatically');
+                        } else Notify.error('Unable to add checkpoint');
+                        mainDoc.abortChanges();
+                    });
                 }
             },
         },
         {
-            name: "Redo All Changes",
-            isAvailable: getActiveDoc,
-            exec: function() {
-                var mainDoc = getActiveDoc();
+            name: 'partialUndo',
+            isAvailable: partialUndoLoaded,
+            multiSelectAction: 'forEach',
+            exec: function (editor) {
+                var mainDoc = getDoc(editor);
+                if (mainDoc) mainDoc.session.partialUndo();
+            },
+        },
+        {
+            name: 'redoAllChanges',
+            isAvailable: checkpointsLoaded,
+            exec: function (editor) {
+                var mainDoc = getDoc(editor);
                 if (mainDoc) mainDoc.redoChanges();
             },
         },
         {
-            name: "Save Current State",
-            exec: function(editor, args) {
-                var mainDoc = getActiveDoc();
+            name: 'saveState',
+            isAvailable: checkpointsLoaded,
+            exec: function (editor, args) {
+                var mainDoc = getDoc(editor);
                 if (!mainDoc) return;
                 mainDoc.$clearRevertStack();
 
-                function save(name) {
-                    var obj = mainDoc.saveCheckpoint(name);
-                    if (obj) Notify.info("Saved");
-                    else Notify.info(
-                        "Could not save checkpoint");
-                    if (args && args.cb) args.cb(obj && obj
-                        .key);
+                function saveState(name) {
+                    mainDoc.saveCheckpoint(name, function (obj) {
+                        if (obj) Notify.info('Saved');
+                        else Notify.info('Could not save state');
+                        if (args && args.cb) args.cb(obj && obj.key);
+                    });
                 }
                 if (args && args.name) {
-                    save(args.name);
+                    saveState(args.name);
                 } else
                     Notify.prompt(
-                        "Enter name",
-                        save,
-                        (mainDoc.$loadCheckpoints()[0] || {})
-                        .name,
+                        'Enter name',
+                        saveState,
+                        (mainDoc.$loadCheckpoints()[0] || {}).name,
                         null,
-                        mainDoc.$loadCheckpoints().map(function(
-                            e) {
+                        mainDoc.$loadCheckpoints().map(function (e) {
                             return e.name;
                         })
                     );
             },
         },
         {
-            name: "Go to Saved State",
-            exec: function(editor, args) {
-                var doc = getActiveDoc();
+            name: 'restoreState',
+            isAvailable: checkpointsLoaded,
+            exec: function (editor, args) {
+                var doc = getDoc(editor);
                 doc.$clearRevertStack();
                 if (doc.$loadCheckpoints().length < 1)
-                    return Notify.info(
-                        "No states saved for this file");
+                    return Notify.info('No states saved for this file');
 
                 function restore(name) {
-                    var res = doc.gotoCheckpoint(name);
-                    if (args && args.cb) args.cb(res);
+                    var res = doc.gotoCheckpoint(name, function () {
+                        if (args && args.cb) args.cb(res);
+                    });
                 }
-                if (!doc.stateID) Notify.warn(
-                    "Current state not saved");
+                if (!doc.stateID) Notify.warn('Current state not saved');
                 if (args && args.name) {
                     restore(name);
                 } else
                     Notify.pick(
-                        "Select checkpoint",
-                        doc.$loadCheckpoints().map(function(e) {
+                        'Select checkpoint',
+                        doc.$loadCheckpoints().map(function (e) {
                             return e.name;
                         }),
                         restore
@@ -135,14 +141,14 @@ define(function(require, exports, module) {
             },
         },
         {
-            name: "Delete State",
-            exec: function(editor, args) {
-                var doc = getActiveDoc();
+            name: 'deleteState',
+            isAvailable: checkpointsLoaded,
+            exec: function (editor, args) {
+                var doc = getDoc(editor);
                 if (!doc) return;
                 doc.$clearRevertStack();
                 if (doc.$loadCheckpoints().length < 1)
-                    return Notify.info(
-                        "No states saved for this file");
+                    return Notify.info('No states saved for this file');
 
                 function restore(name) {
                     doc.deleteCheckpoint(name);
@@ -152,8 +158,8 @@ define(function(require, exports, module) {
                     restore(name);
                 } else
                     Notify.pick(
-                        "Select state",
-                        doc.$loadCheckpoints().map(function(e) {
+                        'Select state',
+                        doc.$loadCheckpoints().map(function (e) {
                             return e.name;
                         }),
                         restore
@@ -161,33 +167,50 @@ define(function(require, exports, module) {
             },
         },
         {
-            name: "Return from Checkpoint",
-            bindKey: "Ctrl-Alt-J",
-            exec: function() {
-                getActiveDoc().returnFromCheckpoint();
+            name: 'returnFromState',
+            isAvailable: checkpointsLoaded,
+            bindKey: 'Ctrl-Alt-J',
+            exec: function (editor) {
+                getDoc(editor).returnFromCheckpoint(
+                    require('../core/utils').Utils.noop
+                );
             },
         },
         {
-            name: "save",
+            name: 'save',
             bindKey: {
-                win: "Ctrl-S",
-                mac: "Command-S",
+                win: 'Ctrl-S',
+                mac: 'Command-S',
             },
-            exec: save,
+            exec: function save(editor) {
+                var mainDoc = getDoc(editor);
+                if (mainDoc) {
+                    if (mainDoc.isTemp()) {
+                        FocusManager.hintChangeFocus();
+                        require(['../ext/fileview/fileviews'], function (mod) {
+                            mod.Fileviews.saveAs(mainDoc.id);
+                        });
+                    } else {
+                        Docs.saveDocs(mainDoc.id);
+                    }
+                }
+            },
         },
         {
-            name: "saveAs",
+            name: 'saveAs',
             bindKey: {
-                win: "Ctrl-Shift-S",
-                mac: "Command-Shift-S",
+                win: 'Ctrl-Shift-S',
+                mac: 'Command-Shift-S',
             },
-            exec: function() {
-                var doc = getActiveDoc();
+            exec: function (editor) {
+                var doc = getDoc(editor);
                 if (doc) {
-                    //Fileviews.saveAs(doc.id);
+                    FocusManager.hintChangeFocus();
+                    require(['../ext/fileview/fileviews'], function (mod) {
+                        mod.Fileviews.saveAs(doc.id);
+                    });
                 }
             },
         },
     ];
-
 });

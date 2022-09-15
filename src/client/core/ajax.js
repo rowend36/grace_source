@@ -1,175 +1,174 @@
-define(function(require, exports, module) {
-    var resolve = require("./file_utils").FileUtils.resolve;
-    var dirname = require("./file_utils").FileUtils.dirname;
+define(function (require, exports, module) {
+    var resolve = require('./file_utils').FileUtils.resolve;
+    var dirname = require('./file_utils').FileUtils.dirname;
 
     /**
-     * @typedef ("application\/x-www-form-urlencoded"|"multipart\/form-data"|"text\/plain") ContentType
+     * @typedef ("application\/x-www-form-urlencoded"|"multipart\/form-data"|"text\/plain"|"urlparams") DataType
      * @param {string} url
      * @param {Object} [opts]
-     * @param {AbprtSignal} opts.abortSignal
-     * @param {boolean} opts.addTimestamp
-     * @param {ArrayBuffer|string} opts.body
-     * @param {ContentType} opts.mimeType
-     * @param {ContentType} opts.contentType
-     * @param {object} opts.data
-     * @param {object} opts.headers
      * @param {string} opts.method
+     * @param {object} opts.headers
+     * @param {Object} opts.data
+     * @param {DataType} opts.dataType
+     * @param {Object|ArrayBuffer|string} opts.body
+     * @param {(arraybuffer|blob|json|document|text)} opts.responseType
+     * @param {string} opts.mimeType - The mimetype of the response text
+     * @param {boolean} opts.withCredentials
+     * @param {boolean} opts.addTimestamp
      * @callback {({loaded,total?})} opts.onProgress
-     * @param {ResponseType} opts.responseType
+     * @param {window.AbortSignal} opts.abortSignal
      * @param {number} opts.retryCount
      * @param {number} opts.timeout
-     * @param {boolean} opts.withCredentials
      */
 
     function ajax(url, opts) {
-        return new Promise(function(y, n) {
-            opts = opts || {};
+        return new Promise(function (y, n) {
+            if (!opts) opts = {};
+            else if (opts.retryCount || opts.body)
+                opts = Object.assign({}, opts);
+
             var req = new XMLHttpRequest();
-            //arraybuffer|blob|json|document|text
-            req.contentType = opts.responseType ||
-                "arraybuffer";
-            var RESPONSE = "response";
-            if (opts.responseType === "text")
-                RESPONSE = "responseText";
+            req.contentType = opts.responseType || 'arraybuffer';
+            var RESPONSE =
+                opts.responseType === 'text' ? 'responseText' : 'response';
 
-
-            if (opts.responseType && opts.responseType !==
-                "arraybuffer" && opts
-                .mimeType)
-                req.overrideMimeType(opts.mimeType);
-
-            if (opts.timeout) {
-                req.timeout = opts.timeout;
-            }
+            if (opts.mimeType) req.overrideMimeType(opts.mimeType);
+            if (opts.timeout) req.timeout = opts.timeout;
 
             if (opts.abortSignal) {
-                opts.abortSignal.addEventListener("abort", req
-                    .abort.bind(req));
+                opts.abortSignal.addEventListener('abort', req.abort.bind(req));
             }
             // ({lengthComputable:boolean,loaded:number,total?:number})
-            if (req.onProgress) req.addEventListener("progress",
-                opts.onProgress.bind(req));
+            if (opts.onProgress)
+                req.addEventListener('progress', opts.onProgress.bind(req));
 
-            if (opts.retryCount) {
+            if (opts.retryCount && opts.retryCount > 0) {
                 var final = n;
-                n = function(e) {
-                    if ((e.target.status === 0 && !e.target[
-                            RESPONSE]) || (e
-                            .target
-                            .status >
-                            500
-                        ) &&
-                        opts.retryCount > 0) {
+                n = function (e) {
+                    if (
+                        (req.status === 0 && !req[RESPONSE]) ||
+                        req.status >= 500
+                    ) {
                         opts.retryCount--;
-                        ajax(url, opts).then(y,
-                            final);
+                        ajax(url, opts).then(y, final);
                     } else final(e);
                 };
             }
 
-            req.addEventListener("abort", n);
-            req.addEventListener("error", n);
+            req.addEventListener('abort', n);
+            req.addEventListener('error', n);
 
-            req.addEventListener("load", function(e) {
+            req.addEventListener('load', function (e) {
                 var req = e.target;
-                if (req.status === 200 || !req
-                    .status && req.response)
-                    y(req);
-                else n(Object.assign(new Error(
-                    "Request Failed"), {
-                    target: req
-                }));
+                if (req.status === 200 || !req.status) y(req);
+                else {
+                    var err = new Error('Request Failed: ' + req.status);
+                    err.target = req;
+                    n(err);
+                }
             });
 
             req.withCredentials = opts.withCredentials;
-            if (opts.data) {
-                sendData(req, url, opts);
-            } else {
-                sendHeaders(req, url, opts);
-                req.send(opts.body || undefined);
-            }
+            sendData(req, url, opts);
         });
     }
 
     function relative(module) {
-        return function(url, opts) {
-            return ajax(resolve(dirname(module.uri), url), opts);
+        return function (url, opts) {
+            return ajax(
+                url.indexOf(':') > -1 ? url : resolve(dirname(module.uri), url),
+                opts
+            );
         };
     }
-
 
     //Utility methods
 
     function sendHeaders(req, url, opts) {
-        if (opts.addTimestamp) url = url + ((/\?/).test(url) ?
-                "&" : "?") + (new Date())
-            .getTime();
+        if (opts.addTimestamp)
+            url = url + (/\?/.test(url) ? '&' : '?') + new Date().getTime();
 
-        req.open(opts.method, url, true);
+        req.open(opts.method || 'GET', url, true);
         if (opts.headers) {
             for (var i in opts.headers) {
-                req.setRequestHeader(i, opts.headers[
-                    i]);
+                req.setRequestHeader(i, opts.headers[i]);
             }
         }
     }
 
+    var MULTIPART = 'multipart/form-data';
+    var PLAINTEXT = 'text/plain';
+    var URLENCODED = 'application/x-www-form-urlencoded';
+    var GETPARAMS = 'urlparams';
     function sendData(req, url, opts) {
-        var method = opts.method;
         var data = opts.data;
-        var isPost = method && method.toUpperCase() !== 'GET';
-        var contentType = isPost && opts.contentType ? opts
-            .contentType :
-            "application\/x-www-form-urlencoded";
-        var technique = isPost ?
-            contentType === "multipart\/form-data" ? 3 : contentType ===
-            "text\/plain" ? 2 : 1 : 0;
+        var isGet = !opts.method || opts.method.toUpperCase() === 'GET';
+        var dataType = opts.dataType;
+
+        //Infer data type
+        if (!dataType && !isGet) dataType = URLENCODED;
+        var technique = opts.body || !dataType ? GETPARAMS : dataType;
         var segments;
-        if (technique === 3) {
+        if (technique === MULTIPART) {
             segments = [];
             for (var name in data) {
                 segments.push(
                     /* enctype is multipart/form-data */
-                    "Content-Disposition: form-data; name=\"" +
-                    name +
-                    "\"\r\n\r\n" + data[name] + "\r\n"
+                    'Content-Disposition: form-data; name="' +
+                        name +
+                        '"\r\n\r\n' +
+                        data[name] +
+                        '\r\n'
                 );
             }
         } else {
-            var filter = technique === 2 ? plainEscape :
-                encodeURIComponent;
+            var filter =
+                technique === PLAINTEXT ? encodePlain : encodeURIComponent;
             segments = toParamStr(data, filter);
         }
         switch (technique) {
-            case 0:
-                url = url.replace(/(?:\?.*)?$/,
-                    segments.length > 0 ? "?" + segments
-                    .join("&") : "");
-                sendHeaders(req, url, opts);
-                req.send(opts.body || undefined);
+            case GETPARAMS:
+                if (segments.length > 0)
+                    url += (/\?/.test(url) ? '&' : '?') + segments.join('&');
+                if (opts.body && opts.body.contructor === Object) {
+                    opts.data = opts.body;
+                    opts.body = null;
+                    sendData(req, url, opts);
+                } else {
+                    sendHeaders(req, url, opts);
+                    req.send(opts.body || undefined);
+                }
                 break;
-            case 1:
-            case 2:
+            case URLENCODED:
+            case PLAINTEXT:
                 sendHeaders(req, url, opts);
-                req.setRequestHeader("Content-Type", contentType);
-                req.send(segments.join(technique ===
-                    2 ? "\r\n" : "&"));
+                req.setRequestHeader('Content-Type', dataType);
+                req.send(segments.join(technique === PLAINTEXT ? '\r\n' : '&'));
                 break;
-            case 3:
+            case MULTIPART:
                 sendHeaders(req, url, opts);
                 /* enctype is multipart/form-data */
-                var sBoundary = "---------------------------" + Date
-                    .now().toString(16);
-                req.setRequestHeader("Content-Type",
-                    "multipart\/form-data; boundary=" + sBoundary);
-                sendAsBinary(req, "--" + sBoundary + "\r\n" +
-                    segments.join("--" + sBoundary + "\r\n") +
-                    "--" + sBoundary + "--\r\n");
+                var sBoundary =
+                    '---------------------------' + Date.now().toString(16);
+                req.setRequestHeader(
+                    'Content-Type',
+                    'multipart/form-data; boundary=' + sBoundary
+                );
+                sendAsBinary(
+                    req,
+                    '--' +
+                        sBoundary +
+                        '\r\n' +
+                        segments.join('--' + sBoundary + '\r\n') +
+                        '--' +
+                        sBoundary +
+                        '--\r\n'
+                );
         }
     }
 
-    function plainEscape(sText) {
-        return sText.replace(/[\s\=\\]/g, "\\$&");
+    function encodePlain(sText) {
+        return sText.replace(/[\s\=\\]/g, '\\$&');
     }
 
     /**
@@ -177,32 +176,32 @@ define(function(require, exports, module) {
      */
     function toParamStr(a, filter) {
         var s = [];
-        var add = function(k, v) {
+        var add = function (k, v) {
             v = typeof v === 'function' ? v() : v;
             v = v === null ? '' : v === undefined ? '' : v;
-            s[s.length] = filter(k) + '=' +
-                filter(v);
+            s[s.length] = filter(k) + '=' + filter(v);
         };
-        var buildParams = function(prefix, obj) {
+        var buildParams = function (prefix, obj) {
             var i, len, key;
 
             if (prefix) {
                 if (Array.isArray(obj)) {
-                    for (i = 0, len = obj.length; i <
-                        len; i++) {
+                    for (i = 0, len = obj.length; i < len; i++) {
                         buildParams(
-                            prefix + '[' + (typeof obj[
-                                    i] === 'object' && obj[
-                                    i] ?
-                                i : '') + ']',
+                            prefix +
+                                '[' +
+                                (typeof obj[i] === 'object' && obj[i]
+                                    ? i
+                                    : '') +
+                                ']',
                             obj[i]
                         );
                     }
-                } else if (Object.prototype.toString.call(
-                        obj) === '[object Object]') {
+                } else if (
+                    Object.prototype.toString.call(obj) === '[object Object]'
+                ) {
                     for (key in obj) {
-                        buildParams(prefix + '[' + key + ']',
-                            obj[key]);
+                        buildParams(prefix + '[' + key + ']', obj[key]);
                     }
                 } else {
                     add(prefix, obj);

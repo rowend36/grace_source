@@ -1,10 +1,9 @@
 define(function(require, exports, module) {
     "use strict";
-    var appEvents = require("grace/core/events").AppEvents;
+    var appEvents = require("grace/core/app_events").AppEvents;
     var handler = {};
-    var appStorage = require("grace/core/config").appStorage;
     var FileUtils = require("grace/core/file_utils").FileUtils;
-    //requires addDoc
+    //requires openDoc
     
     var count = 0;
     handler._onNewIntent = function(inte) {
@@ -14,14 +13,13 @@ define(function(require, exports, module) {
             if (dir) FileUtils.addToRecents(dir);
         }
         if (intent.hasOwnProperty('value')) {
-            require("grace/docs/docs").addDoc(intent.name || "",
+            require("grace/docs/docs").openDoc(intent.name || "",
                 intent.value || "", intent.path || "");
         } else if (intent.path)
             FileUtils.openIntent(intent);
     };
     handler._pause = function() {
-        appEvents.trigger('appPaused');
-        appStorage.__doSync && appStorage.__doSync();
+        appEvents.pause();
     };
     handler._resume = function() {
         setTimeout(window.blur.bind(window), 50);

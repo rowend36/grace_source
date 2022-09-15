@@ -3,7 +3,7 @@ define(function(require,exports,module) {
     var RecyclerViewCache = require("grace/ui/recycler").RecyclerViewCache;
     var RangeRenderer = require("grace/ui/range_renderer").RangeRenderer;
     var RecyclerRenderer = require("grace/ui/recycler").RecyclerRenderer;
-    var switchToDoc = require("grace/setup/setup_tab_host").switchToDoc;
+    var switchToDoc = require("grace/ext/switch_to_doc").switchToDoc;
     var RecyclerViewHolder = require("grace/ui/recycler").RecyclerViewHolder;
     var MAX_KEEP_LINES_RANGE_LENGTH = 300;
     var ScrollSaver = require("grace/ui/recycler").ScrollSaver;
@@ -58,11 +58,11 @@ define(function(require,exports,module) {
         };
         getHolder = function(doc, ranges) {
             var endLine = 0;
-            var mode = ace.config.$modes[doc.session.$modeId];
+            var mode = ace.config.$modes[doc.session.getMode().$id];
             var lines;
-            //Better syntax highlighting if context is not lost
+            //Better syntax highlighting if no data is not lost
             //But no keeping large documents because of that
-            if (doc.session.$modeId != "ace/mode/text" && mode && ranges[ranges.length - 1].end.row <
+            if (doc.session.getModeName() !=="text" && mode && ranges[ranges.length - 1].end.row <
                 MAX_KEEP_LINES_RANGE_LENGTH) {
                 endLine = ranges[ranges.length - 1].end.row;
                 lines = doc.session.getLines(0, endLine);
@@ -98,7 +98,7 @@ define(function(require,exports,module) {
                 //ranges are split into line chunks of maxHeight for renderering
                 maxHeight: 5,
                 start: 0,
-                hidden: ranges.length > ctx.appConfig.resultsAutoShowLines,
+                hidden: ranges.length > ctx.searchConfig.resultsAutoShowLines,
                 views: []
             }, holder_props);
             holder.session.setUseWorker(false);
@@ -164,7 +164,7 @@ define(function(require,exports,module) {
             var body = renderer.render(ranges, doc.session);
             bindClickListeners(body.children, ranges, doc.getPath());
             header[0].searchData = $(body);
-            if (ranges.length > this.appConfig.resultsAutoShowLines) {
+            if (ranges.length > this.searchConfig.resultsAutoShowLines) {
                 body.style.display = 'none';
                 header.find('.foldResult').addClass('btn-toggle__activated');
             }

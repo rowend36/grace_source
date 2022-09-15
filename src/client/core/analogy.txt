@@ -1,0 +1,23 @@
+How do you include as much functionality
+on startup while paying the littlest price
+in bundle size?
+
+Apparent Answer
+= Write everything yourself
+
+
+Coincidentally, that is also the right answer to
+how do you spend 3 years building a simple software. :D
+
+In here, you have replicated functionality of
+- jquery on cashdom & animejs(polyfill)
+- axios (ajax)
+- antlr (parser)
+- ot.js (ext/shared_store)
+- lodash/asyncjs (utils)
+- node.js path(path)
+- node.js events(events_emitter)
+- node.js fs(base_fs)
+- localForage(ext/async_storage)
+- funniest one: entire mobile focus system with
+   adaptive keyboard visibility detection(focus_manager)

@@ -1,0 +1,116 @@
+.theme-dark .preview iframe {
+    background: #888888;
+}
+.preview iframe,
+.iframe-wrapper {
+    width: 100%;
+    height: 100%;
+}
+
+#preview-zoom {
+    display: none;
+}
+
+.preview-desktop #preview-zoom {
+    display: inline-block;
+}
+
+.preview {
+    padding-top: 40px;
+}
+
+.preview-navbar {
+    width: 100%;
+    top: 0;
+    position: absolute;
+    height: 40px;
+    background: inherit;
+}
+
+.preview-desktop #preview-desktop,
+.preview-zoom #preview-zoom {
+    color: #82b1ff;
+}
+
+.addressBar {
+    position: absolute;
+    left: 5px;
+    top: 5px;
+    width: auto;
+    min-width: 150px;
+    max-width: 50%;
+    height: 30px;
+    background: rgb(180, 180, 180);
+    background: rgba(180, 180, 180, 128);
+    border: 2px solid #2196F3;
+    border-radius: 15px;
+    overflow: hidden;
+    overflow-x: auto;
+    line-height: 1.8em;
+    padding-left: 10px;
+    color: #444444;
+}
+
+.iconContainer {
+    background: inherit;
+    z-index: 1;
+    position: relative;
+    top: 5px;
+    float: right;
+    height: 35px;
+    overflow: hidden;
+    overflow-x: auto;
+    white-space: nowrap;
+    max-width: 45%;
+    margin-right: 10px;
+}
+
+.iconContainer>button {
+    vertical-align: bottom;
+}
+
+.preview-desktop {
+    overflow: scroll;
+}
+
+.preview-desktop .iframe-wrapper {
+    width: 1280px;
+    height: 100%;
+}
+
+.preview-zoom iframe {
+    width: 1280px;
+    height: 200%;
+    transform: scale(0.5, 0.5) translate(-50%, -50%);
+}
+
+@media only screen and (min-width: 992px) {
+    .preview-zoom iframe {
+        transform: scale(0.75, 0.75) translate(-16%, -16%);
+    }
+
+    .preview-zoom .iframe-wrapper {
+        width: 960px;
+        height: 100%;
+        overflow: hidden;
+    }
+}
+
+.preview-zoom .iframe-wrapper {
+    width: 640px;
+    height: 100%;
+    overflow: hidden;
+}
+
+.preview-desktop .preview-navbar {
+    width: 1280px;
+}
+
+.preview-zoom .preview-navbar {
+    width: 640px;
+}
+
+#preview {
+    border-left: 2px solid grey;
+    /*border-radius: 5px;*/
+}

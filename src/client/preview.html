@@ -3,21 +3,36 @@
 <html>
 
 <head>
-    <script src='./libs/js/eruda.js' type="text/javascript" charset="utf-8"></script>
+    <script id='eruda-script' src='./libs/js/eruda.min.js' type="text/javascript" charset="utf-8"></script>
 </head>
 
 <body>
     <script>
+        var fragment;
         //cache default elements
         function handleUpdate(type, data) {
             switch (type) {
                 case 'html':
-                    if (eruda._isInit)
-                        eruda.destroy();
-                    document.documentElement.innerHTML = data;
+                    if (eruda._isInit) eruda.destroy();
+                    fragment = new DOMParser().parseFromString(data,"text/html");
+                    var scripts = [
+                        document.getElementById('eruda-script')
+                    ];
+                    Array.prototype.forEach.call(fragment.querySelectorAll("script"), function(oldScript) {
+                        var newScript = document.createElement("script");
+                        Array.prototype.forEach.call(oldScript.attributes, function(attr) {
+                            newScript.setAttribute(attr.name, attr.value)
+                        });
+                        newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+                        oldScript.parentNode.removeChild(oldScript)
+                        scripts.push(newScript);
+                    });
+                    document.documentElement.innerHTML = fragment.documentElement.innerHTML;
                     eruda.init();
-                    if (window.top !== window)
-                        eruda._entryBtn.hide();
+                    if (window.top !== window) eruda._entryBtn.hide();
+                    setTimeout(()=>scripts.forEach(function(e) {
+                        document.head.appendChild(e)
+                    }));
                     break;
             }
         }

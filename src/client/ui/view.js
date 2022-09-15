@@ -6,7 +6,6 @@ define(function (require, exports, module) {
      * Element insert/remove notification
      **/
     function View($el) {
-        this._debugId = "#" + Utils.genID();
         this.views = [];
         this.$el = $el;
         this.parent = $el && $el.parent().length ? {$el: $el.parent()} : null;

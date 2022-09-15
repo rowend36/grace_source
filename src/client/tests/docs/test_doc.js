@@ -18,10 +18,12 @@ define(function(require,exports,module) {
             var doc2 = new Doc(texts[texts.length-1]);
             doc.updateValue(doc2.getValue());
             expect(doc.getValue()).to.equal(doc2.getValue());
+            doc.destroy();
+            doc2.destroy();
         }
         for (var i = 0; i < 5; i++) {
             texts.push(genRandomText(i*2));
-            it("should update value correctly", test);
+            it("should update value correctly length="+texts[i].length, test);
         }
         it("should copy line endings", function() {
             var text = "linux doc\nlinux doc";
@@ -29,6 +31,7 @@ define(function(require,exports,module) {
             var doc = new Doc(text);
             doc.updateValue(text2);
             expect(doc.getNewLineCharacter()).to.equal("\r\n");
+            doc.destroy();
         });
     });
 });

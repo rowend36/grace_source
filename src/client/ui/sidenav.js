@@ -105,8 +105,9 @@ define(function(require, exports, module) {
         },
         "_updateType": function _updateType() {
             var isOverlay = !this.options.pushElements || window.innerWidth < this.options.minWidthPush;
-            if (isOverlay == this.isOverlay) return false;
+            if (isOverlay && this.isOverlay) return false;
             this.close();
+            if (!isOverlay && !this.isOverlay) return true;
             if (isOverlay) {
                 this.el.classList.remove('sidenav-push');
             } else {

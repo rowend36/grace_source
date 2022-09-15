@@ -1,148 +1,72 @@
-define(function(require, exports, module) {
-    "use strict";
-    require("./setup_default_fs");
-    var appEvents = require("../core/events").AppEvents;
-    var Docs = require("../docs/docs").Docs;
-    var docs = require("../docs/docs").docs;
-    var closeDoc = require("../docs/docs").closeDoc;
-    var DocsTab = require("./setup_tab_host").DocsTab;
-    var closeTab = require("./setup_tab_host").closeTab;
-    var Utils = require("../core/utils").Utils;
-    var MainMenu = require("./setup_main_menu").MainMenu;
-    var appConfig = require("../core/config").Config.appConfig;
-    var FileUtils = require("../core/file_utils").FileUtils;
-    var Notify = require("../ui/notify").Notify;
-    //configure Doc defaults
-    require("../editor/editor_settings");
+define(function (require, exports, module) {
+    'use strict';
+    var appEvents = require('../core/app_events').AppEvents;
+    var Docs = require('../docs/docs').Docs;
+    var closeDoc = require('../docs/docs').closeDoc;
+    var openDoc = require('../docs/docs').openDoc;
+    var DocsTab = require('./setup_tab_host').DocsTab;
 
-    //allow open document in new tab
+    var Notify = require('../ui/notify').Notify;
 
-    Docs.initialize(DocsTab, DocsTab.active);
+    //needed for Docs.defaults
+    require('../editor/editor_settings');
 
-    if (Docs.numDocs() < 1) {
-        Docs.createPlaceHolder("welcome", "Welcome To Grace Editor", {
-            select: false,
-        });
-    }
-
-    appEvents.on("closeTab", function(ev) {
-        if (docs[ev.tab]) {
+    appEvents.on('tabClosed', function (ev) {
+        if (Docs.has(ev.tab)) {
             closeDoc(ev.tab);
-            if (Docs.numDocs() === 0) {
-                Docs.createPlaceHolder();
+            if (DocsTab.numTabs() === 0) {
+                openDoc(null, '', null, {autoClose: true});
             }
         }
     });
-    
-    appEvents.on("confirmCloseTab", function(ev) {
-        var doc = docs[ev.tab];
+
+    appEvents.on('closeTab', function (ev) {
+        var doc = Docs.get(ev.tab);
         if (doc && doc.clones && doc.clones.length) {
-            Notify.error(
-                "This document is being used by a plugin");
+            Notify.error('This document is being used by a plugin');
             ev.preventDefault();
         }
         if (!doc) return;
-        var flag = "close-without-saving-" + doc.lastSave;
-        if (doc.dirty && ev.flags.indexOf(flag) < 0) {
+        if (doc.dirty) {
             ev.stopPropagation();
-            ev.preventDefault();
-            Notify.ask(Docs.getName(doc.id) +
-                " has unsaved changes. Close without saving?",
-                function() {
-                    closeTab(ev.tab, ev.flags.concat(flag));
-                });
+            ev.await('close-without-saving-' + doc.lastSave, function (resume) {
+                Notify.ask(
+                    Docs.getName(doc.id) +
+                        ' has unsaved changes. Close without saving?',
+                    resume
+                );
+            });
+        }
+    });
+    var Config = require('../core/config').Config;
+    Config.registerAll(
+        {
+            detectIndentation: true,
+        },
+        'documents'
+    );
+    Config.registerInfo(
+        {
+            detectIndentation:
+                'Automatically detect indentation in new files. Uses resource context.',
+        },
+        'documents'
+    );
+    appEvents.on('openDoc', function (e) {
+        //TODO: usually not triggered for already loaded documents
+        var doc = e.doc;
+        if (
+            Config.forPath(doc.getSavePath(), 'documents', 'detectIndentation')
+        ) {
+            require(['ace!ext/whitespace'], function (e) {
+                e.detectIndentation(doc.session);
+                doc.setOption('useSoftTabs', doc.session.getUseSoftTabs());
+                doc.setOption('tabSize', doc.session.getTabSize());
+            });
         }
     });
 
-    MainMenu.extendOption("file", {
-        icon: "insert_drive_file",
-        sortIndex: 3,
-        caption: "File",
-        subTree: {
-            "close-current": {
-                icon: "close",
-                sortIndex: -1,
-                caption: "Close current tab",
-                close: true,
-                onclick: function() {
-                    closeTab(DocsTab.active);
-                },
-            },
-            "close-except": {
-                icon: "clear_all",
-                caption: "Close others",
-                close: true,
-                onclick: function() {
-                    var tab = DocsTab;
-                    for (var i = tab.tabs.length; i-- >
-                        0;) {
-                        if (tab.tabs[i] != DocsTab.active) {
-                            closeTab(tab.tabs[i]);
-                        }
-                    }
-                },
-            },
-            "close-all": {
-                icon: "clear_all",
-                caption: "Close all",
-                close: true,
-                onclick: function() {
-                    var tab = DocsTab;
-                    for (var i = tab.tabs.length; i-- >
-                        0;) {
-                        closeTab(tab.tabs[i]);
-                    }
-                },
-            },
-            "close-inactive": {
-                icon: "timelapse",
-                caption: "Close inactive tabs",
-                close: true,
-                onclick: function() {
-                    var inactiveTime =
-                        new Date().getTime() - Utils
-                        .parseTime(appConfig
-                            .inactiveFileDelay);
-                    Utils.asyncForEach(
-                        DocsTab.tabs.slice(0),
-                        function(e, i, n) {
-                            if (
-                                e == DocsTab.active ||
-                                !docs[e] ||
-                                docs[e].dirty ||
-                                docs[e].isTemp() //||
-                                //e == lastTab
-                            )
-                                return n();
-                            if (Utils.getCreationDate(
-                                    docs[e].id) >=
-                                inactiveTime)
-                                return n();
-                            docs[e].getFileServer()
-                                .stat(docs[e]
-                                    .getSavePath(),
-                                    function(err, s) {
-                                        if (s && s
-                                            .mtimeMs <
-                                            inactiveTime &&
-                                            s.size ===
-                                            docs[e]
-                                            .getSize()
-                                        ) {
-                                            closeTab(e);
-                                        }
-                                        n();
-                                    });
-                        },
-                        null,
-                        5
-                    );
-                },
-            },
-        },
-    });
-    FileUtils.loadServers();
-    appEvents.on("documentsLoaded", Docs
-        .refreshDocs.bind(null, null));
-    console.debug("setup docs");
+    //allow open document in new tab
+    Docs.initialize();
+    appEvents.on('documentsLoaded', Docs.refreshDocs.bind(null, null));
 });

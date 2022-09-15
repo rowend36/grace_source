@@ -1,18 +1,17 @@
-define(function(require, exports, module) {
-    var appEvents = require("../core/events").AppEvents;
-    var Utils = require("../core/utils").Utils;
-    var Docs = require("../docs/docs").Docs;
-    var EditorSettings = require("./editor_settings").EditorSettings;
-    var FocusManager = require("../core/focus_manager").FocusManager;
-    var autofadeScrollBars = require("./ace_helpers")
-        .autofadeScrollBars;
-    var setupMobileMenu = require("./ace_helpers").setupMobileMenu;
+define(function (require, exports, module) {
+    var appEvents = require('../core/app_events').AppEvents;
+    var Utils = require('../core/utils').Utils;
+    var config = ace.require('ace/config');
+    var Docs = require('../docs/docs').Docs;
+    var settings = require('./editor_settings');
+    var FocusManager = require('../ui/focus_manager').FocusManager;
+    var setupEditor = require('./ace_helpers').setupEditor;
     var debug = console;
     //Basics for managing multiple editors
     //Whether it's splits,tabs, scrollers etc
     //setEditor, createEditor, closeEditor, getEditor
     var editors = [];
-    var settings = new EditorSettings(editors);
+    settings.editors = editors;
 
     function getSettingsEditor() {
         return settings;
@@ -23,25 +22,28 @@ define(function(require, exports, module) {
     var __editor;
 
     function getEditor(session) {
-        return session ? editors.filter(function(e) {
-            return e.session === session;
-        })[0] : __editor;
+        return session
+            ? editors.filter(function (e) {
+                  return e.session === session;
+              })[0]
+            : __editor;
     }
-
 
     function setEditor(e) {
         //e can be a container or
         //an editor mousedown event
         e = e.editor || e;
         if (__editor == e) return;
-        Utils.assert(editors.indexOf(e) > -1,
-            'Please use set tabwindow.getEditorWindow');
+        Utils.assert(
+            editors.indexOf(e) > -1,
+            'Please use set tabwindow.getEditorWindow'
+        );
         var oldEditor = __editor;
         __editor = e;
         settings.editor = e;
-        appEvents.trigger('changeEditor', {
+        appEvents.signal('changeEditor', {
             oldEditor: oldEditor,
-            editor: e
+            editor: e,
         });
     }
 
@@ -59,18 +61,22 @@ define(function(require, exports, module) {
                     Docs.closeSession(editor.session);
                 }
                 if (getEditor(session)) {
-                    //create clone
+                    //create synchronized clone
                     session = doc.cloneSession();
                 }
             }
         }
         settings.session = doc.session;
-        var overrides = Object.assign({}, editor.editorOptions, doc
-            .editorOptions);
+        var overrides = Object.assign(
+            {},
+            editor.editorOptions,
+            doc.editorOptions
+        );
         for (var i in overrides) {
-            var value = (doc.editorOptions && doc.editorOptions
-                    .hasOwnProperty(i)) ? doc
-                .editorOptions[i] : settings.options[i];
+            var value =
+                doc.editorOptions && doc.editorOptions.hasOwnProperty(i)
+                    ? doc.editorOptions[i]
+                    : settings.options[i];
             editor.setOption(i, value);
         }
         editor.editorOptions = doc.editorOptions;
@@ -81,9 +87,11 @@ define(function(require, exports, module) {
     function closeEditor(edit) {
         var index = editors.indexOf(edit);
         if (index > -1) {
-            if (appEvents.trigger('closeEditor', {
-                    editor: edit
-                }).defaultPrevented)
+            if (
+                appEvents.trigger('closeEditor', {
+                    editor: edit,
+                }).defaultPrevented
+            )
                 return;
             editors.splice(index, 1);
             if (edit === __editor) {
@@ -91,72 +99,45 @@ define(function(require, exports, module) {
                 setEditor(editors[0]);
             }
         }
-        if (Docs.forSession(edit.session))
-            Docs.closeSession(edit.session);
+        if (Docs.forSession(edit.session)) Docs.closeSession(edit.session);
         try {
             edit.setSession(null);
         } catch (e) {
-            debug.error(e);
+            debug.error(e); //some plugins assume a session can't be null
         }
         FocusManager.focusIfKeyboard(__editor.textInput.getElement());
         edit.destroy();
     }
 
-
-    function keepSelectionInView() {
-        var event = this.$mouseHandler.mousedownEvent;
-        if (event && new Date().getTime() - event.time < FocusManager
-            .FOCUS_RESIZE_WINDOW) {
-            this.renderer.scrollCursorIntoView(null, 0.1);
-        }
-    }
-
-    function muddleTextInput(el) {
-        el.setAttribute("autocomplete", "off");
-        el.removeAttribute("name");
-        el.setAttribute("aria-hidden", true);
-    }
-
     function createEditor(container, orphan) {
-        var el = document.createElement("div");
+        var el = document.createElement('div');
         el.className = 'editor';
         container.appendChild(el);
-        var editor = ace.edit(el);
-        editor.renderer.setScrollMargin(5, 5, 0, 0);
-        muddleTextInput(editor.textInput.getElement());
-        autofadeScrollBars(editor);
-        setupMobileMenu(editor);
-        editor.setAutoScrollEditorIntoView(false);
-        editor.$blockScrolling =
-            Infinity; //prevents ace from logging annoying warnings
+        var editor = setupEditor(el);
         settings.add(editor);
 
         for (var i = 0, end = defaultCommands.length; i < end; i++) {
             if (orphan && defaultCommands[i].mainOnly) continue;
             editor.commands.addCommand(defaultCommands[i]);
         }
-        editor.renderer.on('resize', keepSelectionInView.bind(editor));
         if (!orphan) {
             editors.push(editor);
-            editor.renderer.on("themeLoaded", function(e) {
+            editor.renderer.on('themeLoaded', function (e) {
                 if (editor == editors[0]) {
-                    appEvents.once("appLoaded", function() {
-                        appEvents.trigger(
-                            "editorThemeLoaded", e
-                        );
+                    appEvents.once('appLoaded', function () {
+                        appEvents.trigger('editorThemeLoaded', e);
                     });
                 }
             });
-            editor.renderer.on('changeCharacterSize', function() {
+            editor.renderer.on('changeCharacterSize', function () {
                 if (editor == editors[0]) {
-                    settings.setOption("fontSize", editor
-                        .getFontSize());
+                    settings.setOption('fontSize', editor.getFontSize());
                 }
             });
         }
         appEvents.trigger('createEditor', {
             editor: editor,
-            isMain: !orphan
+            isMain: !orphan,
         });
         return editor;
     }
@@ -165,21 +146,28 @@ define(function(require, exports, module) {
     function addCommands(commands, mainOnly) {
         if (!Array.isArray(commands)) commands = [commands];
         if (mainOnly) {
-            commands.forEach(function(e) {
+            commands.forEach(function (e) {
                 e.mainOnly = true;
             });
         }
         defaultCommands.push.apply(defaultCommands, commands);
         for (var i in editors) {
-            for (var j in commands)
-                editors[i].commands.addCommand(commands[j]);
+            for (var j in commands) editors[i].commands.addCommand(commands[j]);
         }
+    }
+    function addOptions(options) {
+        config.defineOptions(
+            ace.require('ace/editor').Editor.prototype,
+            'editor',
+            options
+        );
     }
     var api = {};
 
     api.getSettingsEditor = getSettingsEditor;
     api.setSession = setSession;
     api.findEditor = getEditor;
+    api.addOptions = addOptions;
     api.addCommands = addCommands;
     api.forEach = editors.forEach.bind(editors);
     api.setEditor = setEditor;

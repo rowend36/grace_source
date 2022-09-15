@@ -1,60 +1,65 @@
-define(function(require,exports,module) {
-    "use strict";
-
-    var stats = exports.renderStats = {
+define(function (require, exports, module) {
+    'use strict';
+    /*globals $*/
+    var stats = (exports.renderStats = {
         append: 0,
         insert: 0,
-        detach: 0
-    };
+        detach: 0,
+    });
     var Errors = {
         INVALID_INDEX: 'No child at index {index}',
-        NOT_CHILD: 'View is not a child of this renderer'
+        NOT_CHILD: 'View is not a child of this renderer',
     };
 
     var ScrollSaver = {
-        getScroll: function(els) {
-            var s, sum = 0;
+        getScroll: function (els) {
+            var s,
+                sum = 0;
             for (s = 0; s < els.length; s++) {
                 sum += els[s].scrollTop;
             }
             return sum;
         },
-        getScrollingElements: function(el) {
+        getScrollingElements: function (el) {
             //copied from filebrowser
             el[0] || (el = $(el));
             var a = [];
             var p = el.add(el.parents());
             for (var i = 0; i < p.length; i++) {
-                var overflow = p.eq(i).css("overflowY");
+                var overflow = p.eq(i).css('overflowY');
                 if (overflow != 'hidden') {
                     a.push(p[i]);
                 }
             }
             return $(a);
         },
-        saveScroll: function(els) {
-            var s, sum = 0,
+        saveScroll: function (els) {
+            var s,
+                sum = 0,
                 scrolls = [];
             for (s = 0; s < els.length; s++) {
-                sum += (scrolls[s] = els[s].scrollTop);
+                sum += scrolls[s] = els[s].scrollTop;
             }
             scrolls._5sum = sum;
             return scrolls;
         },
-        restoreScroll: function(els, scrolls) {
+        restoreScroll: function (els, scrolls) {
             var sum = 0;
             for (var s = 0; s < els.length; s++) {
-                sum += (els[s].scrollTop = scrolls[s]);
+                sum += els[s].scrollTop = scrolls[s];
             }
             return sum;
         },
     };
     var ViewportVisualizer = {
-        create: function(root, renderer) {
+        create: function (root, renderer) {
             this.renderer = renderer;
 
             function svg(el, styles, attribs) {
-                var b = document.createElementNS("http://www.w3.org/2000/svg", el);
+                var b = document.createElementNS(
+                    'http://www.w3.org/2000/svg',
+                    el
+                );
                 for (var i in styles) {
                     b.style[i] = styles[i];
                 }
@@ -63,35 +68,47 @@ define(function(require,exports,module) {
                 }
                 return b;
             }
-            var svgEl = svg('svg', {
-                border: '1px solid red',
-                position: 'absolute',
-                height: this.renderer.viewport.height + "px",
-                top: this.renderer.viewport.y + "px",
-                width: '100%',
-                zIndex: 4,
-                pointerEvents: 'none'
-            }, {
-                version: "1.1",
-                viewBox: "0 0 1000 300"
-            });
+            var svgEl = svg(
+                'svg',
+                {
+                    border: '1px solid red',
+                    position: 'absolute',
+                    height: this.renderer.viewport.height + 'px',
+                    top: this.renderer.viewport.y + 'px',
+                    width: '100%',
+                    zIndex: 4,
+                    pointerEvents: 'none',
+                },
+                {
+                    version: '1.1',
+                    viewBox: '0 0 1000 300',
+                }
+            );
 
-            var frameCountEl = svg('text', {}, {
-                'font-family': 'monospace',
-                'font-size': '40px',
-                'fill': 'blue',
-                'x': 500,
-                'y': 100
-            });
+            var frameCountEl = svg(
+                'text',
+                {},
+                {
+                    'font-family': 'monospace',
+                    'font-size': '40px',
+                    fill: 'blue',
+                    x: 500,
+                    y: 100,
+                }
+            );
             svgEl.appendChild(frameCountEl);
 
-            var fpsEl = svg('text', {}, {
-                'font-family': 'monospace',
-                'font-size': '40px',
-                'fill': 'red',
-                'x': 500,
-                'y': 150
-            });
+            var fpsEl = svg(
+                'text',
+                {},
+                {
+                    'font-family': 'monospace',
+                    'font-size': '40px',
+                    fill: 'red',
+                    x: 500,
+                    y: 150,
+                }
+            );
             svgEl.appendChild(fpsEl);
             root.appendChild(svgEl);
             var obj = Object.create(this);
@@ -105,31 +122,41 @@ define(function(require,exports,module) {
             this.lastFrame = obj.lastFrame = 0;
             return obj;
         },
-        update: function() {
+        update: function () {
             //causes infinite scroll
-            this.el.style.top = this.renderer.viewport.y + "px";
-            this.el.style.height = Math.min(this.renderer.height - this.renderer.viewport.y,
-                this.renderer.viewport.height) + "px";
-            this.frameCountEl.innerHTML = " frames: " + this.frames++;
+            this.el.style.top = this.renderer.viewport.y + 'px';
+            this.el.style.height =
+                Math.min(
+                    this.renderer.height - this.renderer.viewport.y,
+                    this.renderer.viewport.height
+                ) + 'px';
+            this.frameCountEl.innerHTML = ' frames: ' + this.frames++;
             var t = new Date().getTime();
-            if ((t - this.lastTime) < 100) {
-                this.totalTime += (t - this.lastTime);
-                this.fpsEl.innerHTML = " fps: " + Math.round(this.totalTime) / 1000 + ":" + Math.round(((this.frames - this.lastFrame) / this.totalTime) * 100000) / 100;
+            if (t - this.lastTime < 100) {
+                this.totalTime += t - this.lastTime;
+                this.fpsEl.innerHTML =
+                    ' fps: ' +
+                    Math.round(this.totalTime) / 1000 +
+                    ':' +
+                    Math.round(
+                        ((this.frames - this.lastFrame) / this.totalTime) *
+                            100000
+                    ) /
+                        100;
             } else this.frames--;
             this.lastTime = t;
             if (this.frames - this.lastFrame > 300) {
                 this.lastFrame = this.frames;
                 this.totalTime = 0;
             }
-        }
+        },
     };
-    var Utils = require("../core/utils").Utils;
-
+    var Utils = require('../core/utils').Utils;
 
     var toClear = [];
-    var clear = Utils.debounce(function() {
+    var clear = Utils.debounce(function () {
         var total = 0;
-        toClear.forEach(function(e) {
+        toClear.forEach(function (e) {
             total += e.length;
             e.length = 0;
         });
@@ -147,9 +174,8 @@ define(function(require,exports,module) {
         this.els = els || [];
         this.factory = factory;
         this.container = el;
-
     }
-    RecyclerViewCache.prototype.pop = function(container, before) {
+    RecyclerViewCache.prototype.pop = function (container, before) {
         var el;
         if (this.els.length > 0) {
             el = this.els.pop();
@@ -165,15 +191,14 @@ define(function(require,exports,module) {
         }
         return el;
     };
-    RecyclerViewCache.prototype.push = function(el) {
+    RecyclerViewCache.prototype.push = function (el) {
         el.detach();
         //Also possible
         //el.addClass('destroyed');
         this.els.push(el);
-        if (this.els.length === 1)
-            postClear(this.els);
+        if (this.els.length === 1) postClear(this.els);
     };
-    RecyclerViewCache.prototype.clone = function(el) {
+    RecyclerViewCache.prototype.clone = function (el) {
         return new RecyclerViewCache(this.factory, el, this.els);
     };
 
@@ -187,7 +212,7 @@ define(function(require,exports,module) {
         this.els = [];
         this.autosync = autosync;
     }
-    FastCache.prototype.pop = function(container, before) {
+    FastCache.prototype.pop = function (container, before) {
         if (this.els.length > 0) {
             var el = this.els.pop();
             if (before) {
@@ -206,14 +231,15 @@ define(function(require,exports,module) {
             return this.back.pop(container || this.container, before);
         }
     };
-    FastCache.prototype.push = function(el) {
+    FastCache.prototype.push = function (el) {
         this.els.push(el);
-        if (this.autosync && !this.timeout) this.timeout = setTimeout(this.sync.bind(this), 400);
+        if (this.autosync && !this.timeout)
+            this.timeout = setTimeout(this.sync.bind(this), 400);
     };
-    FastCache.prototype.clone = function(el) {
+    FastCache.prototype.clone = function (el) {
         return new FastCache(this.back.clone(el), this.autosync);
     };
-    FastCache.prototype.sync = function() {
+    FastCache.prototype.sync = function () {
         this.timeout = null;
         while (this.els.length > 0) {
             this.back.push(this.els.pop());
@@ -229,8 +255,13 @@ define(function(require,exports,module) {
         this.y = 0;
         this.height = height;
     }
-    RecyclerViewHolder.prototype.bindView = function(vh, index) {};
-    RecyclerViewHolder.prototype.render = function(viewport, index, insertBefore, restack) {
+    RecyclerViewHolder.prototype.bindView = function (/*vh, index*/) {};
+    RecyclerViewHolder.prototype.render = function (
+        viewport,
+        index,
+        insertBefore,
+        restack
+    ) {
         this.visible = true;
         if (this.hidden) {
             return;
@@ -238,26 +269,28 @@ define(function(require,exports,module) {
         if (!this.view) {
             this.view = this.cache.pop(null, insertBefore);
             this.lastY = this.y;
-            this.view.css("top", this.y + 'px');
+            this.view.css('top', this.y + 'px');
             this.bindView(this, index);
         } else {
             if (restack) {
                 if (insertBefore) {
                     stats.insert++;
-                    this.view[0].parentElement.insertBefore(this.view[0], insertBefore);
+                    this.view[0].parentElement.insertBefore(
+                        this.view[0],
+                        insertBefore
+                    );
                 } else {
                     stats.append++;
                     this.view[0].parentElement.appendChild(this.view[0]);
                 }
             }
-
         }
         if (this.lastY != this.y) {
             this.lastY = this.y;
-            this.view.css("top", this.y + 'px');
+            this.view.css('top', this.y + 'px');
         }
     };
-    RecyclerViewHolder.prototype.detach = function(index) {
+    RecyclerViewHolder.prototype.detach = function (/*index*/) {
         if (!this.visible) return;
         this.visible = false;
         this.lastY = null;
@@ -265,11 +298,11 @@ define(function(require,exports,module) {
         this.cache.push(this.view);
         this.view = null;
     };
-    RecyclerViewHolder.prototype.compute = function(viewport, index) {
+    RecyclerViewHolder.prototype.compute = function (/*viewport, index*/) {
         if (this.hidden) return 0;
         else return this.height;
     };
-    RecyclerViewHolder.prototype.hide = function() {
+    RecyclerViewHolder.prototype.hide = function () {
         if (this.hidden) return;
         if (this.visible) {
             this.detach();
@@ -278,16 +311,17 @@ define(function(require,exports,module) {
         } else this.hidden = true;
         this.invalidate();
     };
-    RecyclerViewHolder.prototype.invalidate = function() {
+    RecyclerViewHolder.prototype.invalidate = function () {
         this.renderer && this.renderer.invalidate(this);
     };
-    RecyclerViewHolder.prototype.show = function() {
+    RecyclerViewHolder.prototype.show = function () {
         if (!this.hidden) return;
         this.hidden = false;
         this.invalidate();
     };
     var SCROLL_UP = 2;
     var SCROLL_DOWN = 1;
+    var NO_CHANGE = 0;
     //var MODIFY_SINGLE_INSERT = 16;//not yet supported
     //var MODIFY_ABOVE = 132;//not yet supported
     var MODIFY_NOT_BELOW = 4;
@@ -298,7 +332,7 @@ define(function(require,exports,module) {
         this.height = 0;
         this.renderlist = [];
         this.start = -1;
-        this.changes = 0;
+        this.changes = NO_CHANGE;
         this.viewport = Object.create(this.DEFAULT_VIEWPORT);
         this.paddingTop;
         this.lastIndex = 0;
@@ -306,24 +340,25 @@ define(function(require,exports,module) {
     /*Overrides*/
     RecyclerRenderer.prototype.DEFAULT_VIEWPORT = {
         y: -window.innerHeight,
-        height: Math.max(window.innerHeight * 2.5, 1400)
+        height: Math.max(window.innerHeight * 2.5, 1400),
     };
-    window.addEventListener('resize', function() {
-        RecyclerRenderer.prototype.DEFAULT_VIEWPORT.height = window.innerHeight * 2.5;
+    window.addEventListener('resize', function () {
+        RecyclerRenderer.prototype.DEFAULT_VIEWPORT.height =
+            window.innerHeight * 2.5;
         RecyclerRenderer.prototype.DEFAULT_VIEWPORT.y = -window.innerHeight;
     });
     RecyclerRenderer.prototype.INFINITE_VIEWPORT = {
         y: -Infinity,
-        height: Infinity
+        height: Infinity,
     };
-    RecyclerRenderer.prototype.createViewport = function(y, height, margin) {
+    RecyclerRenderer.prototype.createViewport = function (y, height, margin) {
         if (margin === undefined) margin = height / 2;
         return {
             y: y - margin,
-            height: height + margin * 2
+            height: height + margin * 2,
         };
     };
-    RecyclerRenderer.prototype.compute = function(viewport) {
+    RecyclerRenderer.prototype.compute = function (viewport) {
         var end = this.views.length;
         if (this.start >= end) {
             return this.height;
@@ -332,7 +367,8 @@ define(function(require,exports,module) {
         var a = this.paddingTop || 0;
         var h = 0;
         var i = 0;
-        if (this.start > -1) { //&& this.height > 0) {
+        if (this.start > -1) {
+            //&& this.height > 0) {
             //the height>0 condition can be a band-aid
             //to fix some rendering bugs
             i = this.start + 1;
@@ -342,8 +378,9 @@ define(function(require,exports,module) {
                 if (a + h > viewport.y + viewport.height) {
                     //all increments in viewport.y must be done in scrollTop
                     //to get correct values
+                    //change happened below screen
                     this.changes ^= INVALIDATE;
-                    //force rendering
+                    //still force rendering
                     this.changes |= SCROLL_UP;
                 } else this.changes |= MODIFY_NOT_BELOW;
             }
@@ -358,39 +395,37 @@ define(function(require,exports,module) {
         this.height = a;
         return this.height;
     };
-    RecyclerRenderer.prototype.getViewport = function(viewport) {
+    RecyclerRenderer.prototype.getViewport = function (viewport) {
         if (viewport) {
             throw 'Error: use scrollTo to change viewport';
         }
         return this.viewport;
     };
 
-
-    RecyclerRenderer.prototype.render = function(viewport) {
+    RecyclerRenderer.prototype.render = function (viewport) {
         viewport = this.getViewport(viewport);
         if (this.renderTimeout) {
             clearTimeout(this.renderTimeout);
             this.renderTimeout = null;
         }
-        if (this.beforeRender)
-            this.beforeRender();
+        if (this.beforeRender) this.beforeRender();
         //you can invalidate again here
         //to animate
         var start = viewport.y;
         var end = viewport.y + viewport.height;
         if (end > this.height) {
-            start -= (end - this.height);
+            start -= end - this.height;
         }
         var renderlist = [];
         var begin = this.lastIndex;
         var isFirst = true;
-        var view, views = this.views;
+        var view,
+            views = this.views;
         //if (true || this.changes > SCROLL_DOWN){
         var above = 0;
         for (var i = begin - 1; i >= above; i--) {
             view = views[i];
-            if ((view.height + view.y) < start)
-                break;
+            if (view.height + view.y < start) break;
             else if (view.y > end) {
                 continue;
             }
@@ -404,8 +439,7 @@ define(function(require,exports,module) {
         var below = views.length;
         for (var l = begin; l < below; l++) {
             view = views[l];
-            if ((view.height + view.y) < start)
-                continue;
+            if (view.height + view.y < start) continue;
             else if (view.y > end) {
                 break;
             }
@@ -452,54 +486,53 @@ define(function(require,exports,module) {
             }
         }
 
-        this.changes = 0;
+        this.changes = NO_CHANGE;
     };
-    RecyclerRenderer.prototype.detach = function() {
+    RecyclerRenderer.prototype.detach = function () {
         for (var i in this.renderlist) {
             this.renderlist[i].detach();
         }
         this.renderlist = [];
         this.lastIndex = 0;
     };
-    RecyclerRenderer.prototype.register = function(index, view) {
+    RecyclerRenderer.prototype.register = function (index, view) {
         if (index < 0) {
             index = this.views.length + index;
-            if (index > -1)
-                index = this.views.length;
+            if (index > -1) index = this.views.length;
             //throw new Error(Errors.INVALID_INDEX.replace("{index}", index));
-        } else if (index > this.views.length)
-            index = this.views.length;
+        } else if (index > this.views.length) index = this.views.length;
         if (index == this.views.length) {
             this.views[index] = view;
         } else {
             this.views.splice(index, 0, view);
         }
-        this.views[index].y = index < this.views.length - 1 ? this.views[index + 1].y : 0 /*warn unsorted*/ ;
+        this.views[index].y =
+            index < this.views.length - 1
+                ? this.views[index + 1].y
+                : 0 /*warn unsorted*/;
         //this.height += this.views[index].height;
         //index-1 not index because of a few wierd cases
         //index<this.views.length
         this.invalidate(index - 1);
     };
-    RecyclerRenderer.prototype.unregister = function(view) {
+    RecyclerRenderer.prototype.unregister = function (view) {
         var index = view;
-        if (typeof(view) == 'object') {
+        if (typeof view == 'object') {
             index = this.views.indexOf(view);
             if (index < 0) throw new Error(Errors.NOT_CHILD);
-        } else if (index < 0) throw new Error(Errors.INVALID_INDEX.replace("{index}", index));
+        } else if (index < 0)
+            throw new Error(Errors.INVALID_INDEX.replace('{index}', index));
         this.views[index].renderer = null;
         if (index < this.views.length) {
             view = this.views.splice(index, 1)[0];
-            var rIndex = this.renderlist.indexOf(view);
-            if (rIndex > -1) {
-                this.renderlist.splice(rIndex, 1);
-            }
-        } else throw new Error(Errors.INVALID_INDEX.replace("{index}", index));
+            Utils.removeFrom(this.renderlist, view);
+        } else throw new Error(Errors.INVALID_INDEX.replace('{index}', index));
         this.invalidate(index - 1);
     };
     /** @param {(number|RecyclerViewHolder)} start - The view whose height or display has changed. Pass -1 to invalidate the whole view
      */
-    RecyclerRenderer.prototype.invalidate = function(start) {
-        if (typeof(start) == 'object') {
+    RecyclerRenderer.prototype.invalidate = function (start) {
+        if (typeof start == 'object') {
             start = this.views.indexOf(start);
             if (start < 0) throw new Error(Errors.NOT_CHILD);
         }
@@ -507,9 +540,12 @@ define(function(require,exports,module) {
         this.changes |= INVALIDATE;
         this.schedule();
     };
-    RecyclerRenderer.prototype.scrollTo = function(scrollTop, topMargin) {
+    RecyclerRenderer.prototype.scrollTo = function (scrollTop, topMargin) {
         //we clip bottom in render because of invalidates
-        scrollTop = Math.max(0, scrollTop - (topMargin || -this.DEFAULT_VIEWPORT.y));
+        scrollTop = Math.max(
+            0,
+            scrollTop - (topMargin || -this.DEFAULT_VIEWPORT.y)
+        );
         if (scrollTop < this.viewport.y) {
             this.changes |= SCROLL_UP;
         } else if (scrollTop > this.viewport.y) {
@@ -518,18 +554,20 @@ define(function(require,exports,module) {
         this.viewport.y = scrollTop;
         this.schedule();
     };
-    RecyclerRenderer.prototype.schedule = function(viewport) {
+    RecyclerRenderer.prototype.schedule = function (/*viewport*/) {
         if (this.renderTimeout) return;
         if (this.changes)
-            this.renderTimeout = ( /*window.requestAnimationFrame || */setTimeout)((function() {
-                this.compute();
-                this.renderTimeout = null;
-                stats.append = 0;
-                stats.detach = 0;
-                stats.insert = 0;
-                if (this.changes)
-                    this.render();
-            }).bind(this), 34);
+            this.renderTimeout = /*window.requestAnimationFrame || */ setTimeout(
+                function () {
+                    this.compute();
+                    this.renderTimeout = null;
+                    stats.append = 0;
+                    stats.detach = 0;
+                    stats.insert = 0;
+                    if (this.changes) this.render();
+                }.bind(this),
+                34
+            );
     };
     //RecyclerRenderer+RecyclerViewHolder
     //= NestedRenderer
@@ -548,21 +586,21 @@ define(function(require,exports,module) {
     NestedRenderer.prototype = Object.create(RecyclerRenderer.prototype);
     NestedRenderer.prototype.constructor = NestedRenderer;
     NestedRenderer.prototype.superRenderer = RecyclerRenderer.prototype;
-    NestedRenderer.prototype.compute = function(viewport, index) {
+    NestedRenderer.prototype.compute = function (viewport /*, index*/) {
         if (this.hidden) return 0;
-        else if (!viewport) throw new Error('Nested Renderer cannot be used as Root Renderer');
+        else if (!viewport)
+            throw new Error('Nested Renderer cannot be used as Root Renderer');
         this.computed = true;
         return this.superRenderer.compute.apply(this, [viewport]);
-
     };
-    NestedRenderer.prototype.getViewport = function(viewport) {
+    NestedRenderer.prototype.getViewport = function (viewport) {
         if (viewport) {
             this.viewport.y = viewport.y - this.y;
             this.viewport.height = viewport.height;
         }
         return this.viewport;
     };
-    NestedRenderer.prototype.detach = function() {
+    NestedRenderer.prototype.detach = function () {
         if (!this.visible) return;
         this.visible = false;
         if (this.hidden) return;
@@ -571,7 +609,12 @@ define(function(require,exports,module) {
         this.view = null;
         this.lastY = null;
     };
-    NestedRenderer.prototype.render = function(viewport, index, insertBefore, restack) {
+    NestedRenderer.prototype.render = function (
+        viewport,
+        index,
+        insertBefore,
+        restack
+    ) {
         this.visible = true;
         if (this.hidden) return;
         if (restack || !this.view) {
@@ -590,22 +633,22 @@ define(function(require,exports,module) {
 
         if (this.lastY != this.y) {
             this.lastY = this.y;
-            this.view.css("top", this.y + 'px');
+            this.view.css('top', this.y + 'px');
         }
-        this.changes |= (this.renderer.changes & 3);
+        this.changes |= this.renderer.changes & (SCROLL_DOWN | SCROLL_UP);
         this.superRenderer.render.apply(this, [viewport]);
     };
 
-    NestedRenderer.prototype.schedule = function() {
+    NestedRenderer.prototype.schedule = function () {
         if (this.renderer) {
             this.renderer.invalidate(this);
         }
     };
 
-    NestedRenderer.prototype.hide = function() {
+    NestedRenderer.prototype.hide = function () {
         this.superViewHolder.hide.apply(this);
     };
-    NestedRenderer.prototype.show = function() {
+    NestedRenderer.prototype.show = function () {
         this.superViewHolder.show.apply(this);
     };
     NestedRenderer.prototype.superViewHolder = RecyclerViewHolder.prototype;

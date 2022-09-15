@@ -1,234 +1,264 @@
-define(function(require,exports,module) {
-    "use strict";
+define(function (require, exports, module) {
+    'use strict';
     //Class for validating json objects
     //Using serializable objects
-    var debug = console;
-    var Utils = require("./utils").Utils;
-    var RuleParser = require("./json_ext").RuleParser;
-    var TreeListener = require("./json_ext").TreeListener;
+    var Utils = require('./utils').Utils;
+    var RuleParser = require('./parser').RuleParser;
+    var TreeListener = require('./parser').TreeListener;
 
-    function XObject(schema) {
-        this.schema = schema;
+    function XObject(schemas) {
+        this.schemas = schemas;
     }
-    XObject.prototype.invalid = function(value) {
-        if (typeof value !== 'object') {
-            return " Expected object got " + typeof value;
-        }
-        if (!value) {
-            return " Expected object got " + value;
+    XObject.prototype.validate = function (value) {
+        if (!value || typeof value !== 'object') {
+            return 'Expected object got ' + (value && typeof value);
         }
         var error;
-        for (var i in this.schema) {
-            var schema = this.schema[i];
+        for (var i in this.schemas) {
+            var schema = this.schemas[i];
             if (schema.isOptional && !value.hasOwnProperty(i)) {
                 continue;
             }
-            if ((error = schema.invalid(value[i]))) {
-                return "." + i + ": " + error;
+            if ((error = schema.validate(value[i]))) {
+                return '.' + i + ': ' + error;
             }
         }
-
         return false;
     };
 
-    var XEnum = function(values) {
+    function XMap(keys, values) {
+        this.keys = keys;
+        this.values = values;
+        XMap.super(this);
+    }
+    Utils.inherits(XMap, XObject);
+    XMap.prototype.validate = function (value) {
+        var error = XObject.prototype.validate.call(this, value);
+        if (error) return error;
+        for (var i in value) {
+            if (this.keys && !(error = this.keys.validate(i))) {
+                return 'Unexpected key ' + i + ': ' + error;
+            }
+            if (this.values && !(error = this.values.validate(value[i]))) {
+                return '.' + i + ': ' + error;
+            }
+        }
+    };
+    var XEnum = function (values) {
         this.values = values;
     };
-    XEnum.prototype.invalid = function(v) {
-        return this.values.indexOf(v) < 0 ? "Expected one of " + this.values.join(",") + ", got " + v :
-            false;
+    XEnum.prototype.validate = function (value) {
+        return this.values.indexOf(value) < 0
+            ? 'Is not one of ' +
+                  this.values.slice(0, -1).join(',') +
+                  (this.values.length > 1
+                      ? ' or ' + this.values[this.values.length - 1]
+                      : '')
+            : false;
     };
 
-    var XNot = function(schema, message) {
+    var XNot = function (schema, message) {
         this.schema = schema;
         this.message = message;
     };
-    XNot.prototype.invalid = function(v) {
-        if (this.schema.invalid(v)) return false;
-        return this.message || "Must not be " + v;
+    XNot.prototype.validate = function (value) {
+        if (this.schema.validate(value)) return false;
+        return this.message || 'Cannot be ' + value;
     };
 
-    var XArray = function(type) {
+    var XArray = function (type) {
         this.schema = type;
     };
-    XArray.prototype.invalid = function(e) {
-        if (!Array.isArray(e)) {
-            return "Expected an array";
+    XArray.prototype.validate = function (value) {
+        if (!Array.isArray(value)) {
+            return 'Is not an array';
         }
         var error;
-        for (var i = 0; i < e.length; i++) {
-            if ((error = this.schema.invalid(e[i]))) {
-                return e[i] + ":" + error;
+        for (var i = 0; i < value.length; i++) {
+            if ((error = this.schema.validate(value[i]))) {
+                return (
+                    (value[i] && typeof value[i] == 'object'
+                        ? ''
+                        : value[i] + ':') + error
+                );
             }
         }
         return false;
     };
-    var XOneOf = function(schemas) {
+    var XOneOf = function (schemas) {
         this.schemas = schemas;
     };
-    XOneOf.prototype.invalid = function(v) {
-        var errors = "";
-        var passed = this.schemas.some(function(e) {
-            var t = e.invalid(v);
-            if (t) errors += " ," + t;
+    XOneOf.prototype.validate = function (value) {
+        var errors;
+        var passed = this.schemas.some(function (schema) {
+            var error = schema.validate(value);
+            if (error) errors = (errors ? errors + ' and ' : '') + error;
             else return true;
         });
         if (!passed) return errors;
     };
     //Only valid in the context of an object
-    var XOptional = function(schema) {
+    var XOptional = function (schema) {
         this.schema = schema;
     };
-    XOptional.prototype.invalid = function(v) {
-        return this.schema.invalid(v);
+    XOptional.prototype.validate = function (value) {
+        return this.schema.validate(value);
     };
     XOptional.prototype.isOptional = true;
-    var XRegex = function(regex, name) {
-        this.regex = regex;
-        this.name = name;
-    };
-    XRegex.prototype.invalid = function(value) {
-        return this.regex.test(value) ? false : "Failed to match format for " + this.name;
-    };
 
-    /*function StrictKeys(schema) {
-        this.schema = schema;
-    }
-    StrictKeys.prototype.invalid = function(value) {
-        return this.schema.invalid(Object.keys(value));
-    };
-    
-    function StrictValues(schema) {
-        this.schema = schema;
-    }
-    StrictValues.prototype.invalid = function(value) {
-        return this.schema.invalid(Object.values(value));
-    };
-    
+    /*
     var XAllOf = function(schemas) {
         this.schemas = schemas;
     };
-    XAllOf.prototype.invalid = function(v) {
-        return this.schemas.some((e) => e.invalid(v));
+    XAllOf.prototype.validate = function(v) {
+        return this.schemas.some((schema) => schema.validate(v));
     };*/
 
-
-    function XInvalidIf(func) {
-        this.invalid = function(v) {
-            if (func(v)) return "Failed test " + this.name;
+    function XValidIf(func, name) {
+        this.name = name;
+        this.validate = function (value) {
+            if (!func(value)) return 'Is not ' + this.name;
         };
     }
 
-    var NotNull = new XInvalidIf(function NotNull(value) {
-        return value == null;
+    var NotNull = new XValidIf(function NotNull(value) {
+        return value != null;
     });
-    var IsString = new XInvalidIf(function IsString(value) {
-        return typeof value != "string";
+    var IsString = new XValidIf(function IsString(value) {
+        return typeof value == 'string';
     });
-    var IsNumber = new XInvalidIf(function IsNumber(value) {
-        return typeof value != "number";
+    var IsNumber = new XValidIf(function IsNumber(value) {
+        return typeof value == 'number';
     });
-    var IsBoolean = new XInvalidIf(function IsBoolean(value) {
-        return typeof value != "boolean";
+    var IsBoolean = new XValidIf(function IsBoolean(value) {
+        return typeof value == 'boolean';
     });
-    var IsNull = new XInvalidIf(function IsBoolean(value) {
-        return value !== null;
+    var IsNull = new XValidIf(function IsBoolean(value) {
+        return value === null;
     });
-    var IsTime = new XOneOf([IsNumber, new XInvalidIf(function IsTime(value) {
-        return Utils.parseTime(value, true) == false;
-    })]);
+    var IsTime = new XOneOf([
+        IsNumber,
+        new XValidIf(function IsTime(value) {
+            return Utils.parseTime(value, true) !== false;
+        }),
+    ]);
+    function XList(schema) {
+        this.schema = schema;
+    }
+    XList.prototype.validate = function (list) {
+        if (typeof list !== 'string') return 'Invalid type, expected string';
+        return XArray.prototype.validate.call(this, Utils.parseList(list));
+    };
     var Any = {
-        invalid: Utils.noop
+        validate: Utils.noop,
     };
     var IsObject = new XObject();
-    var IsPlain = {
-        invalid: function(value) {
-            if (value == null || value == undefined ||
-                typeof value !== "object")
-                return false;
-            return "Must be a boolean, string or number value";
-        }
-    };
+    var IsPlain = new XValidIf(function (value) {
+        if (value == null || value == undefined || typeof value !== 'object')
+            return true;
+    }, 'a boolean, string or number value');
     //need validation
-    var IsUrl = new XInvalidIf(function IsUrl(url) {
-        try {
-            var parsed = new URL(url);
-            if (
-                parsed.protocol === 'http' ||
-                parsed.protocol === 'https' ||
-                parsed.protocol === 'file' ||
-                parsed.protocol === 'ftp'
-            )
-                return false;
-            return 'Invalid protocol ' + parsed.protocol;
-        } catch (e) {
-            return e.message;
-        }
-        return false;
-    });
+    var IsUrl = {
+        validate: function (value) {
+            try {
+                var parsed = new URL(value);
+                if (
+                    parsed.protocol === 'http:' ||
+                    parsed.protocol === 'https:' ||
+                    parsed.protocol === 'file:' ||
+                    parsed.protocol === 'ftp:' ||
+                    parsed.protocol === 'ws:' ||
+                    parsed.protocol === 'wss:'
+                )
+                    return false;
+                return 'Invalid protocol ' + parsed.protocol;
+            } catch (e) {
+                return e.message;
+            }
+            return false;
+        },
+    };
+    var IsKey = new XValidIf(function (value) {
+        var tester = /^(?:Ctrl-)?(?:Alt-)?(?:Shift-)?(?:(?:(?:Page)?(?:Down|Up))|Left|Right|Delete|Tab|Home|End|Insert|Esc|Backspace|Space|Enter|.|F1?[0-9])$/i;
+        if (
+            typeof value === 'string' &&
+            !value.split(/\|| /g).some(function (str) {
+                return !tester.test(str);
+            })
+        )
+            return true;
+    }, 'valid keystring');
+    var modelist = ace.require('ace/ext/modelist');
+    var IsMode = new XValidIf(function (mode) {
+        return modelist.modesByName[mode];
+    }, 'a language mode');
+    var XRegex = function (regex, name) {
+        XRegex.super(this, [
+            function (value) {
+                return this.regex.test(value);
+            },
+            name,
+        ]);
+    };
+    Utils.inherits(XRegex, XValidIf);
+
     var IsFilename = new XRegex(/[\w-~\(\)\/]+/);
-    //Thanks to 200 extra lines in Jsonext, we can write a parser in 150 lines,
-    //Is that gain, I think so
+    //Thanks to 200 extra lines for Jsonext, we can write a parser in 150 lines,
+    //Is that gain?, I think so
     var syntax = {
-        'start': {
-            enter: 'SCHEMA'
+        start: {
+            enter: 'SCHEMA',
         },
-        'sub_rule': {
-            'token': '<',
-            'enter': 'SCHEMA',
-            'exit': '>'
-        },
-        'SCHEMA': {
+        SCHEMA: {
             //multiple rules separated by slash
             enter: 'SINGLE_RULE',
-            exit: 'or'
+            exit: 'or',
         },
-        'or': {
-            'maybe': '|'
+        or: {
+            maybe: '|',
         },
         '|': {
             token: '|',
-            enter: 'SCHEMA'
+            enter: 'SCHEMA',
         },
-        'SINGLE_RULE': {
-            select: ['TYPE', 'any', 'sub_rule', "?", "!", '[']
+        SINGLE_RULE: {
+            select: ['TYPE', 'any', 'sub_rule', '?', '!', '['],
         },
-        'TYPE': {
+        sub_rule: {
+            token: '<',
+            enter: 'SCHEMA',
+            exit: '>',
+        },
+        TYPE: {
             re: /\w+/,
-            maybe: 'sub_rule'
+            maybe: 'sub_rule',
         },
         '[': {
             token: '[',
             enter: 'LIST',
-            exit: ']'
+            exit: ']',
         },
-        'LIST': {
-            re: /[^\]]*/
+        LIST: {
+            re: /[^\]]*/,
         },
-        ']': {
-            token: ']'
-        },
-        'any': {
+        ']': ']',
+        any: {
             rules: ['<', '>'],
         },
-        '<': {
-            token: '<'
-        },
-        '>': {
-            token: '>'
-        },
+        '<': '<',
+        '>': '>',
         '?': {
             token: '?',
-            enter: 'SINGLE_RULE'
+            enter: 'SINGLE_RULE',
         },
         '!': {
             token: '!',
-            enter: 'SINGLE_RULE'
-        }
+            enter: 'SINGLE_RULE',
+        },
     };
     var parser = new RuleParser();
     parser.rules = parser.parseRules(syntax);
-    var parseNodes = function(right, left) {
+    var parseNodes = function (right, left) {
         switch (left.type) {
             case '<':
             case '>':
@@ -246,46 +276,51 @@ define(function(require,exports,module) {
                 }
                 return new XOneOf([right]);
             case 'LIST':
-                return new XEnum(left.text.split(","));
+                return new XEnum(left.text.split(','));
             case 'TYPE':
                 var schema;
                 switch (left.text) {
-                    case "null":
+                    case 'null':
                         schema = IsNull;
                         break;
-                    case "boolean":
+                    case 'boolean':
                         schema = IsBoolean;
                         break;
-                    case "string":
+                    case 'string':
                         schema = IsString;
                         break;
-                    case "number":
+                    case 'number':
                         schema = IsNumber;
                         break;
-                    case "url":
-                        schema = IsUrl;
-                        break;
-                    case "filename":
-                        schema = IsFilename;
-                        break;
-                    case "object":
-                        schema = IsObject;
-                        break;
-                    case "time":
-                    case "size":
-                        schema = IsTime;
-                        break;
-                    case "array":
+                    case 'array':
                         schema = new XArray(right || Any);
                         break;
-                    case "url":
+                    case 'url':
                         schema = IsUrl;
+                        break;
+                    case 'filename':
+                        schema = IsFilename;
+                        break;
+                    case 'object':
+                        schema = IsObject;
+                        break;
+                    case 'mode':
+                        schema = IsMode;
+                        break;
+                    case 'time':
+                    case 'size':
+                        schema = IsTime;
+                        break;
+                    case 'list':
+                        schema = new XList(right || IsString);
                         break;
                     default:
                         throw new Error('Invalid Schema: ' + left.text);
                 }
-                if (right && schema.constructor !== XArray) {
-                    throw new Error('Invalid Schema: ' + left.text + ' cannot have type');
+                if (right && !schema.schema) {
+                    throw new Error(
+                        'Invalid Schema: ' + left.text + ' cannot have type'
+                    );
                 }
                 return schema;
             case 'SINGLE_RULE':
@@ -297,46 +332,38 @@ define(function(require,exports,module) {
             case 'SCHEMA':
                 return left.schema;
             default:
-                debug.log({
-                    left,
-                    right
-                });
-                throw new Error('Parser invalid state');
+                throw new Error('Parser validate state');
         }
     };
     var createSchema = new TreeListener();
-    createSchema.onParse =
-        function(node) {
-            switch (node.type) {
-                case 'SINGLE_RULE':
-                    if (node.text == "<>") {
-                        node.schema = Any;
-                        break;
-                    }
-                    /*fall through*/
-                    case 'SCHEMA':
-                        node.schema = node.children.reduceRight(parseNodes, null);
-            }
-        };
+    createSchema.onParse = function (node) {
+        switch (node.type) {
+            case 'SINGLE_RULE':
+                if (node.text == '<>') {
+                    node.schema = Any;
+                    break;
+                }
+            /*fall through*/
+            case 'SCHEMA':
+                node.schema = node.children.reduceRight(parseNodes, null);
+        }
+    };
     parser.listener = createSchema;
 
     var Schema = {
-        //Get schema from a value
-        fromValue: function(value) {
-            //Plain works well since, mostly, 
-            //For non-string values, we simply use parseInt,parseFloat,parseList methods
-            //For strings, type is just one thing, 
+        /**
+         * Get schema from a value. Used when you fail to configure type of config.
+         * @related {require('./config/namespaces')~inferSchema}
+         */
+        fromValue: function (value) {
+            //For strings, type is just one thing,
             //you have to specify a type to get valid values
-            //path,url,time,size etc 
-            if (typeof value == "boolean") return IsBoolean;
-            if (typeof value == "string") return IsString;
-            if (typeof value == "number") return IsNumber;
-            if (value == null || value == undefined) {
-                debug.error('Cannot infer type');
-                return IsPlain;
-            }
-            if (!IsPlain.invalid(value))
-                return IsPlain;
+            //path,url,time,size etc
+            if (typeof value == 'boolean') return IsBoolean;
+            if (typeof value == 'string') return IsString;
+            if (typeof value == 'number') return IsNumber;
+            //Plain works well since, mostly for null and undefined values.
+            if (!IsPlain.validate(value)) return IsPlain;
             if (Array.isArray(value)) {
                 return new XArray(Schema.fromValue(value[0]));
             }
@@ -345,37 +372,41 @@ define(function(require,exports,module) {
         /**
          * Get schema from a regex like syntax
          * of the form
-         *   "<boolean>|<array>|<number...>" - appropriate type
-         *   "array<type_string>" - Xarray(type)
+         *   "<boolean>,<array> or <number...>" - appropriate type
+         *   "array<type_string>" - XArray(type)
          *   "[value1,value2...]" - XEnum
-         *   <type_string|type_string> - Xoneof
-         *     {[string]:type_string} - Xobject
-         *   [type_string] - XArray
+         *   <type_string|type_string> - XOneOf
+         *   {[string]:type_string} - XObject
+         *   ["type_string"] - XArray
          */
         parse: function parse(value) {
             if (!value) throw new Error('Invalid Schema: cannot be empty');
-            if (typeof value == "string") {
+            if (typeof value == 'string') {
                 parser.setState({
-                    text: value
+                    text: value,
                 });
-                TreeListener.call(createSchema);
+                TreeListener.call(createSchema); //reset
                 parser.walk();
                 return createSchema.getContext().children[0].schema;
             }
-            if (typeof value == "object") {
+            if (typeof value == 'object') {
                 //a schema
-                if (value.invalid) return value;
+                if (typeof value.validate == 'function') return value;
                 if (value.constructor == RegExp) {
                     return new XRegex(value, value.name || value);
                 }
                 if (Array.isArray(value)) {
-                    if (value.length > 1) throw new Error(
-                        'Invalid Schema: Array schema must have only one value');
-                    return new XArray(value.length ? Schema.parse(value[0]) : Any);
+                    if (value.length > 1)
+                        throw new Error(
+                            'Invalid Schema: Array schema must have only one value'
+                        );
+                    return new XArray(
+                        value.length ? Schema.parse(value[0]) : Any
+                    );
                 }
                 var schemas = {};
-                for (var j in value) {
-                    schemas[j] = Schema.parse(value[j]);
+                for (var i in value) {
+                    schemas[i] = Schema.parse(value[i]);
                 }
                 return new XObject(schemas);
             }
@@ -385,25 +416,31 @@ define(function(require,exports,module) {
         XArray: XArray,
         XOneOf: XOneOf,
         XOptional: XOptional,
-        XInvalidIf: XInvalidIf,
+        XValidIf: XValidIf,
         XRegex: XRegex,
         XNot: XNot,
         XEnum: XEnum,
+        XMap: XMap,
         NotNull: NotNull,
         IsString: IsString,
         IsTime: IsTime,
-        IsFilename: IsFilename,        
+        IsSize: IsTime,
+        IsFilename: IsFilename,
+        IsMode: IsMode,
         IsObject: IsObject,
+        IsKey: IsKey,
         IsNumber: IsNumber,
         IsUrl: IsUrl,
         IsBoolean: IsBoolean,
         IsPlain: IsPlain,
         IsNull: IsNull,
-        Any: Any
+        Any: Any,
     };
     for (var i in Schema) {
         if (i[0] == 'X') Schema[i].prototype.name = i;
-        else if (typeof Schema[i] != "function") Schema[i].name = i.replace('Is','');
+        else if (typeof Schema[i] != 'function')
+            Schema[i].name =
+                Schema[i].name || i.replace('Is', '').toLowerCase();
     }
     exports.Schema = Schema;
 });

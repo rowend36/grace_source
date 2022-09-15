@@ -6,15 +6,15 @@ define(function(require, exports, module) {
     /*globals Base64*/
     require("grace/libs/js/base64");
     var AndroidFs = require("./android_fs").AndroidFs;
-    var appEvents = require("grace/core/events").AppEvents;
-    var appStorage = require("grace/core/config").appStorage;
+    var appEvents = require("grace/core/app_events").AppEvents;
+    var storage = require("grace/core/config").storage;
     var FileUtils = require("grace/core/file_utils").FileUtils;
     var config = require("grace/core/config").Config.registerAll({
         "runInNewProcess": false,
         "runInExternalBrowser": false,
         "mockHttps": false
     }, "execute");
-    require("grace/core/config").Config.registerValues({
+    require("grace/core/config").Config.registerInfo({
         "mockHttps": "When enabled, local files use https scheme."
     }, "execute");
 
@@ -87,7 +87,7 @@ define(function(require, exports, module) {
     //requires Docs
     Env.isWebView = true;
     Env.isLocalHost = false;
-    Env._server = null;
+    Env.server = null;
     Env.canLocalHost = true;
     /*
         Note on Urls:
@@ -117,7 +117,7 @@ define(function(require, exports, module) {
     };
     Env.newWindow = function(path) {
         require("grace/docs/docs").Docs.tempSave();
-        appStorage.__doSync && appStorage.__doSync();
+        storage.__doSync && storage.__doSync();
         app.runFile(path, config.runInExternalBrowser ? "browser" :
             config.runInNewProcess ? "process" :
             "webview", accessKey);
@@ -164,18 +164,18 @@ define(function(require, exports, module) {
     DocumentFs.prototype.destroy = function() {
         app.releaseDocumentTreeUri(this.disk, accessKey);
     };
-    FileUtils.registerFileServer('doctree', "Open Directory",
+    FileUtils.registerFileServer('android', "System",
         function(conf) {
             var fs;
             if (conf.id) {
-                var uri = appStorage.getItem("uri:" + conf.id);
+                var uri = storage.getItem("uri:" + conf.id);
                 fs = new DocumentFs(uri);
                 return fs;
             } else {
                 var id = conf.id = require("grace/core/utils")
                     .Utils.genID("s");
                 var stub = new require(
-                        "grace/core/file_servers")
+                        "grace/core/register_fs_extension")
                     .StubFileServer(function() {
                         return fs;
                     });
@@ -184,7 +184,7 @@ define(function(require, exports, module) {
                     function(uri) {
                         var fs = new DocumentFs(uri);
                         fs.id = id;
-                        appStorage.setItem(id, "uri:" + conf
+                        storage.setItem(id, "uri:" + conf
                             .id);
                         stub.$inject();
                     });

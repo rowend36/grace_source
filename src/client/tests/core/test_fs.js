@@ -232,6 +232,7 @@ define(function(require, exports, module) {
     };
     describe("FileServer", function(done) {
         if (!require.defined("../libs/js/browserfs.min.js")) {
+            it("ignored",function(){});
             return;
         }
         var BrowserFS = (require)("./libs/js/browserfs.min.js");
@@ -240,13 +241,13 @@ define(function(require, exports, module) {
         BrowserFS.initialize(impl);
         var bfs = BrowserFS.BFSRequire(
             "fs");
-        require("grace/core/file_servers").BaseFs.call(bfs);
+        require("grace/core/base_fs").BaseFs.call(bfs);
 
 
         var lfs = require("grace/core/file_utils").FileUtils
             .createServer("inApp");
         var fs = require("grace/core/file_utils").FileUtils
-            .defaultServer;
+            .getFileServer();
         var pairs = [
             lfs,
             fs,

@@ -1,6 +1,6 @@
 define(function(require,exports,module) {
     /*globals $*/
-    require('grace/ext/glob/glob');
+    require('grace/ext/file_utils/glob');
     var Notify = require("grace/ui/notify").Notify;
     var appConfig = require("grace/core/config").Config.registerAll({}, "git");
     var clean = require("grace/core/file_utils").FileUtils.removeTrailingSlash;
@@ -21,13 +21,13 @@ define(function(require,exports,module) {
             var name = clean(view.attr("filename"));
             var text = "";
             if (status == "*conflict") {
-                text = "<span class= 'status red'>" + status + "</span>";
+                text = "<span class= 'git-status red'>" + status + "</span>";
             } else if (status == "conflict" || status == "unmodified" || status == "ignored") {
-                text = "<span class= 'status'>" + status + "</span>";
+                text = "<span class= 'git-status'>" + status + "</span>";
             } else {
                 if (status[0] == "*") {
                     status = status.substring(1);
-                    text = "<span class= 'status'>unstaged</span>";
+                    text = "<span class= 'git-status'>unstaged</span>";
                 }
                 if (status == "deleted" || status == "deletedmodified") {
                     view.attr("deleted", true);
@@ -132,7 +132,7 @@ define(function(require,exports,module) {
 
         function nested() {
             if (stub.rootDir !== startRootDir) return;
-            var stubs = stub.childStubs;
+            var stubs = stub.nestedViews;
             if (!stubs) {
                 return (next || success)();
             }

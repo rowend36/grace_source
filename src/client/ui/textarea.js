@@ -5,6 +5,7 @@ define(function(require,exports,module) {
         receiver.className = 'keyboard-listener';
         receiver.value = "-";
         receiver.setAttribute('tabIndex', -1);
+        receiver.setAttribute('rows', 1000);
         receiver.style.opacity = 0;
         receiver.style.position = 'fixed';
         receiver.style.width = '2px';

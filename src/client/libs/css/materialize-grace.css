@@ -725,8 +725,9 @@ strong {
     padding: 5px 20px;
     font-size: 1rem;
     color: #eeeeee;
-    word-break: break-all;
+    overflow-wrap: break-word;
     overflow: hidden;
+    flex-wrap: wrap;
     display: -webkit-box;
     display: -webkit-flex;
     display: -ms-flexbox;
