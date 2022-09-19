@@ -89,7 +89,7 @@
           var prop = node.properties[i];
           if (prop.type == 'SpreadElement') { continue; }
           var name = infer.propName(prop);
-          if (name != "<i>" && prop.commentsBefore)
+          if (name != "<i>" && prop.commentsBefore && node.objType)
             interpretComments(prop, prop.commentsBefore, scope, node.objType.getProp(name));
         }
       },
