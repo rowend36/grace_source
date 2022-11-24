@@ -56,6 +56,7 @@ define(function (require, exports, module) {
             projectView.fileServer = e.project.fileServer;
             projectView.setRootDir(n);
             projectView.rename(projectView.names[0], e.project.name);
+            projectView.reload();
         }
     }
     update({

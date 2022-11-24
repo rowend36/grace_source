@@ -32,7 +32,7 @@ define(function (require, exports, module) {
                 this.getItem().mergedText,
                 cb,
                 ignoreDirty,
-                confirm,
+                confirm
             );
         } else {
             var gitdir = this.gitdir;
@@ -52,9 +52,9 @@ define(function (require, exports, module) {
                         this.getItem().mergedText,
                         cb,
                         ignoreDirty,
-                        confirm,
+                        confirm
                     );
-                }.bind(this),
+                }.bind(this)
             );
         }
         return true;
@@ -88,11 +88,11 @@ define(function (require, exports, module) {
                         gitdir: doc.gitdir,
                         fs: doc.getFileServer(),
                     },
-                    doc.mergeTree,
+                    doc.mergeTree
                 );
                 MergeDoc.previewTree(
                     doc.mergeTree,
-                    MergeDoc.getProv(doc.mergeTree),
+                    MergeDoc.getProv(doc.mergeTree)
                 );
             } else {
                 cb && cb(doc, 'No such item');
@@ -109,7 +109,7 @@ define(function (require, exports, module) {
     var loading = {};
     MergeDoc.getTree = function load(opts, cb) {
         var path = join(
-            opts.gitdir + '-merge-index-' + opts.fs.getDisk() + '.json',
+            opts.gitdir + '-merge-index-' + opts.fs.getDisk() + '.json'
         );
         if (trees[path] !== undefined) cb(null, trees[path]);
         else {
@@ -139,7 +139,7 @@ define(function (require, exports, module) {
                         loading[path].forEach(function (op) {
                             op(err, tree);
                         });
-                    },
+                    }
                 );
             }
         }
@@ -150,7 +150,7 @@ define(function (require, exports, module) {
         tree.fs = tree.fs.id;
         var res = JSON.stringify(tree);
         var id = join(
-            opts.gitdir + '-merge-index-' + opts.fs.getDisk() + '.json',
+            opts.gitdir + '-merge-index-' + opts.fs.getDisk() + '.json'
         );
         GitUtils.writeFile(
             'merge-index-' + opts.fs.getDisk(),
@@ -159,12 +159,12 @@ define(function (require, exports, module) {
             function (err) {
                 if (err)
                     Notify.error('Error while saving tree:' + err.toString());
-            },
+            }
         );
     };
     MergeDoc.deleteTree = function (opts, tree, cb) {
         var id = join(
-            opts.gitdir + '-merge-index-' + opts.fs.getDisk() + '.json',
+            opts.gitdir + '-merge-index-' + opts.fs.getDisk() + '.json'
         );
         trees[id] = undefined;
         GitUtils.removeFile('merge-index-' + opts.fs.getDisk(), opts, cb);

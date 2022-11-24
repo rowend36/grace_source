@@ -31,7 +31,7 @@ define(function (require, exports, module) {
       maxDocDataSize: Env.isWebView ? '1mb' : '500kb',
       maxUndoHistory: 'Infinity',
     },
-    'documents',
+    'documents'
   );
   config.Config.registerInfo(
     {
@@ -50,7 +50,7 @@ define(function (require, exports, module) {
           'The maximum size of data that should be stored for a single document. Avoid setting this value higher than 1mb.',
       },
     },
-    'documents',
+    'documents'
   );
   configEvents.on('documents', function (ev) {
     switch (ev.config) {
@@ -82,7 +82,7 @@ define(function (require, exports, module) {
         : Utils.parseSize(appConfig.maxUndoHistory);
     limits.maxDocDataSize = Math.min(
       maxStoreSize,
-      Math.max(100000, Utils.parseSize(appConfig.maxDocDataSize)),
+      Math.max(100000, Utils.parseSize(appConfig.maxDocDataSize))
     );
   }
   updateSizes();
@@ -110,7 +110,7 @@ define(function (require, exports, module) {
     var data = contentLoader.save(doc);
     if (data === false) {
       return Notify.warn(
-        'Cache size exceeded!!!. Save document to avoid losing changes.',
+        'Cache size exceeded!!!. Save document to avoid losing changes.'
       );
     }
     try {
@@ -123,7 +123,7 @@ define(function (require, exports, module) {
       Notify.inform(
         'There was an error caching ' +
           doc.getPath() +
-          '. This might be as a result of low storage or wrong global configuration. Contact developer if issue persists.',
+          '. This might be as a result of low storage or wrong global configuration. Contact developer if issue persists.'
       );
       debug.log(e.message, {
         error: e,
@@ -134,10 +134,14 @@ define(function (require, exports, module) {
     }
   };
   var lastSaveT = 0;
+  //A document is persisted either 5 seconds after we stop editting
+  //or 60 seconds after the last save whichever comes first.
+  //This way changes are persisted quickly for one-off changes 
+  //but sparsely for long editting sessions.
   var scheduleSave = Utils.delay(persistDoc, 5000);
   exports.$persistDoc = function () {
     var now = new Date().getTime();
-    if (now - lastSaveT > 60000) scheduleSave();
+    if (now - lastSaveT > 55000) scheduleSave();
     else scheduleSave.later();
   };
   var DB = new Store('docs', {});
@@ -238,10 +242,9 @@ define(function (require, exports, module) {
           'Proceed to load ' + (json[id] || 'Document ' + id) + ' ?',
           loadDocFromState.bind(null, id, json[id], state),
           function () {
-            console.log('Discarding ', id);
             clearDocData(id);
             exports.persist();
-          },
+          }
         );
       } else {
         loadDocFromState(id, json[id], state);
@@ -302,7 +305,7 @@ define(function (require, exports, module) {
             name: e,
             caption: json[e] || 'Temporary ' + e,
           };
-        }),
+        })
       ),
       footers: ['Load All', 'Proceed'],
       onCreate: function (el, Forms) {

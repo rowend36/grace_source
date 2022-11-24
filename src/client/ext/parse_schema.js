@@ -56,10 +56,10 @@ define(function (require, exports, module) {
       enter: 'SINGLE_RULE',
     },
   };
-  var parser = new RuleParser();
-  parser.rules = parser.parseRules(syntax);
+  var parser = new RuleParser(syntax);
+  var keys = parser.compile();
   var parseNodes = function (right, left) {
-    switch (left.type) {
+    switch (keys[left.type]) {
       case '<':
       case '>':
       case '[':
@@ -137,13 +137,13 @@ define(function (require, exports, module) {
   var createSchema = new TreeListener();
   createSchema.onParse = function (node) {
     switch (node.type) {
-      case 'SINGLE_RULE':
+      case keys.SINGLE_RULE:
         if (node.text == '<>') {
           node.schema = S.Any;
           break;
         }
       /*fall through*/
-      case 'SCHEMA':
+      case keys.SCHEMA:
         node.schema = node.children.reduceRight(parseNodes, null);
     }
   };
@@ -164,6 +164,7 @@ define(function (require, exports, module) {
     if (typeof value == 'string') {
       parser.setState({
         text: value,
+        state: keys.start
       });
       TreeListener.call(createSchema); //reset
       parser.walk();

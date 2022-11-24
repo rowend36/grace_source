@@ -17,7 +17,7 @@ define(function (require, exports, module) {
         if (LightningFS) {
             var isApp = Env.isWebView;
             fs = BrowserFileServer = new LightningFS(
-                isApp ? 'grace_app' : 'grace',
+                isApp ? 'grace_app' : 'grace'
             );
             //No worker will be using it anytime soon
             //And we want to be able to use storage
@@ -62,7 +62,7 @@ define(function (require, exports, module) {
                                 cb(
                                     FileUtils.createError({
                                         code: 'EISDIR',
-                                    }),
+                                    })
                                 );
                             } else cb(e, i);
                         } catch (e) {
@@ -124,6 +124,6 @@ define(function (require, exports, module) {
         'In-Memory FileSystem',
         initBrowserFs,
         null,
-        true,
+        true
     );
 });

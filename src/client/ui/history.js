@@ -1,99 +1,62 @@
-define(function (require, exports, module) {
+define(function(require, exports, module) {
   'use strict';
 
   function History() {
     this.items = [];
-    this.popItems = [];
-    this.currentItem = null;
+    this.cursor = 0;
+    this.size = 0;
     this.input = null;
   }
-
   Object.assign(History.prototype, {
     commands: {
-      historyDown: function () {
+      historyDown: function() {
         if (this.hasNext()) {
           this.input.value = this.next();
           return true;
         }
       },
-      historyUp: function () {
+      historyUp: function() {
         if (this.hasPrev()) {
           this.input.value = this.prev();
           return true;
         }
       },
-      accept: function () {
-        this.push(this.input.value);
+      accept: function() {
+        this.commit();
       },
     },
-    bind: function(input){
+    bind: function(input) {
       this.input = input;
     },
-    hasNext: function () {
-      return this.popItems.length;
+    hasNext: function() {
+      return this.cursor < this.size;
     },
-    commit: function () {
-      this.currentItem = null;
+    hasPrev: function() {
+      if (this.cursor === this.size) this.commit();
+      return this.cursor > 1;
     },
-    hasPrev: function () {
-      return this.items.length
-        ? this.dir
-          ? this.items.length
-          : this.items.length - 1
-        : 0;
+    prev: function() {
+      if (this.cursor === this.size) this.commit();
+      if (this.cursor < 2) return null;
+      return this.items[--this.cursor - 1];
     },
-    prev: function () {
-      var a = this.items.pop();
-      if (!a) return;
-      this.popItems.unshift(a);
-      if (this.dir > -1) {
-        this.dir = -1;
-        return this.prev();
-      }
-      return a;
+    next: function() {
+      if (this.cursor === this.size) return null;
+      return this.items[this.cursor++];
     },
-    next: function () {
-      var a = this.popItems.shift();
-      if (!a) return;
-      this.items.push(a);
-      if (this.dir < 1) {
-        this.dir = 1;
-        return this.next();
-      }
-      return a;
-    },
-    modify: function (val, sb) {
-      val = val || this.create(sb);
-      if (this.hasNext() || this.currentItem === null) {
-        this.push(val);
-        this.currentItem = this.items[this.items.length - 1];
-      } else {
-        if (val.search) this.currentItem.search = val.search;
-        if (val.replace) this.currentItem.replace = val.replace;
+    commit: function() {
+      if (this.cursor < this.size) this.cursor = this.size;
+      var val = this.create();
+      if (!this.equals(this.items[this.size - 1], val)) {
+        this.items[(this.size++, this.cursor++)] = val;
       }
     },
-    create: function (sb) {
-      return {
-        search: sb.searchInput.value,
-        replace: sb.replaceOption.checked && sb.replaceInput.value,
-      };
+    create: function() {
+      return this.input.value;
     },
-    push: function (val, sb) {
-      val = val || this.create(sb);
-      this.items = this.items.concat(this.popItems);
-      this.currentItem = null;
-      this.popItems = [];
-      this.dir = 0;
-
-      if (this.canPush(this.items[this.items.length - 1], val)) {
-        this.items.push(val);
-      }
-    },
-    canPush: function (val, val2) {
-      return (
-        val2.search &&
-        !(val && val.search == val2.search && val.replace == val2.replace)
-      );
-    },
+    equals: function(val, val2) {
+      return val === val2;
+    }
   });
+  exports.History = History;
 });

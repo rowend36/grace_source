@@ -98,7 +98,7 @@ define(function (require, exports, module) {
                             doc.refresh(
                                 next,
                                 true, //ignoreDirty
-                                true, //confirm
+                                true //confirm
                             );
                         } catch (e) {
                             debug.error(e);
@@ -106,7 +106,7 @@ define(function (require, exports, module) {
                         }
                     },
                     null,
-                    3,
+                    3
                 );
             },
         },
@@ -122,7 +122,7 @@ define(function (require, exports, module) {
                 require(['../ext/fileview/fileviews'], function (mod) {
                     mod.Fileviews.pickFile(
                         null,
-                        require('../core/utils').Utils.noop,
+                        require('../core/utils').Utils.noop
                     );
                 });
             },

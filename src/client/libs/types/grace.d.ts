@@ -176,7 +176,7 @@ declare module "core/actions" {
 }
 declare module "core/ajax" {
  const exports: {
-  ajax(url: string , opts: Any) : Promise<any>
+  ajax(url: string , opts: Any) : Promise<XMLHttpRequest>
   from(module: any) : Function
  }
  export = exports

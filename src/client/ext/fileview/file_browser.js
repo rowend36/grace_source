@@ -19,7 +19,7 @@ define(function (require, exports, module) {
             askBeforeDelete: '**/.*git/**,**/src/,**/node_modules',
             askBeforeDeleteNonEmptyFolders: false,
         },
-        'files',
+        'files'
     );
     require('grace/core/config').Config.registerInfo(
         {
@@ -32,7 +32,7 @@ Warning: This will not stop the user from deleting parent folders.',
             askBeforeDeleteNonEmptyFolders:
                 'Confirm before deleting all non empty folders',
         },
-        'files',
+        'files'
     );
     var configEvents = require('grace/core/config').Config;
     var appEvents = require('grace/core/app_events').AppEvents;
@@ -50,6 +50,8 @@ Warning: This will not stop the user from deleting parent folders.',
     var normalize = require('grace/core/file_utils').FileUtils.normalize;
     var sort_mode = 'folder,code,name';
     var Icons = require('./file_icons').FileIcons;
+    //How many files we stat in parallel when reloading directories
+    var STAT_BATCH_SIZE = 50;
     configEvents.on('files', function (ev) {
         switch (ev.config) {
             case 'askBeforeDelete':
@@ -79,9 +81,10 @@ Warning: This will not stop the user from deleting parent folders.',
         /** @type {Array<string>} - list of filenames */
         this.names = [];
         //Satisfy tslint halfway
-        this.fileStats = this.backButton = this.topElement = this.bottomElement = this.inlineDialog = this.inlineDialogStub = this.scroller = this.selected = this.childViews = this.extraSpace = this.newFiles = this.fileNameToSelect = this.headerMode = this.prevHeaderMode = this.menu = null;
+        this.tree = this.menu = this.fileStats = this.childViews = this.extraSpace = this.newFiles = this.selected = this.fileNameToSelect = this.headerMode = this.prevHeaderMode = null;
+        this.loaderEl = this.backButton = this.topElement = this.bottomElement = this.inlineDialog = this.inlineDialogStub = this.scroller = null;
         this.inSelectMode = this.inFilter = false;
-        this.pageEnd = this.pageStart = this.preStart = 0;
+        this.runningTasks = this.pageEnd = this.pageStart = this.preStart = 0;
         //Create server
         if (!this.fileServer) {
             this.fileServer = FileUtils.getFileServer();
@@ -94,6 +97,7 @@ Warning: This will not stop the user from deleting parent folders.',
         if (stub.length < 1) {
             throw new Error('Bad id or selector ' + id);
         }
+        //the container element
         this.stub = stub;
         this.id = id;
         this.paddingBottom = this.paddingTop = 0;
@@ -104,42 +108,45 @@ Warning: This will not stop the user from deleting parent folders.',
         } else {
             this.rootDir = this.fileServer.getRoot();
         }
-        // @ts-ignore
-        this.setRootDir = this.setRootDir.bind(this);
-        this.setRootDir(FileUtils.normalize(this.rootDir));
-        if (appConfig['info:' + id] != null) {
-            this.showFileInfo = appConfig['info:' + id];
-            this.itemHeight = this.showFileInfo
-                ? ITEM_HEIGHT_INFO
-                : ITEM_HEIGHT;
+        var showFileInfo = this.showFileInfo;
+        if (showFileInfo == null) {
+            showFileInfo = appConfig['info:' + id];
+            if (showFileInfo == null) {
+                showFileInfo = appConfig.showFileInfo;
+            }
+            this.showFileInfo = showFileInfo;
         }
+        this.itemHeight = showFileInfo ? ITEM_HEIGHT_INFO : ITEM_HEIGHT;
+
+        this.setRootDir(FileUtils.normalize(this.rootDir));
         if (stub) this.createView(stub);
         if (!this.isTree && appConfig['tree:' + id]) {
             this.toggleTreeView();
         } else if (!noReload) this.reload();
     }
+
+    FileBrowser.prototype.isTree = false;
     FileBrowser.prototype.setRootDir = function (dir) {
+        if (this.tree) return this.tree.setRootDir(dir);
         if (dir[dir.length - 1] != SEP) dir = dir + SEP;
         this.rootDir = dir;
         if (this.id) {
             configure('root:' + this.id, dir, 'files');
         }
-        if (this.tree) {
-            this.tree.setRootDir(dir);
-        }
+        if (this.treeParent) this.treeParent.rootDir = dir;
     };
-    FileBrowser.prototype.isTree = false;
     // Layout Methods
     var ITEM_HEIGHT = 32;
     var ITEM_HEIGHT_INFO = 48;
-    FileBrowser.prototype.showFileInfo = appConfig.showFileInfo;
     FileBrowser.prototype.destroy = function () {
         this.removeEvents();
         if (this.tree) this.tree.destroy();
         this.stub = null;
     };
     FileBrowser.prototype.pageSize = 300;
-    FileBrowser.prototype.setShowFileInfo = function (val) {
+    FileBrowser.prototype.setShowFileInfo = function (val, force) {
+        if (force !== true && this.treeParent)
+            return this.treeParent.setShowFileInfo(val, force);
         if (this.showFileInfo != val) {
             if (this.id) configure('info:' + this.id, !!val, 'files');
             this.showFileInfo = val;
@@ -147,23 +154,18 @@ Warning: This will not stop the user from deleting parent folders.',
             this.itemHeight = val ? ITEM_HEIGHT_INFO : ITEM_HEIGHT;
             if (this.tree) {
                 //update tree also
-                this.setShowFileInfo.call(this.tree, val);
+                this.tree.setShowFileInfo(val, true);
             } else {
                 //remove old views with wrong item height
                 this.removeEvents();
                 this.createView(this.stub);
-                //for hierarchy
-                this.setRootDir(this.rootDir);
                 this.reload();
             }
         } else this.showFileInfo = val;
     };
-    FileBrowser.prototype.itemHeight = appConfig.showFileInfo
-        ? ITEM_HEIGHT_INFO
-        : ITEM_HEIGHT;
     FileBrowser.prototype.createHeader = function () {
         this.stub.append(
-            '<div class="bg-header fileview-header scroll-hide"></div>',
+            '<div class="bg-header fileview-header scroll-hide"></div>'
         );
         this.header = this.stub.children().last();
         this.stub.css('padding-top', '50px');
@@ -209,96 +211,17 @@ Warning: This will not stop the user from deleting parent folders.',
         }
         var self = this;
         if (!this.header) {
-            this.createHeader();
-            return;
+            return this.createHeader();
         }
         //Jquery-compat makes sure all event handlers are removed
         this.header.children().remove();
-        if (!this.headerMode) {
-            this.header.append(
-                '<div id="filedir-select" class="edge_box-2 h-100">' +
-                    '<div class="filenav">' +
-                    linkify(self.rootDir) +
-                    '</div>' +
-                    '<button class="material-icons select side-1">' +
-                    'history</button>' +
-                    "<button class='side-2 create center material-icons'>more_vert</button>" +
-                    '</div>',
-            );
-            var trigger = this.header.find('.select')[0];
-            trigger.onclick = function (/*ev*/) {
-                var e;
-                var options = [];
-                for (var i in recentFolders) {
-                    e = recentFolders[i];
-                    if (e != self.rootDir && options.indexOf(e) < 0)
-                        options.push({
-                            icon: 'history',
-                            caption:
-                                '<span class="inline-clipper">&nbsp;<span class="clipper-text">' +
-                                clip(e, self) +
-                                '</span></span>',
-                            value: e,
-                            className: 'list-clip',
-                        });
-                }
-                var bookmarks = FileUtils.getBookmarks();
-                for (i in bookmarks) {
-                    e = bookmarks[i];
-                    if (options.indexOf(e) < 0)
-                        options.push({
-                            icon: 'star',
-                            caption:
-                                '<span class="inline-clipper">&nbsp;<span class="clipper-text">' +
-                                e +
-                                '</span></span>',
-                            value: e,
-                            sortIndex: 200,
-                            className: 'list-clip',
-                        });
-                }
-                var dropdown = new Dropdown(false, 'responsive-right');
-                dropdown.setData(options);
-                dropdown.show(this);
-                dropdown.onclick = function (ev, id, element, item) {
-                    safeGoto(self, item.value);
-                    return true;
-                };
-                dropdown.ondismiss = function (/*ev*/) {
-                    dropdown.setData(null);
-                };
-            };
-            this.header.find('.create').click(function (e) {
-                (self.tree || self).showCtxMenu(
-                    (self.tree || self).headerDropdown,
-                    $(this)[0],
-                );
-                e.stopPropagation();
-            });
-            //so many different hacks for one thing
-            var makeScroll = function () {
-                $(this).removeClass('clipper-text');
-                $(this).addClass('fill_box');
-                this.scrollLeft = this.scrollWidth - this.clientWidth;
-                $(this).off('mouseover', makeScroll);
-                $(this).off('touchstart', makeScroll);
-            };
-            var nav = this.header.find('.filenav');
-            nav.addClass('clipper-text');
-            nav.on('mouseover', makeScroll);
-            nav.on('touchstart', makeScroll);
-            nav.find('.nav-breadcrumb').click(function () {
-                safeGoto(self, this.getAttribute('data-target'));
-            });
-            return;
-        }
         switch (this.headerMode) {
             case 'filter':
                 this.header.append(
                     '<div class="edge_box-1 h-100">\
                 <div class="fill_box"><input type="text" name="search_text" id="search_text" value="" /></div>\
                 <span id="cancelSearch" class="side-1 material-icons">close</span>\
-            </div>',
+            </div>'
                 );
                 var autoFilter = Utils.delay(function (e) {
                     self.filter(e.target.value);
@@ -312,15 +235,15 @@ Warning: This will not stop the user from deleting parent folders.',
                 break;
             case 'select':
                 this.header.append(
-                    '<div class="h-100 edge_box-2">\
+                    '<div class="h-100 edge_box-1-1">\
+                    <span id="cancelMark" class="side-1 material-icons">arrow_backward</span>\
                     <div class="flow-text fill_box"><span id = "num_marked" >' +
                         (this.$marked || []).length +
                         '  </span> of <span id = "num_total">' +
                         this.names.length +
                         '</span></div>\
-                    <span id="selectAll" class="side-1 material-icons">select_all</span>\
-                    <span id="cancelMark" class="side-2 material-icons">close</span>\
-                </div>',
+                    <span id="selectAll" class="side-2 material-icons">select_all</span>\
+                </div>'
                 );
                 this.header.find('#cancelMark').click(function () {
                     self.exitSelectMode();
@@ -329,11 +252,102 @@ Warning: This will not stop the user from deleting parent folders.',
                     self.selectAll();
                 });
                 break;
+            case null:
+                this.header.append(
+                    '<div id="filedir-select" class="edge_box-2 h-100">' +
+                        '<div class="filenav">' +
+                        linkify(self.rootDir) +
+                        '</div>' +
+                        '<button class="material-icons select side-1">' +
+                        'history</button>' +
+                        "<button class='side-2 create center material-icons'>more_vert</button>" +
+                        '</div>'
+                );
+                var trigger = this.header.find('.select')[0];
+                trigger.onclick = function (/*ev*/) {
+                    var e;
+                    var options = [];
+                    for (var i in recentFolders) {
+                        e = recentFolders[i];
+                        if (e != self.rootDir && options.indexOf(e) < 0)
+                            options.push({
+                                icon: 'history',
+                                caption:
+                                    '<span class="inline-clipper">&nbsp;<span class="clipper-text">' +
+                                    clip(e, self) +
+                                    '</span></span>',
+                                value: e,
+                                className: 'list-clip',
+                            });
+                    }
+                    var bookmarks = FileUtils.getBookmarks();
+                    for (i in bookmarks) {
+                        e = bookmarks[i];
+                        if (options.indexOf(e) < 0)
+                            options.push({
+                                icon: 'star',
+                                caption:
+                                    '<span class="inline-clipper">&nbsp;<span class="clipper-text">' +
+                                    e +
+                                    '</span></span>',
+                                value: e,
+                                sortIndex: 200,
+                                className: 'list-clip',
+                            });
+                    }
+                    var dropdown = new Dropdown(false, 'responsive-right');
+                    dropdown.setData(options);
+                    dropdown.show(this);
+                    dropdown.onclick = function (ev, id, element, item) {
+                        safeGoto(self, item.value);
+                        return true;
+                    };
+                    dropdown.ondismiss = function (/*ev*/) {
+                        dropdown.setData(null);
+                    };
+                };
+                this.header.find('.create').click(function (e) {
+                    (self.tree || self).showCtxMenu(
+                        (self.tree || self).headerDropdown,
+                        $(this)[0]
+                    );
+                    e.stopPropagation();
+                });
+                //so many different hacks for one thing
+                var makeScroll = function () {
+                    $(this).removeClass('clipper-text');
+                    $(this).addClass('fill_box');
+                    this.scrollLeft = this.scrollWidth - this.clientWidth;
+                    $(this).off('mouseover', makeScroll);
+                    $(this).off('touchstart', makeScroll);
+                };
+                var nav = this.header.find('.filenav');
+                nav.addClass('clipper-text');
+                nav.on('mouseover', makeScroll);
+                nav.on('touchstart', makeScroll);
+                nav.find('.nav-breadcrumb').click(function () {
+                    safeGoto(self, this.getAttribute('data-target'));
+                });
+                break;
             default:
                 this.headerMode = null;
-                this.updateHeader();
+                return this.updateHeader();
         }
     };
+
+    FileBrowser.prototype.setLoading = function (started) {
+        if (started) {
+            if (this.runningTasks++ > 0) return;
+            if (!this.loaderEl)
+                this.loaderEl = $(
+                    '<span style="position:absolute;top:40px;background:none;margin:0" class="p-15 progress"><span class="indeterminate"></span></span>'
+                );
+            if (this.header) this.header.after(this.loaderEl);
+        } else if (--this.runningTasks === 0) {
+            this.loaderEl.remove();
+        }
+    };
+
     FileBrowser.prototype.updateTopElements = function () {
         this.paddingTop = 0;
         if (this.names.length < this.pageSize) {
@@ -366,7 +380,7 @@ Warning: This will not stop the user from deleting parent folders.',
                         "<span class='filename'>" +
                         '..' +
                         '</span>' +
-                        '</li>',
+                        '</li>'
                 )
                 .children()
                 .last();
@@ -384,7 +398,7 @@ Warning: This will not stop the user from deleting parent folders.',
                     .children()
                     .last();
             this.bottomElement.html(
-                '<h6 style="text-align:center">Empty Folder</h6>',
+                '<h6 style="text-align:center">Empty Folder</h6>'
             );
         } else {
             if (this.pageStart === 0 && this.pageEnd == this.names.length) {
@@ -465,16 +479,16 @@ Warning: This will not stop the user from deleting parent folders.',
             view.attr('filename', filename);
             view.attr(
                 'class',
-                'folder-item file-item border-inactive ' + color,
+                'folder-item file-item border-inactive ' + color
             );
             view.attr('tabIndex', 0);
             view.find('.filename').html(
-                filename.slice(0, filename.length - 1) + ' ',
+                filename.slice(0, filename.length - 1) + ' '
             );
             if (this.nestedViews) {
                 if (
                     this.nestedViews[filename] &&
-                    this.nestedViews[filename].stub.css('display') != 'none'
+                    !this.nestedViews[filename].isClosed
                 )
                     Icons.renderEl(icon, 'folder_open', filename);
                 else Icons.renderEl(icon, 'folder_close', filename);
@@ -489,9 +503,7 @@ Warning: This will not stop the user from deleting parent folders.',
             view.find('.dropdown-btn').attr('data-target', this.fileDropdown);
         }
         if (this.fileStats)
-            view.find('.file-info').text(
-                this.fileStats[filename] || 'Timed out',
-            );
+            view.find('.file-info').text(this.fileStats[i] || 'Timed out');
         else view.find('.file-info').text('');
         if (FileUtils.isBinaryFile(filename)) {
             view.addClass('binary-file');
@@ -509,7 +521,7 @@ Warning: This will not stop the user from deleting parent folders.',
             this.stub.append('<ul class="fileview"></ul>');
             this.root = stub.children().last();
             this.root.html(
-                "<h6 class='no-results color-inactive'>Loading files...</h6>",
+                "<h6 class='no-results color-inactive'>runningTasks files...</h6>"
             );
         }
         this.root.toggleClass('fileview-info', this.showFileInfo);
@@ -566,16 +578,10 @@ Warning: This will not stop the user from deleting parent folders.',
         }
         this.pageEnd = this.pageStart + end;
     };
-    FileBrowser.prototype.updateHierarchy = function (
-        names,
-        highlightNewFiles,
-    ) {
+    FileBrowser.prototype.updateView = function (names, highlightNewFiles) {
+        if (this.tree) return this.tree.updateView(names, highlightNewFiles);
         this.root.find('.no-results').remove();
-        if (this.tree) {
-            this.updateHeader();
-            this.tree.updateHierarchy(names, highlightNewFiles);
-            return;
-        }
+
         if (this.inSelectMode) this.exitSelectMode();
         if (!appConfig.showHiddenFiles) {
             names = names.filter(function (i) {
@@ -645,10 +651,9 @@ Warning: This will not stop the user from deleting parent folders.',
         }
     };
     FileBrowser.prototype.getElement = function (name) {
-        var a = this.root
+        return this.root
             .children('.file-item')
             .filter('[filename="' + name + '"]');
-        return a;
     };
     FileBrowser.prototype.filter = function (text) {
         var names = this.names.original || this.names;
@@ -659,33 +664,24 @@ Warning: This will not stop the user from deleting parent folders.',
             return false;
         });
         filtered.original = names;
-        this.selected = false;
+        this.selected = null;
         this.inFilter = true;
-        this.updateHierarchy(filtered);
+        this.updateView(filtered);
         this.inFilter = false;
     };
-    FileBrowser.prototype.goto = function (path, cb, isFolder) {
-        if (this.tree) return this.tree.goto(path, cb, isFolder);
+
+    FileBrowser.prototype.goto = function (path, cb, asFolder) {
+        if (this.tree) return this.tree.goto(path, cb, asFolder);
         if (!path) return;
-        var segments = normalize(path + (isFolder ? SEP : ''));
+        var segments = normalize(path + (asFolder ? SEP : ''));
         if (segments.startsWith(this.fileServer.getRoot())) {
             if (segments.endsWith(SEP)) {
                 this.reload(false, cb, segments);
             } else {
                 segments = segments.split(SEP);
                 var folder = segments.slice(0, -1).join(SEP) + SEP;
-                var self = this;
-                this.reload(
-                    false,
-                    function (err) {
-                        if (!err)
-                            self.scrollItemIntoView(
-                                segments[segments.length - 1],
-                            );
-                        cb && cb(err);
-                    },
-                    folder,
-                );
+                this.fileNameToSelect = segments[segments.length - 1];
+                this.reload(false, cb, folder);
             }
             return true;
         }
@@ -694,19 +690,10 @@ Warning: This will not stop the user from deleting parent folders.',
     // Event Handlers
     FileBrowser.prototype.moveTo = FileBrowser.prototype.shiftTo = function (
         newEl,
-        oldEl,
+        oldEl
     ) {
         $(oldEl).removeClass('item-selected');
         $(newEl).addClass('item-selected');
-    };
-    FileBrowser.prototype.getCurrentElement = function () {
-        return (
-            this.root.find('.item-selected').not('.destroyed')[0] ||
-            this.root.children()[0]
-        );
-    };
-    FileBrowser.prototype.blur = function () {
-        return this.root.find('.item-selected').removeClass('item-selected');
     };
     FileBrowser.prototype.attachEvents = function () {
         var self = this;
@@ -720,7 +707,7 @@ Warning: This will not stop the user from deleting parent folders.',
                 }
                 e.stopPropagation();
                 e.stopImmediatePropagation();
-            },
+            }
         );
         this.root.on(
             'click.filebrowser',
@@ -731,18 +718,18 @@ Warning: This will not stop the user from deleting parent folders.',
                 }
                 e.stopPropagation();
                 e.stopImmediatePropagation();
-            },
+            }
         );
 
         this.root.on(
             'click.filebrowser',
             '.folder-item',
-            this.onFolderClicked(),
+            this.onFolderClicked()
         );
         this.root.on(
             'click.filebrowser',
             '.file-item:not(.folder-item):not(.back-button)',
-            this.onFileClicked(),
+            this.onFileClicked()
         );
         /*this.root.longTap({
             onRelease: function(e) {
@@ -786,7 +773,7 @@ Warning: This will not stop the user from deleting parent folders.',
         if (scroller) {
             this.scroller = scroller;
             this.scroller.on('scroll.filebrowser', function (e) {
-                self.handleScroll(this);
+                self.handleScroll(this, e);
             });
         }
     };
@@ -802,7 +789,7 @@ Warning: This will not stop the user from deleting parent folders.',
             this.header &&
                 this.header.toggleClass(
                     'scroll-hide',
-                    scrollElement.scrollTop == 0,
+                    scrollElement.scrollTop == 0
                 );
         }
         /*var t = this.root.data('timeout.longtap');
@@ -873,7 +860,7 @@ Warning: This will not stop the user from deleting parent folders.',
         el,
         callback,
         status,
-        val,
+        val
     ) {
         var self = this;
         if (el && !val) {
@@ -1032,29 +1019,19 @@ Warning: This will not stop the user from deleting parent folders.',
     FileBrowser.prototype.reload = function (
         highlightNewFiles,
         callback,
-        rootDir,
+        rootDir
     ) {
-        var self = this;
         if (this.tree) {
-            if (rootDir) {
-                this.tree.rootDir = rootDir;
-            }
-            return this.tree.reload(highlightNewFiles, function (err) {
-                if (!err) {
-                    self.setRootDir(self.tree.rootDir);
-                    self.updateHeader();
-                } else self.tree.rootDir = self.rootDir;
-                callback && callback(err);
-            });
+            this.tree.fileNameToSelect = this.fileNameToSelect;
+            return this.tree.reload(highlightNewFiles, callback, rootDir);
         }
-        var called = false;
+        var self = this;
+        this.setLoading(true);
         function done(err, res) {
-            if (called)
-                throw new Error('getfiles/readdir cb called twice in reload');
-            called = true;
+            self.setLoading(false);
             if (!err) {
                 if (rootDir) self.setRootDir(rootDir);
-                self.updateHierarchy(res, highlightNewFiles);
+                self.updateView(res, highlightNewFiles);
             } else self.root.find('.no-results').text('Error loading files');
             if (callback) callback(err);
         }
@@ -1069,7 +1046,7 @@ Warning: This will not stop the user from deleting parent folders.',
                 timedOut.control(function () {
                     timedOut.stop();
                 }),
-                2000,
+                2000
             );
             var stats = [];
             Utils.asyncForEach(
@@ -1078,15 +1055,13 @@ Warning: This will not stop the user from deleting parent folders.',
                     next = timedOut.control(next, cancel);
                     fs.lstat(root + e, function (err, stat) {
                         if (err) {
-                            stats[i] = '(Error getting stat)';
+                            stats[i] = '(Error getting info)';
                         } else {
                             if (stat.isDirectory()) {
                                 r[i] += '/';
-                                stats[e + '/'] = toDate(
-                                    stat.mtime || stat.mtimeMs,
-                                );
+                                stats[i] = toDate(stat.mtime || stat.mtimeMs);
                             } else
-                                stats[e] =
+                                stats[i] =
                                     toDate(stat.mtime || stat.mtimeMs) +
                                     '  ' +
                                     Utils.toSize(stat.size);
@@ -1103,9 +1078,9 @@ Warning: This will not stop the user from deleting parent folders.',
                         timedOut.clear();
                     }
                 },
-                30,
+                STAT_BATCH_SIZE,
                 false,
-                true,
+                true
             );
         });
     };
@@ -1170,14 +1145,13 @@ Warning: This will not stop the user from deleting parent folders.',
         }
     };
 
-    FileBrowser.prototype.tree = null;
     FileBrowser.prototype.createTreeView = function () {
         var stub = this;
         stub.tree = new NestedBrowser(
             stub.root,
             stub.rootDir,
             stub.fileServer,
-            true,
+            true
         );
     };
     /**
@@ -1187,11 +1161,12 @@ Warning: This will not stop the user from deleting parent folders.',
        This is unneeded if you are executing an action since onCtxMenuClick does this automatically.
      */
     FileBrowser.prototype.toggleTreeView = function () {
+        if (this.treeParent) return this.treeParent.toggleTreeView();
         var stub = this;
         if (stub.tree) {
             configure('tree:' + this.id, false, 'files');
             stub.tree.destroy();
-            stub.tree = undefined;
+            stub.tree = null;
             stub.createView(stub.stub);
             stub.reload();
         } else {
@@ -1199,48 +1174,11 @@ Warning: This will not stop the user from deleting parent folders.',
             stub.removeEvents();
             stub.createTreeView();
             stub.tree.id = this.id;
-            stub.tree.toggleTreeView = stub.toggleTreeView.bind(stub);
-            stub.tree.setShowFileInfo = stub.setShowFileInfo.bind(stub);
-            stub.tree.goto = function (path, cb, i) {
-                path = normalize(path);
-                if (path.startsWith(stub.rootDir)) {
-                    return NestedBrowser.prototype.goto.apply(stub.tree, [
-                        path,
-                        cb,
-                        i,
-                    ]);
-                } else {
-                    var root = stub.fileServer.getRoot();
-                    if (path.startsWith(root)) {
-                        var segments = path.substring(root.length).split(SEP);
-                        //Get the base folder, which is at most 5 levels above the said file
-                        var max =
-                            root +
-                            segments
-                                .slice(
-                                    0,
-                                    -Math.min(5, segments.length) + 1 ||
-                                        segments.length,
-                                )
-                                .join(SEP);
-                        return stub.goto(max + SEP, function (e) {
-                            if (!e) {
-                                NestedBrowser.prototype.goto.apply(stub.tree, [
-                                    path,
-                                    cb,
-                                    i,
-                                ]);
-                            } else cb && cb(e);
-                        });
-                    } else return false;
-                }
-            };
             stub.tree.header = stub.header;
-            stub.tree.treeParent = this;
-            stub.tree.updateHeader = stub.updateHeader;
             stub.tree.preStart = stub.pageStart;
+            stub.tree.treeParent = this;
             if (stub.tree.showFileInfo != stub.showFileInfo) {
-                stub.setShowFileInfo.call(stub.tree, stub.showFileInfo);
+                stub.tree.setShowFileInfo(stub.showFileInfo, true);
             } else stub.reload();
         }
     };
@@ -1259,7 +1197,7 @@ Warning: This will not stop the user from deleting parent folders.',
         filename,
         el,
         item,
-        anchor,
+        anchor
     ) {
         if (this.tree)
             return this.tree.onCtxMenuClick(id, filename, el, item, anchor);
@@ -1293,7 +1231,7 @@ Warning: This will not stop the user from deleting parent folders.',
                 };
                 clearPlaceholder(
                     null,
-                    require('grace/setup/setup_editors').getActiveDoc(),
+                    require('grace/setup/setup_editors').getActiveDoc()
                 );
                 if (!stub.inSelectMode) {
                     stub.openFile(filename, true, clearPlaceholder);
@@ -1341,7 +1279,7 @@ Warning: This will not stop the user from deleting parent folders.',
                 var bookmarks = FileUtils.getBookmarks();
                 if (bookmarks.indexOf(filepath || rootDir) < 0) {
                     FileUtils.setBookmarks(
-                        bookmarks.concat(filepath || rootDir),
+                        bookmarks.concat(filepath || rootDir)
                     );
                 }
                 break;
@@ -1349,7 +1287,7 @@ Warning: This will not stop the user from deleting parent folders.',
                 var bookmarks2 = FileUtils.getBookmarks();
                 if (bookmarks2.indexOf(filepath || rootDir) > -1) {
                     FileUtils.setBookmarks(
-                        Utils.replace(bookmarks2, filepath || rootDir),
+                        Utils.replace(bookmarks2, filepath || rootDir)
                     );
                 }
                 break;
@@ -1362,7 +1300,7 @@ Warning: This will not stop the user from deleting parent folders.',
             case 'show-info':
                 var one = Utils.createCounter(function () {
                     Notify.modal({
-                        header: filepath.replace(/(.{15,})\//, '$1/ '),
+                        header: els.length > 1 ? rootDir : filepath,
                         body:
                             els.length > 1
                                 ? els.join('</br>') +
@@ -1395,7 +1333,7 @@ Warning: This will not stop the user from deleting parent folders.',
                                     'Byte Length': size,
                                     Size: Utils.toSize(size),
                                     'Last Modified': date,
-                                }),
+                                })
                             );
                         }
                         one.decrement();
@@ -1414,7 +1352,7 @@ Warning: This will not stop the user from deleting parent folders.',
                             return t;
                         }
                     },
-                    'Enter new name',
+                    'Enter new name'
                 );
                 break;
             case 'new-browser':
@@ -1462,20 +1400,15 @@ Warning: This will not stop the user from deleting parent folders.',
                 var oldCopy = stub.clipboard.data;
                 var method = stub.clipboard.mode === 0 ? 'copy' : 'move';
                 var modal = $(
-                    Notify.modal(
-                        {
-                            header: stub.clipboard.mode
-                                ? 'Moving files....'
-                                : 'Copying files....',
-                            body:
-                                "<h6 id='progress-header'></h6><div class='progress'><span class='indeterminate'></span></div>",
-                            footers: ['Cancel', 'Hide'],
-                            dismissible: true,
-                        },
-                        function () {
-                            el = null;
-                        },
-                    ),
+                    Notify.modal({
+                        header: stub.clipboard.mode
+                            ? 'Moving files....'
+                            : 'Copying files....',
+                        body:
+                            "<h6 id='progress-header'></h6><div class='progress'><span class='indeterminate'></span></div>",
+                        footers: ['Cancel', 'Hide'],
+                        dismissible: true,
+                    })
                 );
                 var ctx = {
                     names: stub.names,
@@ -1485,12 +1418,12 @@ Warning: This will not stop the user from deleting parent folders.',
                 var progress = modal.find('#progress-header');
                 var task = new StopSignal();
                 modal.find('.modal-cancel').click(task.stop);
-                var copyServer = stub.clipboard.data.server;
-                var doPaste = function (path, next, failed) {
+                var srcServer = stub.clipboard.data.server;
+                var doPaste = function (path, next, onFail) {
                     var name = stub.filename(path, true, ctx);
                     var error = stub.validateNewFileName(name, ctx);
                     if (error) {
-                        failed(error, name);
+                        onFail(error, name);
                         return;
                     }
                     var newpath = stub.childFilePath(name, false, ctx);
@@ -1499,35 +1432,36 @@ Warning: This will not stop the user from deleting parent folders.',
                     var stop = FileUtils[method + type](
                         path,
                         newpath,
-                        copyServer,
+                        srcServer,
                         server,
                         function (err) {
                             task.unsubscribe(stop);
                             if (!err) {
                                 if (method == 'move') {
-                                    if (copyServer == server) {
-                                        Docs.rename(path, newpath, server);
-                                    } else Docs.delete(path, server);
+                                    if (srcServer == server) {
+                                        Docs.rename(path, newpath, srcServer);
+                                    } else Docs.delete(path, srcServer);
                                 }
                                 next(name);
                             } else {
                                 console.error(err);
-                                failed('Failed to ' + method, name);
+                                onFail('Failed to ' + method, name);
                             }
                         },
                         null, //no conflict resolution
                         function (path, e) {
+                            //onEach
                             if (e)
                                 progress.html(
                                     '<span class="error-text"> Failed to ' +
                                         method +
                                         ' ' +
                                         path +
-                                        '</span>',
+                                        '</span>'
                                 );
                             else progress.text(path);
                             //
-                        },
+                        }
                     );
                     task.subscribe(stop);
                 };
@@ -1553,7 +1487,7 @@ Warning: This will not stop the user from deleting parent folders.',
                         function (error, name) {
                             Notify.error(error + ' ' + name);
                             onFinished();
-                        },
+                        }
                     );
                 } else {
                     var filesToCopy = [].concat(stub.clipboard.data.files);
@@ -1564,20 +1498,21 @@ Warning: This will not stop the user from deleting parent folders.',
                         function (file, i, next, cancel) {
                             next = task.control(next, cancel);
                             doPaste(file, next, function (err, name) {
+                                //onFail
                                 Notify.ask(
                                     err + ' ' + name + ', continue?',
                                     function () {
                                         numCopied--;
                                         next();
                                     },
-                                    cancel,
+                                    cancel
                                 );
                             });
                         },
                         function (cancelled) {
                             if (!cancelled)
                                 Notify.info(
-                                    'Pasted ' + (numCopied || 0) + ' files',
+                                    'Pasted ' + (numCopied || 0) + ' files'
                                 );
                             else if (numCopied > 0)
                                 Notify.warn('Pasted ' + numCopied + ' files');
@@ -1585,19 +1520,19 @@ Warning: This will not stop the user from deleting parent folders.',
                         },
                         MAX_SIMULTANEOUS_COPY,
                         false,
-                        true,
+                        true
                     );
                 }
                 break;
             case 'delete-browser':
                 Fileviews.deleteBrowser(
-                    stub.isTree ? stub.treeParent.id : stub.id,
+                    stub.isTree ? stub.treeParent.id : stub.id
                 );
                 break;
             case 'close-project':
                 FileUtils.openProject(
                     FileUtils.NO_PROJECT,
-                    FileUtils.getFileServer(),
+                    FileUtils.getFileServer()
                 );
                 break;
             case 'delete-file':
@@ -1617,7 +1552,7 @@ Warning: This will not stop the user from deleting parent folders.',
                             function (ans) {
                                 if (ans != code) return false;
                                 doDelete();
-                            },
+                            }
                         );
                     } else {
                         Notify.ask(message, doDelete);
@@ -1658,13 +1593,13 @@ Warning: This will not stop the user from deleting parent folders.',
                                         if (e || (res && res.length > 0))
                                             cancel(e);
                                         else next();
-                                    },
+                                    }
                                 );
                             },
                             ask,
                             4,
                             false,
-                            true,
+                            true
                         );
                     }
                 }
@@ -1709,10 +1644,10 @@ Warning: This will not stop the user from deleting parent folders.',
             case 'fold-parent':
                 if (filename) {
                     stub.getParent().foldFolder(
-                        stub.getParent().filename(rootDir),
+                        stub.getParent().filename(rootDir)
                     );
                     stub.getParent().scrollItemIntoView(
-                        stub.getParent().filename(rootDir),
+                        stub.getParent().filename(rootDir)
                     );
                 }
                 break;
@@ -1727,7 +1662,7 @@ Warning: This will not stop the user from deleting parent folders.',
                 unimplemented();
         }
     };
-    FileBrowser.prototype.onDismissCtxMenu = function () {};
+    FileBrowser.prototype.onDismissCtxMenu = Utils.noop;
     FileBrowser.prototype.overflows = {};
     FileBrowser.prototype.showCtxMenu = function (menu, el) {
         if (!this.menuItems[menu]) return;
@@ -1735,185 +1670,33 @@ Warning: This will not stop the user from deleting parent folders.',
         if (Fileviews.activeFileBrowser) {
             Fileviews.activeFileBrowser.menu.hide();
         }
-        var menuEl = this.overflows[menu];
-        if (!menuEl) {
-            menuEl = new Dropdown();
-            this.overflows[menu] = menuEl;
-            menuEl.setData(this.menuItems[menu]);
-            menuEl.onclick = function (e, id, link, item, anchor) {
-                if (this.filebrowser.menuItems[menu]) {
-                    this.filebrowser.onCtxMenuClick(
-                        id,
-                        this.filebrowser.selected,
-                        link,
-                        item,
-                        anchor,
-                    );
+        var dropdown = this.overflows[menu];
+        if (!dropdown) {
+            dropdown = new Dropdown();
+            this.overflows[menu] = dropdown;
+            dropdown.setData(this.menuItems[menu]);
+            dropdown.onclick = function (e, id, link, item, anchor) {
+                var stub = Fileviews.activeFileBrowser;
+                if (stub.menuItems[menu]) {
+                    stub.onCtxMenuClick(id, stub.selected, link, item, anchor);
                     return true;
                 }
             };
-            menuEl.ondismiss = function () {
-                this.filebrowser.onDismissCtxMenu();
-                Fileviews.activeFileBrowser = this.filebrowser.menu = this.filebrowser = null;
+            dropdown.ondismiss = function () {
+                var stub = Fileviews.activeFileBrowser;
+                stub.onDismissCtxMenu();
+                Fileviews.activeFileBrowser = stub.menu = null;
             };
         }
         Fileviews.activeFileBrowser = this;
-        menuEl.filebrowser = this;
-        this.menu = menuEl;
+        this.menu = dropdown;
         this.selected = name;
-        menuEl.show(el);
+        dropdown.show(el);
     };
+    FileBrowser.prototype.menuItems = require('./file_menus').fileMenus;
     FileBrowser.prototype.folderDropdown = 'folder-dropdown';
     FileBrowser.prototype.fileDropdown = 'file-dropdown';
     FileBrowser.prototype.headerDropdown = 'header-dropdown';
-    FileBrowser.prototype.menuItems = {
-        'folder-dropdown': {
-            '!save-as': 'Save As',
-            'open-folder': {
-                caption: 'Open',
-            },
-            'new-folder': 'New Folder',
-            '!new-item': 'New File',
-            'rename-folder': {
-                caption: 'Rename',
-            },
-            'delete-folder': 'Delete',
-            'copy-file': 'Copy',
-            'cut-file': 'Cut',
-            '!paste-file': {
-                sortIndex: -1,
-                caption: 'Paste',
-            },
-            'show-info': 'Info',
-            'mark-file': 'Mark Multiple',
-            'new-tab': {
-                caption: 'Open in new tab',
-            },
-            'open-project': {
-                caption: 'Open As Project Folder',
-            },
-            '!update': [
-                function (self, update) {
-                    update(
-                        'paste-file',
-                        Fileviews.activeFileBrowser.clipboard.data
-                            ? self['!paste-file']
-                            : null,
-                    );
-                    update(
-                        'new-item',
-                        Fileviews.inSaveMode()
-                            ? self['!save-as']
-                            : self['!new-item'],
-                    );
-                },
-            ],
-        },
-        'file-dropdown': {
-            'open-item': 'Open',
-            'rename-file': 'Rename',
-            'delete-file': 'Delete',
-            'copy-file': 'Copy',
-            'cut-file': 'Cut',
-            '!paste-file': {
-                caption: 'Paste',
-            },
-            'show-info': 'Info',
-            'mark-file': 'Mark Multiple',
-            '!update': [
-                function (self, update) {
-                    update(
-                        'paste-file',
-                        Fileviews.activeFileBrowser.clipboard.data
-                            ? self['!paste-file']
-                            : null,
-                    );
-                },
-            ],
-        },
-        'header-dropdown': {
-            '!save-as': 'Save As',
-            '!paste-file': {
-                caption: 'Paste',
-            },
-            '!new-item': 'New File',
-            'new-folder': 'New Folder',
-            'filter-files': 'Filter',
-            'reload-browser': 'Reload',
-            'open-project': 'Open As Project Folder',
-            'show-current-doc': {
-                caption: 'Show Current File',
-                sortIndex: 100,
-            },
-            '!add-bookmark': 'Add To Bookmarks',
-            '!remove-bookmark': 'Remove From Bookmarks',
-
-            'new-browser': 'Add Storage',
-            'delete-browser': 'Close Storage',
-            'toggle-info': 'Show File Info',
-            '!update': [
-                function (self, update) {
-                    var bookmarked =
-                        FileUtils.getBookmarks().indexOf(
-                            Fileviews.activeFileBrowser.rootDir,
-                        ) > -1;
-                    update(
-                        'add-bookmark',
-                        bookmarked ? null : self['!add-bookmark'],
-                    );
-                    update(
-                        'remove-bookmark',
-                        !bookmarked ? null : self['!remove-bookmark'],
-                    );
-                    update(
-                        'paste-file',
-                        Fileviews.activeFileBrowser.clipboard.data
-                            ? self['!paste-file']
-                            : null,
-                    );
-                    update(
-                        'new-item',
-                        Fileviews.inSaveMode()
-                            ? self['!save-as']
-                            : self['!new-item'],
-                    );
-                    update(
-                        'toggle-info',
-                        Fileviews.activeFileBrowser.showFileInfo
-                            ? 'Hide File Info'
-                            : 'Show File Info',
-                    );
-                    update(
-                        'toggle-info',
-                        Fileviews.activeFileBrowser.showFileInfo
-                            ? 'Hide File Info'
-                            : 'Show File Info',
-                    );
-                    update(
-                        'open-tree',
-                        Fileviews.activeFileBrowser.isTree
-                            ? 'View As List'
-                            : 'View As Tree',
-                    );
-                },
-            ],
-        },
-    };
-    (function () {
-        //Add ordering
-        for (var i in FileBrowser.prototype.menuItems) {
-            var o = 1;
-            for (var j in FileBrowser.prototype.menuItems[i]) {
-                if (typeof FileBrowser.prototype.menuItems[i][j] == 'string') {
-                    FileBrowser.prototype.menuItems[i][j] = {
-                        caption: FileBrowser.prototype.menuItems[i][j],
-                    };
-                }
-                FileBrowser.prototype.menuItems[i][j].sortIndex =
-                    FileBrowser.prototype.menuItems[i][j].sortIndex || o++;
-            }
-        }
-    })();
     var toggle = function (self, update) {
         var filename = Fileviews.activeFileBrowser.selected || '';
         var extension = FileUtils.extname(filename);
@@ -1930,18 +1713,8 @@ Warning: This will not stop the user from deleting parent folders.',
         var update = menu['!update'];
         if (!menu.toggleProps) {
             if (update) update.push(toggle);
-            Object.defineProperties(menu, {
-                '!update': {
-                    value: update || [].concat(toggle),
-                    writable: true,
-                    enumerable: false,
-                },
-                toggleProps: {
-                    writable: true,
-                    value: {},
-                    enumerable: false,
-                },
-            });
+            Utils.defProp(menu, '!update', update || [].concat(toggle));
+            Utils.defProp(menu, 'toggleProps', {});
         }
         menu.toggleProps[value.id] = value;
     }
@@ -1949,7 +1722,7 @@ Warning: This will not stop the user from deleting parent folders.',
         ev.preventDefault();
     };
 
-    function add(menu, id, caption, emitter) {
+    function addToMenu(menu, id, caption, emitter) {
         if (caption.extension || caption.filename) {
             caption.id = id;
             createToggle(menu, caption);
@@ -1958,10 +1731,11 @@ Warning: This will not stop the user from deleting parent folders.',
         if (caption.subTree) {
             if (!caption.handle) emitter.on(id, preventDefault);
             for (var i in caption.subTree) {
-                add(caption.subTree, i, caption.subTree[i], emitter);
+                addToMenu(caption.subTree, i, caption.subTree[i], emitter);
             }
         }
     }
+    //Note: This method is called on FileBrowser.prototype
     FileBrowser.prototype.onNewOption = function (types, id, caption, func) {
         var prop = this;
         if (Fileviews.activeFileBrowser) {
@@ -1969,7 +1743,7 @@ Warning: This will not stop the user from deleting parent folders.',
         }
         for (var i in types) {
             var menuId = prop[types[i] + 'Dropdown'];
-            add(prop.menuItems[menuId], id, caption, this.emitter);
+            addToMenu(prop.menuItems[menuId], id, caption, this.emitter);
         }
         if (func) this.emitter.on(id, func);
     };
@@ -1978,16 +1752,21 @@ Warning: This will not stop the user from deleting parent folders.',
     //A nested filebrowser aka TreeView
     /** @constructor */
     function NestedBrowser(id, rootDir, fileServer, noReload) {
+        this.nestedViews = {};
+        this.isClosed = false;
+        //A filebrowser wrapping this filebrowser
+        this.treeParent = null;
+        //A filebrowser that nests this filebrowser
+        this.parentStub = null;
+        //For tslint
+        this.filterTask = this.showFileInfo = null;
+        //This has to be done first for proper handling of getScrollingElements
         if (noReload && typeof noReload == 'object') {
             this.setParent(noReload);
         }
         this.superNestedBrowser.constructor.apply(this, arguments);
-        this.nestedViews = {};
-        this.filterId = 0;
     }
-    NestedBrowser.prototype = Object.create(FileBrowser.prototype);
-    NestedBrowser.prototype.constructor = NestedBrowser;
-    NestedBrowser.prototype.treeParent = null;
+    Utils.inherits(NestedBrowser, FileBrowser);
     NestedBrowser.prototype.superNestedBrowser = FileBrowser.prototype;
     NestedBrowser.prototype.enterSelectMode = function () {
         for (var a in this.nestedViews) {
@@ -2015,6 +1794,7 @@ Warning: This will not stop the user from deleting parent folders.',
         this.nestedViews = {};
         this.superNestedBrowser.removeEvents.apply(this, arguments);
     };
+    //NestedBrowsers must have their headers assigned not created.
     NestedBrowser.prototype.createHeader = Utils.noop;
     NestedBrowser.prototype.updateTopElements = Utils.noop;
     NestedBrowser.prototype.updateVisibleItems = function (full) {
@@ -2026,7 +1806,7 @@ Warning: This will not stop the user from deleting parent folders.',
             Notify.error(
                 'Truncating entries for ' +
                     this.rootDir +
-                    ' because limit exceeded',
+                    ' because limit exceeded'
             );
         }
     };
@@ -2034,91 +1814,19 @@ Warning: This will not stop the user from deleting parent folders.',
         return this.parentStub;
     };
     NestedBrowser.prototype.setParent = function (browser) {
-        //todo move all this to a single object
-        setProp(this, 'handler', browser.emitter);
-        if (setProp(this, 'showFileInfo', browser.showFileInfo)) {
-            this.itemHeight = browser.itemHeight;
-        }
-        setProp(this, 'childFolderDropdown', browser.folderDropdown);
+        this.parentStub = browser;
+        this.showFileInfo = browser.showFileInfo;
+        //todo: possibly move all these to a single object
+        //to make overriding easy
+        setProp(this, 'emitter', browser.emitter);
+        setProp(this, 'folderDropdown', browser.childFolderDropdown);
         setProp(this, 'childFolderDropdown', browser.childFolderDropdown);
         setProp(this, 'fileDropdown', browser.fileDropdown);
         setProp(this, 'foldersToIgnore', browser.foldersToIgnore);
         setProp(this, 'menuItems', browser.menuItems);
-        this.parentStub = browser;
-    };
-    NestedBrowser.prototype.expandAll = function (
-        callback,
-        depth,
-        eachCallback,
-        accumulator,
-    ) {
-        var self = this;
-        if (depth === undefined) {
-            depth = 1;
-        }
-        if (depth < 0) {
-            if (accumulator) accumulator.push(this);
-            return callback && callback(this);
-        }
-        var counter = Utils.createCounter(callback);
-        counter.increment();
-        var funcs = [];
-        for (var b = this.pageStart; b < this.pageEnd; b++) {
-            var name = this.names[b];
-            if (!FileUtils.isDirectory(name)) continue;
-            counter.increment();
-            funcs.push(name);
-        }
-
-        function next() {
-            counter.decrement();
-            if (funcs.length < 1) return;
-            var name = funcs.shift();
-            if (self.foldersToIgnore.indexOf(name) < 0)
-                self.expandFolder(
-                    name,
-                    (function (a) {
-                        var func = function () {
-                            var child = self.nestedViews[a];
-                            child.expandAll(
-                                next,
-                                depth - 1,
-                                eachCallback,
-                                accumulator,
-                            );
-                        };
-                        if (eachCallback) {
-                            return function () {
-                                eachCallback(
-                                    self,
-                                    self.nestedViews[a],
-                                    func,
-                                    a,
-                                );
-                            };
-                        }
-                        return func;
-                    })(name),
-                );
-            else next();
-        }
-        next();
-    };
-    NestedBrowser.prototype.foldersToIgnore = Utils.parseList(
-        appConfig.expandAllFilter,
-    );
-    NestedBrowser.prototype.foldAll = function () {
-        var self = this;
-        for (var a in self.nestedViews) {
-            self.nestedViews[a].foldAll();
-            self.foldFolder(a);
-        }
     };
     NestedBrowser.prototype.openFolder = function (name) {
-        if (
-            this.nestedViews[name] &&
-            this.nestedViews[name].stub.css('display') != 'none'
-        ) {
+        if (this.nestedViews[name] && !this.nestedViews[name].isClosed) {
             this.foldFolder(name);
         } else this.expandFolder(name);
     };
@@ -2127,7 +1835,7 @@ Warning: This will not stop the user from deleting parent folders.',
     };
     NestedBrowser.prototype.scrollItemIntoView = function (
         filename,
-        updatePage,
+        updatePage
     ) {
         var top = this.showItemAndGetTop(filename, updatePage);
         if (top === false) return 'Not child';
@@ -2194,14 +1902,14 @@ Warning: This will not stop the user from deleting parent folders.',
             var file = segments.pop();
             var next = function (stub, err) {
                 if (err) return cb && cb(err);
-                if (segments.length < 1) {
+                if (segments.length === 0) {
                     if (file) {
                         stub.getElement(file).addClass('emphasis');
                         stub.scrollItemIntoView(file);
                     } else {
                         /*if it is a folder*/
                         stub.getParent().scrollItemIntoView(
-                            stub.getParent().filename(stub.rootDir),
+                            stub.getParent().filename(stub.rootDir)
                         );
                     }
                     cb && cb();
@@ -2210,6 +1918,31 @@ Warning: This will not stop the user from deleting parent folders.',
                 }
             };
             next(this);
+        } else if (this.treeParent) {
+            var stub = this;
+            path = normalize(path);
+            var root = this.fileServer.getRoot();
+            if (path.startsWith(root)) {
+                segments = path.substring(root.length).split(SEP);
+                //Get the base folder, which is at most 5 levels above the said file
+                var topFolder =
+                    root +
+                    segments
+                        .slice(
+                            0,
+                            -Math.min(5, segments.length) + 1 || segments.length
+                        )
+                        .join(SEP);
+                return this.superNestedBrowser.goto.call(
+                    this,
+                    topFolder + SEP,
+                    function (e) {
+                        if (!e && path.startsWith(stub.rootDir)) {
+                            stub.goto(path, cb, isFolder);
+                        } else cb && cb(e);
+                    }
+                );
+            } else return false;
         } else return false;
     };
     NestedBrowser.prototype.foldFolder = function (name) {
@@ -2220,15 +1953,17 @@ Warning: This will not stop the user from deleting parent folders.',
         }
         var fb = this.nestedViews[name];
         if (fb.inSelectMode) fb.exitSelectMode();
-        fb.stub.hide();
+        fb.close();
     };
     NestedBrowser.prototype.expandFolder = function (name, callback) {
         var el = this.getElement(name);
+        var nestedView;
         var callback2 = function (err) {
-            this.extraSpace[this.names.indexOf(name)] = this.nestedViews[
-                name
-            ].stub.height();
-            if (callback) callback(this.nestedViews[name], err);
+            if (nestedView == this.nestedViews[name])
+                this.extraSpace[
+                    this.names.indexOf(name)
+                ] = nestedView.stub.height();
+            if (callback) callback(nestedView, err);
         }.bind(this);
         if (el.length < 1) {
             throw (
@@ -2244,15 +1979,15 @@ Warning: This will not stop the user from deleting parent folders.',
         if (!this.nestedViews[name]) {
             var child = el.after('<ul></ul>').next();
             child.addClass('fileview');
-            this.nestedViews[name] = new NestedBrowser(
+            nestedView = this.nestedViews[name] = new NestedBrowser(
                 child,
                 this.childFilePath(name),
                 this.fileServer,
-                this,
+                this
             );
             this.nestedViews[name].reload(false, callback2);
         } else {
-            this.nestedViews[name].stub.show();
+            (nestedView = this.nestedViews[name]).expand();
             if (callback) setImmediate(callback2);
             else callback2();
         }
@@ -2265,7 +2000,7 @@ Warning: This will not stop the user from deleting parent folders.',
                         this.nestedViews[filename].onCtxMenuClick(
                             id,
                             false,
-                            el,
+                            el
                         );
                     }
                     return;
@@ -2286,138 +2021,166 @@ Warning: This will not stop the user from deleting parent folders.',
                     var self = this;
                     this.expandFolder(filename, function () {
                         var child = self.nestedViews[filename];
-                        child.onCtxMenuClick(id, false, el);
+                        child.onCtxMenuClick(id, null, el);
                     });
                     return;
                 }
         }
         this.superNestedBrowser.onCtxMenuClick.apply(this, arguments);
     };
+    NestedBrowser.prototype.headerDropdown = 'nested-header-dropdown';
+    NestedBrowser.prototype.fileDropdown = 'child-file-dropdown';
     NestedBrowser.prototype.folderDropdown = 'child-folder-dropdown';
     NestedBrowser.prototype.childFolderDropdown = 'child-folder-dropdown';
     NestedBrowser.prototype.nestedFolderDropdown = 'nested-folder-dropdown';
     NestedBrowser.prototype.nestedFileDropdown = 'nested-file-dropdown';
-    NestedBrowser.prototype.headerDropdown = 'nested-header-dropdown';
-    NestedBrowser.prototype.fileDropdown = 'child-file-dropdown';
-    (function (m) {
-        Object.assign(m, {
-            'nested-header-dropdown': Object.create(m['header-dropdown']),
-            'nested-folder-dropdown': {
-                'fold-opts': {
-                    caption: 'Fold...',
-                    sortIndex: 50,
-                    subTree: {
-                        'expand-all': {
-                            caption: 'Unfold Children',
-                            sortIndex: 50,
-                        },
-                        'fold-all': {
-                            caption: 'Fold Children',
-                            sortIndex: 50,
-                        },
-                        '!fold-parent': {
-                            caption: 'Fold Parent',
-                            sortIndex: 50,
-                        },
-                        '!update': [
-                            function (self, update) {
-                                update(
-                                    'fold-parent',
-                                    Fileviews.activeFileBrowser.getParent()
-                                        ? self['!fold-parent']
-                                        : null,
-                                );
-                            },
-                        ],
-                    },
-                },
-                'reload-browser': 'Reload Folder',
-                '!select-all': {
-                    caption: 'Select All',
-                    sortIndex: 51, //Miss react
-                },
-                '!clear-select': {
-                    caption: 'Cancel Selection',
-                    sortIndex: 51,
-                },
-                '!update': [
-                    function (self, update) {
-                        var browser = Fileviews.activeFileBrowser;
-                        if (browser.selected && browser.isTree) {
-                            browser = browser.nestedViews[browser.selected];
-                        }
-                        update(
-                            'clear-select',
-                            browser && browser.inSelectMode
-                                ? self['!clear-select']
-                                : null,
-                        );
-                        update(
-                            'select-all',
-                            browser && browser.inSelectMode
-                                ? self['!select-all']
-                                : null,
-                        );
-                    },
-                ],
-            },
-            'child-folder-dropdown': Object.create(m['folder-dropdown']),
-            'child-file-dropdown': Object.create(m['file-dropdown']),
-            'nested-file-dropdown': {
-                'fold-parent': {
-                    caption: 'Fold Parent',
-                    sortIndex: 50,
-                },
-            },
-        });
+    NestedBrowser.prototype.expandAll = function (
+        callback,
+        depth,
+        onEach,
+        accumulator,
+        stopSignal
+    ) {
+        var self = this;
+        if (depth === undefined) {
+            depth = 1;
+        }
+        if (depth < 0) {
+            if (accumulator) accumulator.push(this);
+            return callback && callback(this);
+        }
+        var counter = Utils.createCounter(callback);
+        counter.increment();
+        var toExpand = [];
+        for (var b = this.pageStart; b < this.pageEnd; b++) {
+            var name = this.names[b];
+            if (!FileUtils.isDirectory(name)) continue;
+            counter.increment();
+            toExpand.push(name);
+        }
 
-        Dropdown.assign(
-            m['child-folder-dropdown'],
-            m['nested-folder-dropdown'],
-        );
-        Dropdown.assign(
-            m['nested-header-dropdown'],
-            m['nested-folder-dropdown'],
-        );
-        Dropdown.assign(m['child-file-dropdown'], m['nested-file-dropdown']);
-    })(FileBrowser.prototype.menuItems);
+        var next = function () {
+            counter.decrement();
+            if (toExpand.length < 1) return;
+            var name = toExpand.shift();
+            if (self.foldersToIgnore.indexOf(name) < 0)
+                self.expandFolder(
+                    name,
+                    (function () {
+                        var doExpand = function () {
+                            var child = self.nestedViews[name];
+                            child.expandAll(
+                                next,
+                                depth - 1,
+                                onEach,
+                                accumulator,
+                                stopSignal
+                            );
+                        };
+                        if (onEach) {
+                            return function () {
+                                onEach(
+                                    self,
+                                    self.nestedViews[name],
+                                    doExpand,
+                                    name
+                                );
+                            };
+                        }
+                        return doExpand;
+                    })()
+                );
+            else next();
+        };
+        if (stopSignal) next = stopSignal.control(next, counter.decrement);
+        next();
+    };
+    NestedBrowser.prototype.foldAll = function () {
+        var self = this;
+        for (var a in self.nestedViews) {
+            self.nestedViews[a].foldAll();
+            self.foldFolder(a);
+        }
+    };
+    function createFilter(rootDir, text) {
+        text = text.toLowerCase();
+        if (text) {
+            var isGlob = /[{},*]/.test(text);
+            if (text.startsWith('./')) text = FileUtils.resolve(rootDir, text);
+            else if (text[0] !== '/') text = (isGlob ? '**/' : '**/*') + text;
+            if (!isGlob && text[text.length - 1] !== '/') text = text + '*';
+        } else text = FileUtils.join(rootDir, '*');
+        var glob = FileUtils.globToRegex(text);
+        var quickFilter = FileUtils.genQuickFilter(text);
+        return {
+            isMatch: function (path) {
+                return (
+                    !FileUtils.isDirectory(path) ||
+                    glob.test(path.toLowerCase())
+                );
+            },
+            filterList: function (name, root) {
+                var path = (root + name).toLowerCase();
+                return (
+                    glob.test(path) ||
+                    (FileUtils.isDirectory(name) && quickFilter.test(path))
+                );
+            },
+        };
+    }
+
     NestedBrowser.prototype.filter = Utils.debounce(function (text) {
         if (this.headerMode == 'filter') {
             this.inFilter = true;
             if (!this.fileServer.setFilter)
                 this.fileServer = new FindFileServer(this.fileServer);
-            if (typeof text == 'string') {
-                if (text.indexOf('*') < 0) text = '*' + text + '*';
-                if (!text.startsWith('./')) {
-                    text = '**/' + text;
-                } else text = FileUtils.resolve(this.names[0], text);
-            }
-            this.fileServer.setFilter(text);
+            var filter = createFilter(
+                this.isProjectView ? this.names[0] : this.rootDir,
+                text
+            );
+            this.fileServer.setFilter(filter.filterList);
             this.reload(
                 false,
                 function () {
                     this.names.forEach(function (e) {
-                        if (FileUtils.isDirectory(e))
+                        if (!filter.isMatch(this.childFilePath(e)))
                             this.getElement(e).addClass('destroyed');
                     }, this);
                     if (this.headerMode == 'filter') this.findFile(text);
-                }.bind(this),
+                }.bind(this)
             );
         } else this.cancelFind();
     }, 500);
-    NestedBrowser.prototype.findFile = function (text, timeout, callback) {
+
+    NestedBrowser.prototype.foldersToIgnore = Utils.parseList(
+        appConfig.expandAllFilter
+    );
+
+    NestedBrowser.prototype.findFile = function (filter, timeout, callback) {
         var self = this;
         self.clearNestedViews();
-        var filterId = (self.filterId = (self.filterId || 0) + 1);
+        if (self.filterTask) self.filterTask.stop();
+        // self.filterTask.subscribe(function () {
+        //     self.filterTask = null;
+        // });
+        self.filterTask = new StopSignal();
+        self.setLoading(true);
+        self.filterTask.subscribe(function () {
+            self.setLoading(false);
+            self.filterTask = null;
+        });
         if (!self.fileServer.setFilter)
             self.fileServer = new FindFileServer(self.fileServer);
-        if (typeof text == 'string') {
-            if (text.indexOf('*') < 0) text = '*' + text + '*';
-            if (!text.startsWith('./')) {
-                text = '**/' + text;
-            } else text = FileUtils.resolve(this.names[0], text);
+        var glob = null;
+        if (typeof filter == 'string') {
+            //Needed to match folders
+            glob = createFilter(
+                this.isProjectView ? this.names[0] : this.rootDir,
+                filter
+            );
+            filter = glob.filterList;
         }
-        self.fileServer.setFilter(text);
+        self.fileServer.setFilter(filter);
         self.inFilter = true;
         var called = false;
         self.iterate(
@@ -2425,47 +2188,52 @@ Warning: This will not stop the user from deleting parent folders.',
                 self.stopFind();
                 if (callback) {
                     callback();
-                    if (called) throw 'Error';
+                    if (called) throw 'Error: Called twice';
                     called = true;
                     // callback = null;
                 }
             },
             1000,
-            function (p, c, cb, n) {
-                if (self.filterId != filterId) {
-                    return cb();
-                }
-                if (!c.names) return cb(); //errors in getFile
-                //This hides all folders initially
-                //When there is a match it unhides all the
-                //parents folders. Folder matching can be
-                //implemented also.
-                //We could make the folders hidden at
-                //renderView though.
-                var hasFiles = c.names.some(function (el) {
-                    return !FileUtils.isDirectory(el);
-                });
-                c.names.forEach(function (e) {
-                    if (FileUtils.isDirectory(e))
-                        c.getElement(e).addClass('destroyed');
-                });
-                if (hasFiles) {
-                    while (p) {
-                        n = p.filename(c.rootDir);
-                        p.expandFolder(n);
-                        p.getElement(n).removeClass('destroyed');
-                        c = p;
-                        p = p.getParent();
-                        if (c.stub.css('display') != 'none') {
-                            break;
+            self.filterTask.control(
+                function (p, c, cb, n) {
+                    if (!c.names) return cb(); //errors in getFile
+                    //This hides all folders initially
+                    //When there is a match it unhides all the
+                    //parents folders.
+                    //We could make the folders hidden at
+                    //renderView though.
+                    var hasMatch;
+                    c.names.forEach(function (e) {
+                        if (
+                            glob
+                                ? glob.matches(c.childFilePath(e))
+                                : FileUtils.isDirectory(e)
+                        ) {
+                            hasMatch || (hasMatch = true);
+                        } else c.getElement(e).addClass('destroyed');
+                    });
+                    if (hasMatch) {
+                        while (p) {
+                            n = p.filename(c.rootDir);
+                            p.expandFolder(n);
+                            p.getElement(n).removeClass('destroyed');
+                            c = p;
+                            p = p.getParent();
+                            if (!c.isClosed) {
+                                break;
+                            }
                         }
+                    } else {
+                        p.foldFolder(n);
                     }
-                } else {
-                    p.foldFolder(n);
+                    cb();
+                },
+                function (p, c, cb) {
+                    cb();
                 }
-                cb();
-            },
+            ),
             2,
+            self.filterTask
         );
         if (timeout) {
             setTimeout(function () {
@@ -2473,28 +2241,9 @@ Warning: This will not stop the user from deleting parent folders.',
             }, timeout);
         }
     };
-    /*
-    An alternate implementation where folders
-    are only hidden when there is a confirmed
-    no match. Folder matching is also possible.
-    Because it detaches folders late, folders can be
-    deleted instead of destroyed
-    //useful only if we are not using recycler
-    while (p && c.names.length < 1) {
-        p.foldFolder(n)
-        p.names = p.names.filter(
-            function(e) {
-                return e != n
-            })
-        p.getElement(n).addClass('destroyed')
-        c = p
-        p = c.getParent()
-        n = self.filename(c.rootDir)
-    }
-    */
     NestedBrowser.prototype.stopFind = function () {
         var self = this;
-        self.filterId++;
+        if (self.filterTask) self.filterTask.stop();
         self.inFilter = false;
         //Open in new project replaces fileserver
         if (self.fileServer.setFilter) self.fileServer.setFilter(null);
@@ -2505,13 +2254,15 @@ Warning: This will not stop the user from deleting parent folders.',
             self.stopFind();
         }
         self.clearNestedViews();
-        self.reload(true);
+        self.reload(false);
     };
+    //expandAll breadthFirst
     NestedBrowser.prototype.iterate = function (
         callback,
         maxDepth,
         eachCallback,
         delveDepth,
+        stopSignal
     ) {
         var accumulator = [this];
         var delve = function () {
@@ -2519,14 +2270,20 @@ Warning: This will not stop the user from deleting parent folders.',
                 return callback && callback();
             }
             var a = accumulator.shift();
-            a.expandAll(delve, delveDepth, eachCallback, accumulator);
+            a.expandAll(
+                delve,
+                delveDepth,
+                eachCallback,
+                accumulator,
+                stopSignal
+            );
         };
         return delve();
     };
 
     NestedBrowser.prototype.reload = function () {
         this.superNestedBrowser.reload.apply(this, arguments);
-        //expandOpenfolders;
+        //todo expand previously open folders;
     };
     NestedBrowser.prototype.isTree = true;
     NestedBrowser.prototype.clearNestedViews = function () {
@@ -2537,7 +2294,16 @@ Warning: This will not stop the user from deleting parent folders.',
             delete self.nestedViews[i];
         }
     };
-    //Overrides child to create a parent
+    NestedBrowser.prototype.close = function () {
+        this.isClosed = true;
+        this.stub.hide();
+    };
+    NestedBrowser.prototype.expand = function () {
+        if (!this.isClosed) return;
+        this.isClosed = false;
+        this.stub.show();
+    };
+    //Overrides NestedBrowser to create a parent
     //for multiple nestedViews
     //Can set title etc.
     /** @constructor */
@@ -2547,33 +2313,12 @@ Warning: This will not stop the user from deleting parent folders.',
             id,
             rootDir,
             fileServer,
-            true,
+            true
         );
-        this.setRootDir = function (dir) {
-            this.rootDir = '';
-            if (dir) {
-                if (this.isClosed) {
-                    this.stub
-                        .closest('#hierarchy_tab')
-                        .removeClass('hierarchy-closed');
-                    this.isClosed = false;
-                } else if (this.inFilter) {
-                    this.stopFind();
-                }
-                if (dir[dir.length - 1] != SEP) dir = dir + SEP;
-                if (this.showFileInfo) {
-                    this.fileStats = {};
-                    this.fileStats[dir] = 'Project Root';
-                } else this.fileStats = null;
-                this.names = [dir];
-            } else this.names = [];
-            this.updateHierarchy(this.names);
-        }.bind(this);
-        this.rootDir = '';
+        this.rootDir = ''; //todo don't ignore rootDir argument
         if (this.names && this.names.length) this.reload();
     }
-    ProjectView.prototype = Object.create(NestedBrowser.prototype);
-    ProjectView.prototype.constructor = ProjectView;
+    Utils.inherits(ProjectView, NestedBrowser);
     ProjectView.prototype.superProjectView = NestedBrowser.prototype;
     ProjectView.prototype.rename = function (name, newname) {
         if (name === this.names[0]) {
@@ -2583,19 +2328,43 @@ Warning: This will not stop the user from deleting parent folders.',
                 FileUtils.openProject(
                     project.rootDir,
                     project.fileServer,
-                    newname,
+                    newname
                 );
             }
         }
     };
-    ProjectView.prototype.isClosed = false;
+    ProjectView.prototype.setRootDir = function (dir) {
+        this.rootDir = '';
+        if (dir) {
+            if (this.isClosed) {
+                this.stub
+                    .closest('#hierarchy_tab')
+                    .removeClass('hierarchy-closed');
+                this.isClosed = false;
+            } else if (this.inFilter) {
+                this.stopFind();
+            }
+            if (!FileUtils.isDirectory(dir)) dir = dir + SEP;
+            if (this.showFileInfo) {
+                this.fileStats = [];
+                this.fileStats[0] = 'Project Root';
+            } else this.fileStats = null;
+            this.names = [dir];
+        } else this.names = [];
+    };
     ProjectView.prototype.close = function () {
         this.isClosed = true;
         this.names = [];
         this.stub.closest('#hierarchy_tab').addClass('hierarchy-closed');
-        this.updateHierarchy(this.names);
+        this.updateView(this.names);
     };
-    ProjectView.prototype.reload = function (highlightNewFiles, callback) {
+    ProjectView.prototype.reload = function (
+        highlightNewFiles,
+        callback,
+        rootDir
+    ) {
+        if (arguments.length > 2) this.setRootDir(rootDir);
+        this.updateView(this.names);
         if (this.names && this.names.length > 0) {
             var counter;
             var self = this;
@@ -2609,7 +2378,7 @@ Warning: This will not stop the user from deleting parent folders.',
                 if (self.nestedViews[self.names[i]]) {
                     self.nestedViews[self.names[i]].reload(
                         highlightNewFiles,
-                        callback,
+                        callback
                     );
                 } else {
                     self.expandFolder(self.names[i], callback);
@@ -2641,18 +2410,9 @@ Warning: This will not stop the user from deleting parent folders.',
             cs.goto(path, cb, arg2);
         });
     };
-    ProjectView.prototype.menuItems = Object.create(
-        NestedBrowser.prototype.menuItems,
-    );
-    ProjectView.prototype.isHierarchy = true;
+    ProjectView.prototype.isProjectView = true;
     ProjectView.prototype.folderDropdown = 'project-dropdown';
     FileBrowser.prototype.projectDropdown = 'project-dropdown';
-    FileBrowser.prototype.menuItems['project-dropdown'] = Object.assign(
-        Object.create(
-            NestedBrowser.prototype.menuItems['nested-header-dropdown'],
-        ),
-        FileBrowser.prototype.menuItems['folder-dropdown'],
-    );
     exports.FileBrowser = FileBrowser;
     exports.NestedBrowser = NestedBrowser;
     exports.ProjectView = ProjectView;

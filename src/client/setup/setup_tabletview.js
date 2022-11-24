@@ -6,20 +6,20 @@ define(function (require, exports, module) {
         {
             tabletView: window.innerWidth > 720,
         },
-        'ui',
+        'ui'
     );
     require('../core/config').Config.registerInfo(
         {
             tabletView: 'Optimize view for wide screens',
         },
-        'ui',
+        'ui'
     );
     configEvents.on('ui', function (ev) {
         if (ev.config == 'tabletView') {
             $(document.body)[ev.value() ? 'on' : 'off'](
                 'mousedown',
                 'select',
-                Dropdown.openSelect,
+                Dropdown.openSelect
             );
         } else if (ev.config == 'enableTouchKeyboardFeatures') {
             Env.isHardwareKeyboard = !ev.value();

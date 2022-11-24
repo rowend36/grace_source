@@ -42,7 +42,7 @@ define(function (require, exports, module) {
             },
             function (e) {
                 callback(getAjaxError(e.target, url, url /*, stack*/));
-            },
+            }
         );
     }
 
@@ -87,7 +87,7 @@ define(function (require, exports, module) {
             },
             function (e) {
                 callback(getAjaxError(e.target, url, data.path, stack));
-            },
+            }
         );
     }
     function requestBuffer(url, data, callback) {
@@ -101,22 +101,27 @@ define(function (require, exports, module) {
                 var d = res[i];
                 if (!d.e) return e(null, d.r);
                 return e(
-                    FileUtils.createError({path: this.args[i].path, code: d.e}),
+                    FileUtils.createError({path: this.args[i].path, code: d.e})
                 );
             } catch (e) {
                 debug.error(e);
             }
         });
     };
+    /** @type {Record<string,{data:Any,args:Array<Any>,cbs:Array<Function>}} */
     var waiting = {};
     var sendRequests = delay(function () {
         for (var i in waiting) {
             var m = waiting[i];
             waiting[i] = null;
-            m.data.args = m.args;
-            request(i, m.data, invokeCbs.bind(m));
+            if (m.args.length === 1) {
+                request(i, Object.assign(m.data, m.args[0]), m.cbs[0]);
+            } else {
+                m.data.args = m.args;
+                request(i, m.data, invokeCbs.bind(m));
+            }
         }
-    }, 300);
+    });
     var lastCalled = 0;
     function batchRequest(url, data, arg, cb) {
         var t = lastCalled;
@@ -125,12 +130,8 @@ define(function (require, exports, module) {
             waiting[url].cbs.push(cb);
             waiting[url].args.push(arg);
         } else {
-            if (lastCalled - t > 300) {
-                request(url, Object.assign(data, arg), cb);
-            } else {
-                waiting[url] = {data: data, args: [arg], cbs: [cb]};
-                sendRequests();
-            }
+            waiting[url] = {data: data, args: [arg], cbs: [cb]};
+            sendRequests.later(lastCalled - t > 300 ? 0 : 300);
         }
     }
 
@@ -150,7 +151,7 @@ define(function (require, exports, module) {
             function (e, f) {
                 this.$encodingList = null;
                 if (!e) encodings = f;
-            }.bind(this),
+            }.bind(this)
         );
         this.icon = 'storage';
         this.getRoot = function () {
@@ -185,27 +186,27 @@ define(function (require, exports, module) {
                 requestBuffer(
                     server + '/open',
                     {path: path, password: password},
-                    callback,
+                    callback
                 );
             } else
                 request(
                     server + '/open',
                     {path: path, password: password, encoding: encoding},
-                    callback,
+                    callback
                 );
         };
         this.getFiles = function (path, callback) {
             request(
                 server + '/files',
                 {path: path, password: password, appendSlash: true},
-                callback,
+                callback
             );
         };
         this.readdir = function (path, callback) {
             request(
                 server + '/files',
                 {path: path, password: password},
-                callback,
+                callback
             );
         };
 
@@ -230,35 +231,35 @@ define(function (require, exports, module) {
                 server + '/save',
                 {path: path},
                 form,
-                oneArgCallback(callback),
+                oneArgCallback(callback)
             );
         };
         this.mkdir = function (path, callback) {
             request(
                 server + '/new',
                 {path: path, password: password},
-                oneArgCallback(callback),
+                oneArgCallback(callback)
             );
         };
         this.delete = function (path, callback) {
             request(
                 server + '/delete',
                 {path: path, password: password, recursive: true},
-                oneArgCallback(callback),
+                oneArgCallback(callback)
             );
         };
         this.unlink = this.rmdir = function (path, callback) {
             request(
                 server + '/delete',
                 {path: path, password: password},
-                oneArgCallback(callback),
+                oneArgCallback(callback)
             );
         };
         this.rename = function (path, dest, callback) {
             request(
                 server + '/rename',
                 {path: path, dest: dest, password: password},
-                oneArgCallback(callback),
+                oneArgCallback(callback)
             );
         };
         this.copyFile = function (path, dest, callback, overwrite) {
@@ -266,7 +267,7 @@ define(function (require, exports, module) {
                 server + '/copy',
                 {password: password},
                 {path: path, dest: dest, overwrite: overwrite || null},
-                oneArgCallback(callback),
+                oneArgCallback(callback)
             );
         };
         this.moveFile = function (path, dest, callback, overwrite) {
@@ -274,7 +275,7 @@ define(function (require, exports, module) {
                 server + '/move',
                 {password: password},
                 {path: path, dest: dest, overwrite: overwrite || null},
-                oneArgCallback(callback),
+                oneArgCallback(callback)
             );
         };
         this.$gitBlobOid = function (path, callback) {
@@ -282,7 +283,7 @@ define(function (require, exports, module) {
                 server + '/fastGetOid',
                 {password: password},
                 {path: path},
-                callback,
+                callback
             );
         };
         this.stat = function (path, opts, callback) {
@@ -298,7 +299,7 @@ define(function (require, exports, module) {
                 function (e, s) {
                     if (s) s = FileUtils.createStats(s);
                     callback(e, s);
-                },
+                }
             );
         };
         this.lstat = function (path, callback) {
@@ -332,7 +333,7 @@ define(function (require, exports, module) {
                 return (window.rfs = new RESTFileServer(
                     address,
                     root,
-                    password,
+                    password
                 ));
             },
             [
@@ -354,7 +355,7 @@ define(function (require, exports, module) {
                     value: '',
                     type: 'text',
                 },
-            ],
+            ]
         );
     }
 }); /*_EndDefine*/

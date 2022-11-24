@@ -5,10 +5,11 @@ define(function (require, exports, module) {
     var Editors = require('grace/editor/editors').Editors;
     var EventsEmitter = require('grace/core/events_emitter').EventsEmitter;
     var Utils = require('grace/core/utils').Utils;
+    var appEvents = require('grace/core/app_events').AppEvents;
 
     var lintProviders = new (require('grace/core/registry').Registry)(
         'getAnnotations',
-        'intellisense.linting',
+        'intellisense.linting'
     );
     var lintWrappers = [];
 
@@ -48,12 +49,12 @@ define(function (require, exports, module) {
                                 worker.trigger('annotate', data, true);
                             }
                         },
-                        instance,
+                        instance
                     );
                     grp.once(
                         'destroy',
                         worker.terminate.bind(worker),
-                        instance,
+                        instance
                     );
                     instance.updateAnnotations(editor);
                 });
@@ -86,7 +87,7 @@ define(function (require, exports, module) {
         if (!editor.session.$useWorker) return;
         editor.$debounceAnnotations = setTimeout(
             $invokeLinters.bind(editor),
-            2000,
+            2000
         );
     };
     var $invokeLinters = function () {
@@ -110,12 +111,17 @@ define(function (require, exports, module) {
         var session = editor.session;
         if (session) {
             Annotations.updateWorkers(session);
-            if (!session.$restartWorker) scheduleRestartWorker(session);
+            scheduleRestartWorker(session);
             $invokeLinters.apply(editor);
         }
     };
 
+    /*
+     * Overrides the default worker for the editor's session
+     * Automatically resets it when the session is moved to another editor
+     */
     function scheduleRestartWorker(session) {
+        if (session.$restartWorker) return;
         session.$restartWorker = function (e) {
             if (e.editor && !e.editor.$onChangeSessionForLint) {
                 session.off('changeEditor', session.$restartWorker);
@@ -126,19 +132,26 @@ define(function (require, exports, module) {
         session.on('changeEditor', session.$restartWorker);
     }
 
-    /*
-     * Overrides the default worker for the editor's session
-     * Automatically resets it when the session is moved to another editor
-     */
-    function setupLinters(editor) {
-        if (!editor.$onChangeSessionForLint) {
-            editor.$onChangeSessionForLint = onChangeSessionForLint;
-            editor.on('changeSession', editor.$onChangeSessionForLint);
-            editor.on('change', onValueChangeForAnnotations);
-            editor.$onChangeSessionForLint(editor, editor);
-        }
-    }
-    Editors.onEach(setupLinters);
+
+    //Wait for all linters to be registered.
+    appEvents.on('fullyLoaded', function () {
+        Editors.onEach(function (editor) {
+            if (!editor.$onChangeSessionForLint) {
+                editor.$onChangeSessionForLint = onChangeSessionForLint;
+                editor.on('changeSession', editor.$onChangeSessionForLint);
+                editor.on('change', onValueChangeForAnnotations);
+                editor.$onChangeSessionForLint(editor, editor);
+                editor.on('destroy', function () {
+                    if (editor.$debounceAnnotations) {
+                        clearTimeout(editor.$debounceAnnotations);
+                    }
+                    lintWrappers.forEach(function (e) {
+                        if (e.editor === editor) e.destroy();
+                    });
+                });
+            }
+        });
+    });
 
     exports.registerLintProvider = function (provider) {
         lintProviders.register(provider);

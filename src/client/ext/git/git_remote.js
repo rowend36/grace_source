@@ -2,7 +2,7 @@
 define(function (require, exports, module) {
     /*globals $*/
     var GitUtils = require('./git_utils').GitUtils;
-    var ItemList = require('grace/ui/itemlist').ItemList;
+    var ItemList = require('grace/ui/item_list').ItemList;
     var testUrl = GitUtils.testUrl;
     var testPlain = GitUtils.testPlain;
     var success = GitUtils.success;

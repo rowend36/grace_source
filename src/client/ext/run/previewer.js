@@ -3,7 +3,7 @@ define(function (require, exports, module) {
     var Utils = require('grace/core/utils').Utils;
     var SplitManager = require('grace/ui/split_manager').SplitManager;
     var ajax = require('grace/core/ajax').ajax;
-    var watchTheme = require('grace/themes/themes').watchTheme;
+    var watchTheme = require('grace/ui/theme').watchTheme;
     var AutoCloseables = require('grace/ui/auto_closeables').AutoCloseables;
     var Editors = require('grace/editor/editors').Editors;
     var DocsTab = require('grace/setup/setup_tab_host').DocsTab;
@@ -48,7 +48,7 @@ define(function (require, exports, module) {
         iconContainer.className = 'iconContainer';
         for (var i in icons) {
             $(iconContainer).append(
-                createIcon((prefix || '') + icons[i].id, icons[i].icon),
+                createIcon((prefix || '') + icons[i].id, icons[i].icon)
             );
         }
         navBar.appendChild(iconContainer);
@@ -113,7 +113,7 @@ define(function (require, exports, module) {
                     icon: 'zoom_out',
                 },
             ],
-            'preview-',
+            'preview-'
         );
         previewContainer.className = 'tab-window preview';
         var previewWrapper = document.createElement('div');
@@ -275,7 +275,7 @@ define(function (require, exports, module) {
                     case SPLIT:
                         container = SplitManager.add(
                             $(editor.container),
-                            splitMode || getSplitMode(editor.container),
+                            splitMode || getSplitMode(editor.container)
                         );
                         break;
                     case TABBED:

@@ -47,7 +47,7 @@ define(function (require, exports, module) {
         if (!child) return;
         menu.scrollLeft = Math.max(
             0,
-            -menu.clientWidth / 2 + child.clientWidth / 2 + child.offsetLeft,
+            -menu.clientWidth / 2 + child.clientWidth / 2 + child.offsetLeft
         );
     };
     TabRenderer.prototype.$setSingleTabs = function (val) {
@@ -56,21 +56,38 @@ define(function (require, exports, module) {
     TabRenderer.prototype.setFadeCloseIcon = function () {
         var m = '.' + this.CLOSE_BTN_CLS;
         var $el = this.$el;
-        $el.on('mouseover', '.' + this.TAB_ITEM_CLS, function () {
-            if ($(this).find(m).css('display') !== 'none') {
-                $(this).finish().fadeIn(1);
-                return;
-            }
-            $($el).children().not($(this)).find(m).hide();
-            $(this)
-                .find(m)
-                .finish()
-                .delay(17) //to avoid receiving click event
-                .fadeIn('fast')
-                .delay(5000);
-        }).on('mouseleave', '.' + this.TAB_ITEM_CLS, function () {
-            console.log('mouseleave');
+        //Problems with cash make this buggy when delegated.
+        function mouseleave() {
             $(this).find(m).fadeOut('slow');
+        }
+        function mouseenter() {
+            var tab = $(this);
+            var closeIcon = tab.find(m).finish();
+            if (closeIcon.css('display') !== 'none') {
+                return closeIcon.fadeIn(0);
+            }
+            var otherIcons = $el.children().not(tab).find(m);
+            otherIcons.finish().fadeOut(0);
+            closeIcon
+                .delay(17) //hack to prevent receiving click event
+                .fadeIn('fast')
+                .delay(5000); //wait 5s before fading out
+        }
+        //But thank God for StackOverflow
+        var tabItem = '.' + this.TAB_ITEM_CLS;
+        $el.on('mouseover mouseout', function (e) {
+            var tab = $(e.target).closest(tabItem)[0];
+            if (!tab) return;
+            if (
+                !e.relatedTarget ||
+                (e.relatedTarget !== tab &&
+                    !(
+                        tab.compareDocumentPosition(e.relatedTarget) &
+                        Node.DOCUMENT_POSITION_CONTAINED_BY
+                    ))
+            ) {
+                (e.type === 'mouseout' ? mouseleave : mouseenter).call(tab);
+            }
         });
     };
     TabRenderer.prototype.getTabEl = function (id) {

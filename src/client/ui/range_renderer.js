@@ -34,7 +34,7 @@ define(function (require, exports, module) {
                             value:
                                 clipText +
                                 tokens[i].value.substring(
-                                    -char + start + tokens[i].value.length,
+                                    -char + start + tokens[i].value.length
                                 ),
                         };
                         break;
@@ -51,7 +51,7 @@ define(function (require, exports, module) {
                         type: tokens[i - 1].type,
                         value: tokens[i - 1].value.substring(
                             0,
-                            -char + start + end + tokens[i - 1].value.length,
+                            -char + start + end + tokens[i - 1].value.length
                         ),
                     };
                 }
@@ -72,7 +72,7 @@ define(function (require, exports, module) {
                     return this.token;
                 },
             },
-            null,
+            null
         );
         this.render = function (ranges, session, config, parent, maxLine) {
             config = config || this.config;
@@ -126,7 +126,7 @@ define(function (require, exports, module) {
                 lineEl.className = 'ace_line ace_marker-layer';
                 var gutter = (range.start.row + 1 + '              ').substring(
                     0,
-                    gutterW,
+                    gutterW
                 );
                 var gutterEl = document.createElement('span');
                 gutterEl.appendChild(document.createTextNode(gutter));
@@ -158,6 +158,7 @@ define(function (require, exports, module) {
                     parent.appendChild(lineEl);
                 }
             }
+            renderer.setSession(null);
             return parent;
         };
         this.renderPlain = function (ranges, session, config, parent, maxLine) {
@@ -182,7 +183,7 @@ define(function (require, exports, module) {
                 var range = ranges[rangeId];
                 var lines = session.getLines(range.start.row, range.end.row);
                 parent.append(
-                    "<div><span id='line-number'></span><span id='start'></span><span class='red-text' id ='result'></span><span id='end'></span></div>",
+                    "<div><span id='line-number'></span><span id='start'></span><span class='red-text' id ='result'></span><span id='end'></span></div>"
                 );
                 var element = parent.children().last();
                 element
@@ -194,7 +195,7 @@ define(function (require, exports, module) {
                 if (lines.length == 1) {
                     result = lines[0].substring(
                         range.start.column,
-                        range.end.column,
+                        range.end.column
                     );
                     $(elRes).text(safe(result));
                     rw =
@@ -211,18 +212,18 @@ define(function (require, exports, module) {
                     $(elRes).append(document.createTextNode('&nbsp;&rdsh;'));
                     for (var i = 1; i < lines.length - 1; i++) {
                         elRes.appendChild(
-                            document.createTextNode(safe(lines[i])),
+                            document.createTextNode(safe(lines[i]))
                         );
                         $(elRes).append(document.createTextNode('&nbsp;'));
                         elRes.appendChild(document.createElement('br'));
                         $(elRes).append(
-                            document.createTextNode('&nbsp;&rdsh;'),
+                            document.createTextNode('&nbsp;&rdsh;')
                         );
                     }
                     elRes.appendChild(
                         document.createTextNode(
-                            lines[i].substring(0, range.end.column),
-                        ),
+                            lines[i].substring(0, range.end.column)
+                        )
                     );
                 }
 
@@ -233,7 +234,7 @@ define(function (require, exports, module) {
                 var end = lines[lines.length - 1].substring(range.end.column);
                 s = Math.min(
                     start.length,
-                    Math.max(m, free_space - end.length - 1),
+                    Math.max(m, free_space - end.length - 1)
                 );
                 start = start.substring(start.length - s);
                 element.children('#start').text(safe(start));
@@ -244,6 +245,7 @@ define(function (require, exports, module) {
                 parent.children().css('height', config.lineHeight + 'px');
                 parent.children().css('padding', config.padding + 'px');
             }
+            return parent[0];
         };
     }.apply(RangeRenderer.prototype));
     exports.RangeRenderer = RangeRenderer;

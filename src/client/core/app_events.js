@@ -3,11 +3,11 @@ define(function (require, exports, module) {
   //See FileUtils, ConfigEvents, ItemList for more events
   var EventsEmitter = require('./events_emitter').EventsEmitter;
   /**
-   * @type {EventsEmitter & Any} 
+   * @type {EventsEmitter & Any}
    */
   var app = new EventsEmitter();
   app.checkEvents = true;
-  // app._debug = true;
+  app._debug = false;
   app.paused = false;
   app.pause = function () {
     if (!this.paused) {
@@ -21,9 +21,18 @@ define(function (require, exports, module) {
       this.trigger('appResumed', null, true);
     }
   }.bind(app);
-  window.addEventListener('focus', app.resume);
-  window.addEventListener('blur', app.pause);
-  window.addEventListener('beforeunload', app.pause);
+  ['pageshow', 'pagehide', 'focus', 'blur', 'visibilitychange'].forEach(
+    function (type) {
+      window.addEventListener(type, this);
+    },
+    function updateState() {
+      if (document.visibilityState === 'hidden') {
+        app.pause(); //hidden
+      } else if (document.hasFocus()) {
+        app.resume(); //active
+      } else app.pause(); //passive
+    }
+  );
   app._eventRegistry = {
     appLoaded: null, //once on first render
     appPaused: null, //app is possibly being minimized

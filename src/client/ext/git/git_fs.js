@@ -286,7 +286,7 @@ define(function (require, exports, module) {
     exports.GitFileServer = GitFileServer;
     require("grace/core/file_utils").FileUtils.registerFsExtension(
         "!gitfs",
-        null,
+        'Git Filesystem',
         function (opts) {
             opts["!requireURL"] = "grace/ext/git/git_fs";
             return new GitFileServer(opts);

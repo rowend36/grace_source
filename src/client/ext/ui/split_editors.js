@@ -42,7 +42,9 @@ define(function (require, exports, module) {
     }
 
     function removeSplitEditor(edit) {
+        console.log('removing ', edit.id);
         var hostEditor = host(edit);
+        console.log('removing host', hostEditor.id);
         if (!isSplit(hostEditor)) {
             return;
         }
@@ -124,21 +126,21 @@ define(function (require, exports, module) {
 
     var splitCommands = [
         {
-            name: 'Add Split',
+            name: 'addSplit',
             bindKey: 'F10',
             exec: function (edit) {
                 return createSplitEditor(edit, 'horizontal');
             },
         },
         {
-            name: 'Add Split Vertical',
+            name: 'addSplitVertical',
             bindKey: 'F9',
             exec: function (edit) {
                 return createSplitEditor(edit, 'vertical');
             },
         },
         {
-            name: 'Remove Split',
+            name: 'removeSplit',
             bindKey: 'F8',
             exec: removeSplitEditor,
         },
@@ -154,9 +156,6 @@ define(function (require, exports, module) {
     });
     Actions.addActions(splitCommands, {
         showIn: ['editor', 'actionbar.splits'],
-        isAvailable: function () {
-            return !appConfig.disableSplits;
-        },
     });
     exports.SplitEditors = {
         create: createSplitEditor,

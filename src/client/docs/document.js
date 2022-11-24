@@ -1,7 +1,8 @@
 define(function (require, exports, module) {
-    /* globals ace */
     var EditSession = require('ace!edit_session').EditSession;
     var AceDocument = require('ace!document').Document;
+    var UndoManager = require('ace!undomanager').UndoManager;
+    var Annotations = require('ace!annotations').Annotations;
     var Range = require('ace!range').Range;
     var Utils = require('../core/utils').Utils;
     var RefCounted = require('../core/ref_counted').RefCounted;
@@ -32,9 +33,11 @@ define(function (require, exports, module) {
 
         this.setPath(path);
         //circular reference
-        this.session = new EditSession(this, mode);
+        this.session = new EditSession(this);
+        this.session.$stoppedWorkers = true;
+        this.once('changeEditor', this.startWorkers.bind(this));
+        if (mode) this.session.setMode(mode);
         this.session.setOptions(Docs.$defaults);
-        //TODO stop sessions from starting workers until they are visible
         this.options = {};
         if (mode) this.options.mode = mode;
         //needs saving
@@ -48,6 +51,7 @@ define(function (require, exports, module) {
         this.syncMode = this.syncMode.bind(this);
         this.on('change', this.onChange);
         this.session.on('changeMode', this.syncMode);
+        this.session.once('changeEditor', this.startWorkers.bind(this));
     }
     Utils.inherits(Doc, AceDocument, RefCounted);
     //a unique path for all opened documents
@@ -127,7 +131,7 @@ define(function (require, exports, module) {
             doc.getEncoding(),
             function (err, res) {
                 Docs.onRefresh(doc, err, res, callback, ignoreDirty, confirm);
-            },
+            }
         );
         //todo stat file first
         return true;
@@ -191,7 +195,7 @@ define(function (require, exports, module) {
         };
     };
     Doc.prototype.createHistory = function (state) {
-        var manager = new ace.UndoManager();
+        var manager = new UndoManager();
         if (!state || !state.history) return manager;
         manager.$undoStack = state.history.undo || [];
         manager.$redoStack = state.history.redo || [];
@@ -215,7 +219,7 @@ define(function (require, exports, module) {
             state.folds.forEach(function (fold) {
                 session.addFold(
                     fold.placeholder,
-                    Range.fromPoints(fold.start, fold.end),
+                    Range.fromPoints(fold.start, fold.end)
                 );
             });
         } catch (e) {
@@ -291,14 +295,15 @@ define(function (require, exports, module) {
                 this.getRevision();
             }
             this.applyDelta(d);
-            lastRow = minRowGap + (d.action === 'delete' ? d.start.row : d.end.row);
+            lastRow =
+                minRowGap + (d.action === 'delete' ? d.start.row : d.end.row);
         }
         if (this.getSize() !== res.length) {
             if (this.getNewLineCharacter() !== this.$autoNewLine) {
                 Notify.warn(
                     'Attempted to change newline character in ' +
                         Docs.getName(this.id) +
-                        '.',
+                        '.'
                 );
             } else if (
                 +/\r(?:[^\n]|$)/.test(res) +
@@ -307,8 +312,7 @@ define(function (require, exports, module) {
                 1
             ) {
                 Notify.warn(
-                    Docs.getName(this.id) +
-                        ' had multiple new line characters.',
+                    Docs.getName(this.id) + ' had multiple new line characters.'
                 );
             } else {
                 debug.error('Generate diff failed length check');
@@ -440,7 +444,7 @@ define(function (require, exports, module) {
             this.getSavePath(),
             this.options.mode,
             undefined,
-            orphan,
+            orphan
         );
         var data = this.serialize();
         //Ace editor sometimes modifies undos
@@ -457,7 +461,7 @@ define(function (require, exports, module) {
         s.setOptions(this.options);
         s.setWrapLimitRange(
             session.$wrapLimitRange.min,
-            session.$wrapLimitRange.max,
+            session.$wrapLimitRange.max
         );
         s.setUndoManager(session.$undoManager);
         s.setUseWorker(session.getUseWorker());
@@ -502,7 +506,7 @@ define(function (require, exports, module) {
     Doc.prototype.destroy = function () {
         if (this.clones && this.clones.length > 1) {
             debug.warn(
-                'Destroying document that is still in use. Acquire ref while using a document.',
+                'Destroying document that is still in use. Acquire ref while using a document.'
             );
         }
         Docs.$clearDocData(this.id);
@@ -511,5 +515,27 @@ define(function (require, exports, module) {
         this.setValue('');
         this.clearHistory();
     };
+    Doc.prototype.startWorkers = function () {
+        if (this.session.$stoppedWorkers) {
+            this.session.$stoppedWorkers = false;
+            Annotations.updateWorkers(this.session);
+        }
+    };
+    Annotations.registerProvider({
+        name: 'Disabled until first visible.',
+        createWorker: function () {
+            return this.worker;
+        },
+        getPriority: function (mode, session) {
+            return session.$stoppedWorkers && Infinity;
+        },
+        worker: {
+            attachToDocument: Utils.noop,
+            on: Utils.noop,
+            off: Utils.noop,
+            terminate: Utils.noop,
+        },
+    });
+
     exports.Doc = Doc;
 }); /*_EndDefine*/

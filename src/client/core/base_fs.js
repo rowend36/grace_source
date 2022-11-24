@@ -178,6 +178,7 @@ define(function (require, exports, module) {
             callback(path);
         });
     };
+    BaseFs.prototype.label = 'Unnamed FileSystem';
     BaseFs.prototype.symlink = function (path, dest, callback) {
         setImmediate(callback, FileServers.createError({code: 'EUNSUPPORTED'}));
     };

@@ -6,6 +6,7 @@ var Env = {
   setClipboard: null,
   isLocalHost: false,
   canLocalHost: false,
+  isHardwareKeyboard: false,
   getCorsProxyUrl: null, //used by android application to provide git support
   // delayStorage: false
 };
@@ -26,7 +27,7 @@ if (/^file/i.test(window.location.host)) {
 }
 requirejs.config({
   baseUrl: '.',
-  waitSeconds: 60,
+  waitSeconds: 0,
   map: {
     '*': {
       text: 'libs/js/text/text',
@@ -42,22 +43,35 @@ requirejs.config({
       ace: 'core/ace_loader',
     },
   },
-  paths: {
-    fastdom: 'libs/js/fastdom.min',
-  },
   shim: {
-    fastdom: {
-      exports: 'fastdom',
+    //To build for android, we must use
+    //ext/android/setup_android in place
+    //of ext/fs/browser_fs
+    'ext/android/setup_android': {
+      deps: [
+        'core/logs',
+        'libs/ace/ace',
+        'core/jquery_compat',
+        'libs/js/materialize',
+        // 'ext/fs/browser_fs',
+        // './setup/setup_console',
+        // './ext/dev/runtime_info',
+      ],
     },
     'setup/index': {
-      deps: ['libs/ace/ace', 'core/jquery_compat', 'libs/js/materialize'],
+      deps: ['ext/android/setup_android'],
+    },
+    'libs/ace/ace': {
+      init: function () {
+        ace.config.set('basePath', './libs/ace');
+      },
     },
     'core/jquery_compat': {
       deps: ['libs/js/cash-dom.min'],
     },
-    'libs/js/materialize':{
-      deps: ['libs/js/cash-dom.min']
-    }
+    'libs/js/materialize': {
+      deps: ['libs/js/cash-dom.min'],
+    },
   },
 });
 window.Env = Env;
@@ -72,10 +86,4 @@ window.Env = Env;
 //TODO get rid of materialize.js jquery api and make it a normal dependency like sidenav for modal,toast
 //TODO Make anime.js a separate dependency also
 //TODO move grace/libs/js/base64
-require([
-  './core/logs',
-  // './setup/setup_console',
-  // './ext/dev/runtime_info',
-], function (e) {
-  require(['./setup/index']);
-});
+require(['./setup/index']);

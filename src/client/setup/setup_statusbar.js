@@ -2,8 +2,7 @@ define(function (require, exports, module) {
     /*globals $*/
     var appEvents = require("../core/app_events").AppEvents;
     var getEditor = require("./setup_editors").getEditor;
-    var Statusbar = require("ace!ext/statusbar")
-        .StatusBar;
+    var Statusbar = require("ace!ext/statusbar").StatusBar;
     var DocsTab = require("./setup_tab_host").DocsTab;
 
     var statusBar = new (require("../ui/view").View)(
@@ -15,10 +14,10 @@ define(function (require, exports, module) {
     );
 
     function onChangeTab(ev) {
-        var populator = DocsTab.getOwner(ev.tab);
+        var populator = DocsTab.getOwner(DocsTab.active);
         if (populator && populator.getInfo) {
             $("#status-filename", statusBar.$el).html(
-                populator.getInfo(ev.tab)
+                populator.getInfo(DocsTab.active)
             );
         }
     }
@@ -34,6 +33,7 @@ define(function (require, exports, module) {
     appEvents.on("changeEditor", handleEditorChange);
     require("./setup_root").rootView.addView(statusBar, 4, 20);
     appEvents.on("changeTab", onChangeTab);
+    appEvents.on("renameDoc", onChangeTab);
 
     if (DocsTab.active)
         onChangeTab({

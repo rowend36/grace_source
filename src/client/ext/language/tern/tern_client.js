@@ -2,7 +2,9 @@ define(function (require, exports, module) {
     /*globals tern,tern_Defs*/
     /*jshint newcap:false*/
     var BaseClient = require('grace/ext/language/base_client').BaseClient;
-    var htmlEncode = require('grace/core/utils').Utils.htmlEncode;
+    var customDataTip = require('./tern_tooltips').customDataTip;
+    var parseFnType = require('./tern_tooltips').parseFnType;
+    var parseJsDocParams = require('./tern_tooltips').parseJsDocParams;
     var S = require('grace/ext/language/base_client').ClientUtils;
     var getDoc = S.getDoc;
     var docValue = S.docValue;
@@ -10,7 +12,7 @@ define(function (require, exports, module) {
 
     /*The initial code that served as a reference for lspClient*/
     var TernServer = function (options) {
-        BaseClient.call(this, options, cls);
+        BaseClient.call(this, options);
         var self = this;
         var plugins = this.options.plugins || (this.options.plugins = {});
         if (!plugins.hasOwnProperty('doc_comment')) plugins.doc_comment = {};
@@ -52,21 +54,35 @@ define(function (require, exports, module) {
         };
     };
     var bigDoc = 250;
-    var cls = 'Ace-Tern-';
     var debugCompletions = false;
-
+    var TMP_DIR = '/tmp_tern/';
     TernServer.prototype = Object.assign(Object.create(BaseClient.prototype), {
         getCompletions: function (editor, session, pos, prefix, callback) {
             getCompletions(this, editor, session, pos, prefix, callback);
         },
+        name: 'Tern',
         getDocTooltip: function (item) {
-            if (item.__type == 'tern') item.docHTML = customDataTip(item);
+            if (item.__type == this) item.docHTML = customDataTip(item);
         },
         requestType: function (editor, pos, cb, calledFromCursorActivity) {
             if (calledFromCursorActivity && isOnFunctionCall(editor)) {
                 return cb(null, null);
             }
             this.request(editor, 'type', cb, pos, !calledFromCursorActivity);
+        },
+        //Avoid modifying tern, we have no support for project directory
+        $fixName: function (name) {
+            if (!name.startsWith('/') && !name.startsWith('temp:/'))
+                name = TMP_DIR + name;
+            return name;
+        },
+        //Revert changes due to fixName and tern returning relative paths
+        $unfixName: function (name) {
+            if (!name.startsWith('/') && !name.startsWith('temp:/'))
+                name = '/' + name;
+            if (name.startsWith(TMP_DIR))
+                name = name.substring(TMP_DIR.length);
+            return name;
         },
         genInfoHtml: function (data, fromCompletion, fromCursorActivity) {
             if (this.options.typeTip) {
@@ -121,6 +137,7 @@ define(function (require, exports, module) {
             return customDataTip(data, pos);
         },
         requestReferences: function (editor, cb) {
+            var ts = this;
             this.request(
                 editor,
                 {
@@ -131,13 +148,13 @@ define(function (require, exports, module) {
                     if (!error)
                         data.refs = data.refs.map(function (e) {
                             return {
-                                file: e.file,
+                                file: ts.$unfixName(e.file),
                                 start: toAceLoc(e.start),
                                 end: toAceLoc(e.end),
                             };
                         });
                     cb(error, data);
-                },
+                }
             );
         },
         request: function (editor, query, c, pos, forcePushChangedfile) {
@@ -148,16 +165,17 @@ define(function (require, exports, module) {
                 doc,
                 query,
                 pos,
-                forcePushChangedfile,
+                forcePushChangedfile
             );
             this.server.request(request, function (error, data) {
-                if (!error && self.options.responseFilter)
+                if (error) doRecovery(self, error);
+                else if (self.options.responseFilter)
                     data = self.options.responseFilter(
                         doc,
                         query,
                         request,
                         error,
-                        data,
+                        data
                     );
                 c(error, data);
             });
@@ -196,23 +214,22 @@ define(function (require, exports, module) {
                         guess: data.guess,
                         comments: data.doc, //added by morgan- include comments with arg hints
                     });
-                },
+                }
             );
         },
         requestDefinition: function (editor, cb, varName) {
-            var doc = getDoc(this, editor.session);
-            var req = {
-                type: 'definition',
-                variable: varName || null,
-            };
             var ts = this;
-            this.server.request(
-                buildRequest(ts, doc, req, null, true),
+            this.request(
+                editor,
+                {
+                    type: 'definition',
+                    variable: varName || null,
+                },
                 function (error, data) {
                     if (error) cb(error);
-                    if (data.file) {
+                    else if (data.file) {
                         cb(null, {
-                            file: data.file,
+                            file: ts.$unfixName(data.file),
                             start: toAceLoc(data.start),
                             end: toAceLoc(data.end),
                         });
@@ -222,16 +239,18 @@ define(function (require, exports, module) {
                         });
                     } else cb(null);
                 },
+                null,
+                true
             );
         },
-        setupForRename: function (editor, newName, cb, data) {
+        setupForRename: function (editor, newName, cb /*, olddata*/) {
             //Don't use the references data
             BaseClient.prototype.setupForRename.call(
                 this,
                 editor,
                 newName,
                 cb,
-                null,
+                null
             );
         },
         requestRenameLocations: function (editor, newName, cb) {
@@ -249,10 +268,11 @@ define(function (require, exports, module) {
                         data.changes.forEach(function (e) {
                             e.start = toAceLoc(e.start);
                             e.end = toAceLoc(e.end);
+                            e.file = ts.$unfixName(e.file);
                         });
                     }
                     cb(error, data && {refs: data.changes});
-                },
+                }
             );
         },
         sendDoc: function (doc, cb) {
@@ -261,7 +281,7 @@ define(function (require, exports, module) {
                     files: [
                         {
                             type: 'full',
-                            name: doc.name,
+                            name: this.$fixName(doc.name),
                             text: docValue(this, doc),
                         },
                     ],
@@ -270,7 +290,7 @@ define(function (require, exports, module) {
                     if (error) debug.error(error);
                     else doc.changed = null;
                     if (cb) cb();
-                },
+                }
             );
         },
         releaseDoc: function (name) {
@@ -297,8 +317,8 @@ define(function (require, exports, module) {
             }
             var self = this;
             this.server = new tern.Server({
-                getFile: function (name, c) {
-                    return getFile(self, name, c);
+                getFile: function (file, c) {
+                    return getFile(self, self.$unfixName(file), c);
                 },
                 async: true,
                 defs: this.options.defs,
@@ -307,7 +327,8 @@ define(function (require, exports, module) {
         },
         destroy: function () {
             BaseClient.prototype.destroy.call(this);
-            this.server.terminate();
+            if (this.options.useWorker) this.server.terminate();
+            else this.server.reset();
         },
         debug: function (message) {
             if (!message) {
@@ -385,33 +406,40 @@ define(function (require, exports, module) {
                     doc.changed.from <= startPos.line &&
                     doc.changed.to > query.end.line)
             ) {
-                files.push(getFragmentAround(doc, startPos, query.end));
+                files.push(
+                    getFragmentAround(
+                        doc,
+                        startPos,
+                        query.end,
+                        ts.$fixName(doc.name)
+                    )
+                );
                 query.file = '#0';
                 var offsetLines = files[0].offsetLines;
                 if (query.start != null)
                     query.start = Pos(
                         query.start.line - -offsetLines,
-                        query.start.ch,
+                        query.start.ch
                     );
                 query.end = Pos(query.end.line - offsetLines, query.end.ch);
             } else {
                 files.push({
                     type: 'full',
-                    name: doc.name,
+                    name: ts.$fixName(doc.name),
                     text: docValue(ts, doc),
                 });
-                query.file = doc.name;
+                query.file = ts.$fixName(doc.name);
                 doc.changed = null;
             }
         } else {
-            query.file = doc.name;
+            query.file = ts.$fixName(doc.name);
         }
         for (var name in ts.docs) {
             var cur = ts.docs[name];
             if (cur.changed && cur != doc && !doc.fragOnly) {
                 files.push({
                     type: 'full',
-                    name: cur.name,
+                    name: ts.$fixName(cur.name),
                     text: docValue(ts, cur),
                 });
                 cur.changed = null;
@@ -423,8 +451,11 @@ define(function (require, exports, module) {
             timeout: ts.queryTimeout,
         };
     }
+    function doRecovery(ts, error) {
+        console.log(error);
+    }
     //todo use scope finders
-    function getFragmentAround(data, start, end) {
+    function getFragmentAround(data, start, end, name) {
         var doc = data.doc;
         var minIndent = null,
             minLine = null,
@@ -455,7 +486,7 @@ define(function (require, exports, module) {
 
         return {
             type: 'part',
-            name: data.name,
+            name: name,
             offsetLines: from.line,
             offset: from,
             text: doc.getTextRange({
@@ -478,12 +509,13 @@ define(function (require, exports, module) {
     }
 
     function typeToIcon(type, property) {
-        if (type == '?') return 'unknown';
-        if (type == 'number' || type == 'string' || type == 'bool') return type;
+        if (type == '?') return 'text';
+        if (type == 'number' || type == 'string' || type == 'bool')
+            return property ? 'property' : 'var';
         if (/^fn\(/.test(type)) return property ? 'method' : 'function';
-        if (/^\[/.test(type)) return 'array';
+        if (/^\[/.test(type)) return property ? 'property' : 'var'; //array
         if (type == undefined) return 'keyword';
-        return property ? 'property' : 'object';
+        return property ? 'property' : 'var'; //object
     }
 
     function getCompletions(ts, editor, session, pos, prefix, callback) {
@@ -523,28 +555,23 @@ define(function (require, exports, module) {
                     return {
                         iconClass: ts.ui.iconClass(
                             item.guess
-                                ? 'guess'
-                                : typeToIcon(item.type, data.isProperty),
+                                ? 'text'
+                                : typeToIcon(item.type, data.isProperty)
                         ),
                         doc: item.doc,
                         type: item.type,
                         caption: item.name,
                         value: item.displayName || item.name,
                         score: SCORE,
-                        __type: 'tern',
-                        message:
-                            item.type +
-                            (item.origin
-                                ? '  (' +
-                                  item.origin.replace(/^.*[\\\/]/, '') +
-                                  ')'
-                                : ''),
-                        meta: 'tern',
+                        __type: ts,
+                        meta: item.origin
+                            ? '  (' + item.origin.replace(/^.*[\\\/]/, '') + ')'
+                            : '',
                     };
                 });
                 callback(null, ternCompletions);
                 if (debugCompletions) debug.groupEnd(groupName);
-            },
+            }
         );
     }
 
@@ -588,7 +615,6 @@ define(function (require, exports, module) {
         //no filtering
         else cb(null);
     }
-
     function toAceLoc(pos) {
         if (pos.line > -1) {
             return {
@@ -610,7 +636,7 @@ define(function (require, exports, module) {
         if (tok.type.indexOf('storage.type') !== -1) return false; // could be 'function', which is start of an anon fn
         var nextTok = editor.session.getTokenAt(
             editor.getSelectionRange().end.row,
-            tok.start + tok.value.length + 1,
+            tok.start + tok.value.length + 1
         );
         if (!nextTok || nextTok.value !== '(') return false;
         return true;
@@ -643,541 +669,6 @@ define(function (require, exports, module) {
     //     return true; ///\w/.test(editor.session.getLine(pos.line).slice(Math.max(pos. - 1, 0), pos.ch + 1));
     // }
 
-    function parseFnType(text) {
-        if (text.substring(0, 2) !== 'fn') return null; //not a function
-        if (text.indexOf('(') === -1) return null;
-
-        var args = [],
-            pos = 3;
-
-        function skipMatching(upto) {
-            var depth = 0,
-                start = pos;
-            for (;;) {
-                var next = text.charAt(pos);
-                if (upto.test(next) && !depth) return text.slice(start, pos);
-                if (/[{\[\(]/.test(next)) ++depth;
-                else if (/[}\]\)]/.test(next)) --depth;
-                ++pos;
-            }
-        }
-        if (text.charAt(pos) != ')')
-            for (;;) {
-                var name = text.slice(pos).match(/^([^, \(\[\{]+): /);
-                if (name) {
-                    pos += name[0].length;
-                    name = name[1];
-                }
-                args.push({
-                    name: name,
-                    type: skipMatching(/[\),]/),
-                });
-                if (text.charAt(pos) == ')') break;
-                pos += 2;
-            }
-
-        var rettype = text.slice(pos).match(/^\) -> (.*)$/);
-        return {
-            args: args,
-            rettype: rettype && rettype[1],
-        };
-    }
-
-    function parseJsDocParams(ts, str) {
-        if (!str) return [];
-        str = str.replace(/@param/gi, '@param'); //make sure all param tags are lowercase
-        var params = [];
-        while (str.indexOf('@param') !== -1) {
-            str = str.substring(str.indexOf('@param') + 6); //starting after first param match
-            var nextTagStart = str.indexOf('@'); //split on next param (will break if @symbol inside of param, like a link... dont have to time fullproof right now)
-
-            var paramStr =
-                nextTagStart === -1 ? str : str.substr(0, nextTagStart);
-            var thisParam = {
-                name: '',
-                parentName: '',
-                type: '',
-                description: '',
-                optional: false,
-                defaultValue: '',
-            };
-            var re = /\s{[^}]{1,50}}\s/;
-            var m;
-            while ((m = re.exec(paramStr)) !== null) {
-                if (m.index === re.lastIndex) {
-                    re.lastIndex++;
-                }
-                thisParam.type = m[0];
-                paramStr = paramStr.replace(thisParam.type, '').trim(); //remove type from param string
-                thisParam.type = thisParam.type
-                    .replace('{', '')
-                    .replace('}', '')
-                    .replace(' ', '')
-                    .trim(); //remove brackets and spaces
-            }
-            paramStr = paramStr.trim(); //we now have a single param string starting after the type, next string should be the parameter name
-            if (paramStr.substr(0, 1) === '[') {
-                thisParam.optional = true;
-                var endBracketIdx = paramStr.indexOf(']');
-                if (endBracketIdx === -1) {
-                    debug.error(
-                        "failed to parse parameter name; Found starting '[' but missing closing ']'",
-                    );
-                    continue; //go to next
-                }
-                var nameStr = paramStr.substring(0, endBracketIdx + 1);
-                paramStr = paramStr.replace(nameStr, '').trim(); //remove name portion from param str
-                nameStr = nameStr.replace('[', '').replace(']', ''); //remove brackets
-                if (nameStr.indexOf('=') !== -1) {
-                    var defaultValue = nameStr.substr(nameStr.indexOf('=') + 1);
-                    if (defaultValue.trim() === '') {
-                        thisParam.defaultValue = 'undefined';
-                    } else {
-                        thisParam.defaultValue = defaultValue.trim();
-                    }
-                    thisParam.name = nameStr
-                        .substring(0, nameStr.indexOf('='))
-                        .trim(); //set name
-                } else {
-                    thisParam.name = nameStr.trim();
-                }
-            } else {
-                //not optional
-                var nextSpace = paramStr.indexOf(' ');
-                if (nextSpace !== -1) {
-                    thisParam.name = paramStr.substr(0, nextSpace);
-                    paramStr = paramStr.substr(nextSpace).trim(); //remove name portion from param str
-                } else {
-                    //no more spaces left, next portion of string must be name and there is no description
-                    thisParam.name = paramStr;
-                    paramStr = '';
-                }
-            }
-            var nameDotIdx = thisParam.name.indexOf('.');
-            if (nameDotIdx !== -1) {
-                thisParam.parentName = thisParam.name.substring(0, nameDotIdx);
-                thisParam.name = thisParam.name.substring(nameDotIdx + 1);
-            }
-            paramStr = paramStr.trim();
-            if (paramStr.length > 0) {
-                thisParam.description = paramStr.replace('-', '').trim(); //optional hiphen specified before start of description
-            }
-            thisParam.name = htmlEncode(thisParam.name);
-            thisParam.parentName = htmlEncode(thisParam.parentName);
-            thisParam.description = htmlEncode(thisParam.description);
-            thisParam.type = htmlEncode(thisParam.type);
-            thisParam.defaultValue = htmlEncode(thisParam.defaultValue);
-            params.push(thisParam);
-        }
-        return params;
-    }
-
-    function customDataTip(data, activeArg) {
-        var html = [];
-
-        var d = data.doc;
-        var params = data.params || parseJsDocParams(d); //parse params
-        var fnArgs = data.fnArgs
-            ? data.fnArgs
-            : data.type
-            ? parseFnType(data.type)
-            : null; //will be null if parseFnType detects that this is not a function
-
-        if (fnArgs) {
-            var getParam = function (arg, getChildren) {
-                if (params === null) return null;
-                if (!arg.name) return null;
-                var children = [];
-                for (var i = 0; i < params.length; i++) {
-                    if (getChildren === true) {
-                        if (
-                            params[i].parentName.toLowerCase().trim() ===
-                            arg.name.toLowerCase().trim()
-                        ) {
-                            children.push(params[i]);
-                        }
-                    } else {
-                        if (
-                            params[i].name.toLowerCase().trim() ===
-                            arg.name.toLowerCase().trim()
-                        ) {
-                            return params[i];
-                        }
-                    }
-                }
-                if (getChildren === true) return children;
-                return null;
-            };
-            var getParamDetailedName = function (param) {
-                var name = param.name;
-                if (param.optional === true) {
-                    if (param.defaultValue) {
-                        name = '[' + name + '=' + param.defaultValue + ']';
-                    } else {
-                        name = '[' + name + ']';
-                    }
-                }
-                return name;
-            };
-            var useDetailedArgHints =
-                params.length === 0 || !isNaN(parseInt(activeArg));
-            var typeStr = '';
-            typeStr += htmlEncode(data.exprName || data.name || 'fn');
-            typeStr += '(';
-            var activeParam = null,
-                activeParamChildren = []; //one ore more child params for multiple object properties
-
-            for (var i = 0; i < fnArgs.args.length; i++) {
-                var paramStr = '';
-                var isCurrent = !isNaN(parseInt(activeArg))
-                    ? i === activeArg
-                    : false;
-                var arg = fnArgs.args[i]; //name,type
-                var name = arg.name || '?';
-                if (name.length > 1 && name.substr(name.length - 1) === '?') {
-                    name = name.substr(0, name.length - 1);
-                    arg.name = name; //update the arg var with proper name for use below
-                }
-
-                if (!useDetailedArgHints) {
-                    paramStr += htmlEncode(name);
-                } else {
-                    var param = getParam(arg, false);
-                    var children = getParam(arg, true);
-                    var type = arg.type;
-                    var optional = false;
-                    var defaultValue = '';
-                    if (param !== null) {
-                        name = param.name;
-                        if (param.type) {
-                            type = param.type;
-                        }
-                        if (isCurrent) {
-                            activeParam = param;
-                        }
-                        optional = param.optional;
-                        defaultValue = param.defaultValue.trim();
-                    }
-                    if (children && children.length > 0) {
-                        if (isCurrent) {
-                            activeParamChildren = children;
-                        }
-                        type = '{';
-                        for (var c = 0; c < children.length; c++) {
-                            type += children[c].name;
-                            if (
-                                c + 1 !== children.length &&
-                                children.length > 1
-                            )
-                                type += ', ';
-                        }
-                        type += '}';
-                    }
-                    paramStr += type
-                        ? '<span class="' +
-                          cls +
-                          'type">' +
-                          htmlEncode(type) +
-                          '</span> '
-                        : '';
-                    paramStr +=
-                        '<span class="' +
-                        cls +
-                        (isCurrent ? 'farg-current' : 'farg') +
-                        '">' +
-                        (htmlEncode(name) || '?') +
-                        '</span>';
-                    if (defaultValue !== '') {
-                        paramStr +=
-                            '<span class="' +
-                            cls +
-                            'jsdoc-param-defaultValue">=' +
-                            htmlEncode(defaultValue) +
-                            '</span>';
-                    }
-                    if (optional) {
-                        paramStr =
-                            '<span class="' +
-                            cls +
-                            'jsdoc-param-optionalWrapper">' +
-                            '<span class="' +
-                            cls +
-                            'farg-optionalBracket">[</span>' +
-                            paramStr +
-                            '<span class="' +
-                            cls +
-                            'jsdoc-param-optionalBracket">]</span>' +
-                            '</span>';
-                    }
-                }
-                if (i > 0) paramStr = ', ' + paramStr;
-                typeStr += paramStr;
-            }
-
-            typeStr += ')';
-            if (fnArgs.rettype) {
-                if (useDetailedArgHints) {
-                    typeStr +=
-                        ' -> <span class="' +
-                        cls +
-                        'type">' +
-                        htmlEncode(fnArgs.rettype) +
-                        '</span>';
-                } else {
-                    typeStr += ' -> ' + htmlEncode(fnArgs.rettype);
-                }
-            }
-            typeStr =
-                '<span class="' +
-                cls +
-                (useDetailedArgHints ? 'typeHeader' : 'typeHeader-simple') +
-                '">' +
-                typeStr +
-                '</span>'; //outer wrapper
-            if (useDetailedArgHints) {
-                if (activeParam && activeParam.description) {
-                    typeStr +=
-                        '<div class="' +
-                        cls +
-                        'farg-current-description"><span class="' +
-                        cls +
-                        'farg-current-name">' +
-                        activeParam.name +
-                        ': </span>' +
-                        activeParam.description +
-                        '</div>';
-                }
-                if (activeParamChildren && activeParamChildren.length > 0) {
-                    for (var j = 0; j < activeParamChildren.length; j++) {
-                        var t = activeParamChildren[j].type
-                            ? '<span class="' +
-                              cls +
-                              'type">{' +
-                              activeParamChildren[j].type +
-                              '} </span>'
-                            : '';
-                        typeStr +=
-                            '<div class="' +
-                            cls +
-                            'farg-current-description">' +
-                            t +
-                            '<span class="' +
-                            cls +
-                            'farg-current-name">' +
-                            getParamDetailedName(activeParamChildren[j]) +
-                            ': </span>' +
-                            activeParamChildren[j].description +
-                            '</div>';
-                    }
-                }
-            }
-            html.push(typeStr);
-        } else {
-            if (!data.type && !data.doc) return '';
-            if (data.type) html.push('<span>' + data.type + '<span></br>');
-        }
-        if (isNaN(parseInt(activeArg))) {
-            if (data.doc) {
-                var replaceParams = function (str, params) {
-                    if (params.length === 0) {
-                        return str;
-                    }
-                    str = str.replace(/@param/gi, '@param'); //make sure all param tags are lowercase
-                    var beforeParams = str.substr(0, str.indexOf('@param'));
-                    while (str.indexOf('@param') !== -1) {
-                        str = str.substring(str.indexOf('@param') + 6); //starting after first param match
-                    }
-                    if (str.indexOf('@') !== -1) {
-                        str = str.substr(str.indexOf('@')); //start at next tag that is not a param
-                    } else {
-                        str = ''; //@param was likely the last tag, trim remaining as its likely the end of a param description
-                    }
-                    var paramStr = '';
-                    for (var i = 0; i < params.length; i++) {
-                        paramStr += '<div>';
-                        if (params[i].parentName.trim() === '') {
-                            paramStr +=
-                                ' <span class="' +
-                                cls +
-                                'jsdoc-tag">@param</span> ';
-                        } else {
-                            paramStr +=
-                                '<span class="' +
-                                cls +
-                                'jsdoc-tag-param-child">&nbsp;</span> '; //dont show param tag for child param
-                        }
-                        paramStr +=
-                            params[i].type.trim() === ''
-                                ? ''
-                                : '<span class="' +
-                                  cls +
-                                  'type">{' +
-                                  params[i].type +
-                                  '}</span> ';
-
-                        if (params[i].name.trim() !== '') {
-                            var name = params[i].name.trim();
-                            if (params[i].parentName.trim() !== '') {
-                                name = params[i].parentName.trim() + '.' + name;
-                            }
-                            var pName =
-                                '<span class="' +
-                                cls +
-                                'jsdoc-param-name">' +
-                                name +
-                                '</span>';
-                            if (params[i].defaultValue.trim() !== '') {
-                                pName +=
-                                    '<span class="' +
-                                    cls +
-                                    'jsdoc-param-defaultValue">=' +
-                                    params[i].defaultValue +
-                                    '</span>';
-                            }
-                            if (params[i].optional) {
-                                pName =
-                                    '<span class="' +
-                                    cls +
-                                    'jsdoc-param-optionalWrapper">' +
-                                    '<span class="' +
-                                    cls +
-                                    'farg-optionalBracket">[</span>' +
-                                    pName +
-                                    '<span class="' +
-                                    cls +
-                                    'jsdoc-param-optionalBracket">]</span>' +
-                                    '</span>';
-                            }
-                            paramStr += pName;
-                        }
-                        paramStr +=
-                            params[i].description.trim() === ''
-                                ? ''
-                                : ' - <span class="' +
-                                  cls +
-                                  'jsdoc-param-description">' +
-                                  params[i].description +
-                                  '</span>';
-                        paramStr += '</div>';
-                    }
-                    if (paramStr !== '') {
-                        str =
-                            '<span class="' +
-                            cls +
-                            'jsdoc-param-wrapper">' +
-                            paramStr +
-                            '</span>' +
-                            str;
-                    }
-
-                    return beforeParams + str;
-                };
-                var highlighTags = function (str) {
-                    try {
-                        str = ' ' + str + ' '; //add white space for regex
-                        var re = / ?@\w{1,50}\s ?/gi;
-                        var m;
-                        while ((m = re.exec(str)) !== null) {
-                            if (m.index === re.lastIndex) {
-                                re.lastIndex++;
-                            }
-                            str = str.replace(
-                                m[0],
-                                ' <span class="' +
-                                    cls +
-                                    'jsdoc-tag">' +
-                                    m[0].trim() +
-                                    '</span> ',
-                            );
-                        }
-                    } catch (ex) {
-                        debug.error(ex);
-                    }
-                    return str.trim();
-                };
-                var highlightTypes = function (str) {
-                    str = ' ' + str + ' '; //add white space for regex
-                    try {
-                        var re = /\s{[^}]{1,50}}\s/g;
-                        var m;
-                        while ((m = re.exec(str)) !== null) {
-                            if (m.index === re.lastIndex) {
-                                re.lastIndex++;
-                            }
-                            str = str.replace(
-                                m[0],
-                                ' <span class="' +
-                                    cls +
-                                    'type">' +
-                                    m[0].trim() +
-                                    '</span> ',
-                            );
-                        }
-                    } catch (ex) {
-                        debug.error(ex);
-                    }
-                    return str.trim();
-                };
-                var createLinks = function (str) {
-                    try {
-                        var httpProto = 'HTTP_PROTO_PLACEHOLDER';
-                        var httpsProto = 'HTTPS_PROTO_PLACEHOLDER';
-                        var re = /\bhttps?:\/\/[^\s<>"`{}|\^\[\]\\]+/gi;
-                        var m;
-                        while ((m = re.exec(str)) !== null) {
-                            if (m.index === re.lastIndex) {
-                                re.lastIndex++;
-                            }
-                            var withoutProtocol = m[0]
-                                .replace(/https/i, httpsProto)
-                                .replace(/http/i, httpProto);
-                            var text = m[0]
-                                .replace(new RegExp('https://', 'i'), '')
-                                .replace(new RegExp('http://', 'i'), '');
-                            str = str.replace(
-                                m[0],
-                                '<a class="' +
-                                    cls +
-                                    'tooltip-link" href="' +
-                                    withoutProtocol +
-                                    '" target="_blank">' +
-                                    text +
-                                    ' </a>',
-                            );
-                        }
-                        str = str
-                            .replace(new RegExp(httpsProto, 'gi'), 'https')
-                            .replace(new RegExp(httpProto, 'gi'), 'http');
-                    } catch (ex) {
-                        debug.error(ex);
-                    }
-                    return str;
-                };
-
-                if (d.substr(0, 1) === '*') {
-                    d = d.substr(1); //tern leaves this for jsDoc as they start with /**, not exactly sure why...
-                }
-                d = htmlEncode(d.trim());
-                d = replaceParams(d, params);
-                d = highlighTags(d);
-                d = highlightTypes(d);
-                d = createLinks(d);
-                html.push(d);
-            }
-            /*if (data.url) {
-          tip.appendChild(document.createTextNode(" "));
-          var link = elt("a", null, "[docs]");
-          link.target = "_blank";
-          link.href = data.url;
-          tip.appendChild(link);
-      }
-      if (data.origin) {
-          tip.appendChild(elt("div", null, elt("em", null, "source: " + data.origin)));
-      }*/
-        }
-        return html.join('');
-    }
-
     exports.TernServer = TernServer;
 
     function WorkerServer(ts, WorkerClass) {
@@ -1208,7 +699,7 @@ define(function (require, exports, module) {
         worker.onmessage = function (e) {
             var data = e.data;
             if (data.type == 'getFile') {
-                getFile(ts, data.name, function (err, text) {
+                getFile(ts, ts.$unfixName(data.name), function (err, text) {
                     send({
                         type: 'getFile',
                         err: String(err),
@@ -1247,7 +738,7 @@ define(function (require, exports, module) {
                     type: 'req',
                     body: body,
                 },
-                c,
+                c
             );
         };
         this.restart = function (ts) {

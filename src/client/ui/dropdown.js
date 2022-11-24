@@ -102,7 +102,7 @@ define(function (require, exports, module) {
         document.body,
         align,
         history.length > 1 && !isSmallScreen,
-        vAlign,
+        vAlign
       );
       Navigation.addRoot(elem, hideOverflow);
     }
@@ -299,7 +299,7 @@ define(function (require, exports, module) {
         for (var j = 0; current[store[j]] && j < store.length; j++) {
           showDropdown(
             store[j],
-            j < 1 ? anchor : $(getElement()).find('#' + store[j])[0],
+            j < 1 ? anchor : $(getElement()).find('#' + store[j])[0]
           );
         }
         inRecreate = false;
@@ -410,7 +410,7 @@ define(function (require, exports, module) {
           : l < t
           ? 1
           : (items[a[0]].caption || items[a[0]]).localeCompare(
-              items[b[0]].caption || items[b[0]],
+              items[b[0]].caption || items[b[0]]
             );
       });
     }
@@ -428,7 +428,7 @@ define(function (require, exports, module) {
           : l < t
           ? 1
           : (items[a].caption || items[a]).localeCompare(
-              items[b].caption || items[b],
+              items[b].caption || items[b]
             );
       });
     });
@@ -438,7 +438,7 @@ define(function (require, exports, module) {
       [],
       sorted.filter(function (e, i) {
         return i === 0 || e.length > 1;
-      }),
+      })
     );
     for (var j = 0; j < result.length; j++) {
       var i = result[j];
@@ -530,7 +530,7 @@ define(function (require, exports, module) {
     inside,
     align,
     allowBeside,
-    vertAlign,
+    vertAlign
   ) {
     align = align || Dropdown.defaultAlignment;
     vertAlign = vertAlign || 'above_or_below';

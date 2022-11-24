@@ -10,6 +10,12 @@ define(function (require, exports, module) {
         INVALID_INDEX: 'No child at index {index}',
         NOT_CHILD: 'View is not a child of this renderer',
     };
+    var requestAnimationFrame =
+        window.requestAnimationFrame ||
+        function (func) {
+            return setTimeout(func, 34);
+        };
+    var cancelAnimationFrame = window.cancelAnimationFrame || clearTimeout;
 
     var ScrollSaver = {
         getScroll: function (els) {
@@ -58,7 +64,7 @@ define(function (require, exports, module) {
             function svg(el, styles, attribs) {
                 var b = document.createElementNS(
                     'http://www.w3.org/2000/svg',
-                    el,
+                    el
                 );
                 for (var i in styles) {
                     b.style[i] = styles[i];
@@ -82,7 +88,7 @@ define(function (require, exports, module) {
                 {
                     version: '1.1',
                     viewBox: '0 0 1000 300',
-                },
+                }
             );
 
             var frameCountEl = svg(
@@ -94,7 +100,7 @@ define(function (require, exports, module) {
                     fill: 'blue',
                     x: 500,
                     y: 100,
-                },
+                }
             );
             svgEl.appendChild(frameCountEl);
 
@@ -107,18 +113,22 @@ define(function (require, exports, module) {
                     fill: 'red',
                     x: 500,
                     y: 150,
-                },
+                }
             );
             svgEl.appendChild(fpsEl);
             root.appendChild(svgEl);
             var obj = Object.create(this);
             this.el = obj.el = svgEl;
             this.renderer = obj.renderer = renderer;
+            //The number of frames drawn so far
             this.frames = obj.frames = 0;
             this.frameCountEl = obj.frameCountEl = frameCountEl;
+            //The last time we rendered a frame
             this.last = obj.lastTime = new Date().getTime();
+            //Total amount of time we've been rendering
             this.totalTime = obj.totalTime = 0;
             this.fpsEl = obj.fpsEl = fpsEl;
+            //Number of frames the last time we measured fps
             this.lastFrame = obj.lastFrame = 0;
             return obj;
         },
@@ -128,7 +138,7 @@ define(function (require, exports, module) {
             this.el.style.height =
                 Math.min(
                     this.renderer.height - this.renderer.viewport.y,
-                    this.renderer.viewport.height,
+                    this.renderer.viewport.height
                 ) + 'px';
             this.frameCountEl.innerHTML = ' frames: ' + this.frames++;
             var t = new Date().getTime();
@@ -140,7 +150,7 @@ define(function (require, exports, module) {
                     ':' +
                     Math.round(
                         ((this.frames - this.lastFrame) / this.totalTime) *
-                            100000,
+                            100000
                     ) /
                         100;
             } else this.frames--;
@@ -151,6 +161,14 @@ define(function (require, exports, module) {
             }
         },
     };
+    function onRender() {
+        this.renderTimeout = null;
+        this.compute();
+        stats.append = 0;
+        stats.detach = 0;
+        stats.insert = 0;
+        this.render();
+    }
     var Utils = require('../core/utils').Utils;
 
     var toClear = [];
@@ -261,7 +279,7 @@ define(function (require, exports, module) {
         viewport,
         index,
         insertBefore,
-        restack,
+        restack
     ) {
         this.visible = true;
         if (this.hidden) {
@@ -278,7 +296,7 @@ define(function (require, exports, module) {
                     stats.insert++;
                     this.view[0].parentElement.insertBefore(
                         this.view[0],
-                        insertBefore,
+                        insertBefore
                     );
                 } else {
                     stats.append++;
@@ -327,14 +345,7 @@ define(function (require, exports, module) {
     //var MODIFY_ABOVE = 132;//not yet supported
     var MODIFY_NOT_BELOW = 4;
     var INVALIDATE = 128;
-    var onRender = function () {
-        this.compute();
-        this.renderTimeout = null;
-        stats.append = 0;
-        stats.detach = 0;
-        stats.insert = 0;
-        if (this.changes) this.render();
-    };
+
     function RecyclerRenderer() {
         this.views = [];
         this.height = 0;
@@ -344,6 +355,8 @@ define(function (require, exports, module) {
         this.viewport = Object.create(this.DEFAULT_VIEWPORT);
         this.paddingTop;
         this.lastIndex = 0;
+        this.onRender = null;
+        this.onBeforeRender = null;
     }
     /*Overrides*/
     RecyclerRenderer.prototype.DEFAULT_VIEWPORT = {
@@ -365,6 +378,11 @@ define(function (require, exports, module) {
             y: y - margin,
             height: height + margin * 2,
         };
+    };
+    //Warning, calling this method in render might give true negatives
+    //due to the modify_not_below check in compute
+    RecyclerRenderer.prototype.sizeChanged = function () {
+        return this.changes > 3;
     };
     RecyclerRenderer.prototype.compute = function (viewport) {
         var end = this.views.length;
@@ -395,12 +413,13 @@ define(function (require, exports, module) {
             a += h;
         }
         for (i; i < end; i++) {
-            this.views[i].y = a;
+            this.views[i].y = a | 0;
             h = this.views[i].compute(viewport, i);
             a += h;
         }
         this.start = end;
         this.height = a;
+        if (this.onBeforeRender) this.onBeforeRender();
         return this.height;
     };
     RecyclerRenderer.prototype.getViewport = function (viewport) {
@@ -413,10 +432,11 @@ define(function (require, exports, module) {
     RecyclerRenderer.prototype.render = function (viewport) {
         viewport = this.getViewport(viewport);
         if (this.renderTimeout) {
-            clearTimeout(this.renderTimeout);
+            cancelAnimationFrame(this.renderTimeout);
             this.renderTimeout = null;
         }
-        if (this.beforeRender) this.beforeRender();
+        if (this.onRender) this.onRender();
+        if (this.changes === NO_CHANGE) return;
         //you can invalidate again here
         //to animate
         var start = viewport.y;
@@ -430,8 +450,7 @@ define(function (require, exports, module) {
         var view,
             views = this.views;
         //if (true || this.changes > SCROLL_DOWN){
-        var above = 0;
-        for (var i = begin - 1; i >= above; i--) {
+        for (var i = begin - 1; i >= 0; i--) {
             view = views[i];
             if (view.height + view.y < start) break;
             else if (view.y > end) {
@@ -462,6 +481,7 @@ define(function (require, exports, module) {
                 this.renderlist[t].detach(t);
             }
         }
+        //Find insert point for scrollup and invalidate
         var insertBefore, ins;
         if (this.changes > SCROLL_DOWN) {
             for (var k = 0; k < this.renderlist.length; k++) {
@@ -473,9 +493,15 @@ define(function (require, exports, module) {
             }
         }
         this.renderlist = renderlist;
-        var stop = renderlist.length;
-        if (this.changes > SCROLL_UP) {
-            for (var p = 0; p < stop; p++) {
+        var len = this.renderlist.length;
+        if (this.changes <= SCROLL_UP) {
+            //scroll
+            for (var s = 0; s < len; s++) {
+                renderlist[s].render(viewport, s, insertBefore);
+            }
+        } else {
+            //render invalidated screen by restacking
+            for (var p = 0; p < len; p++) {
                 if (p == ins) {
                     renderlist[p].render(viewport, p);
                     insertBefore = undefined;
@@ -488,12 +514,7 @@ define(function (require, exports, module) {
                     }
                 } else renderlist[p].render(viewport, p, insertBefore, true);
             }
-        } else {
-            for (var s = 0; s < stop; s++) {
-                renderlist[s].render(viewport, s, insertBefore);
-            }
         }
-
         this.changes = NO_CHANGE;
     };
     RecyclerRenderer.prototype.detach = function () {
@@ -552,7 +573,7 @@ define(function (require, exports, module) {
         //we clip bottom in render because of invalidates
         scrollTop = Math.max(
             0,
-            scrollTop - (topMargin || -this.DEFAULT_VIEWPORT.y),
+            scrollTop - (topMargin || -this.DEFAULT_VIEWPORT.y)
         );
         if (scrollTop < this.viewport.y) {
             this.changes |= SCROLL_UP;
@@ -564,12 +585,9 @@ define(function (require, exports, module) {
     };
     RecyclerRenderer.prototype.schedule = function (/*viewport*/) {
         if (this.renderTimeout) return;
-        //Not yet tested enough to prevent layout thrashing
-        if (this.changes)
-            this.renderTimeout = /*window.requestAnimationFrame || */ setTimeout(
-                onRender.bind(this),
-                34,
-            );
+        if (this.changes) {
+            this.renderTimeout = requestAnimationFrame(onRender.bind(this));
+        }
     };
     //RecyclerRenderer+RecyclerViewHolder
     //= NestedRenderer
@@ -607,7 +625,7 @@ define(function (require, exports, module) {
         this.visible = false;
         if (this.hidden) return;
         this.superRenderer.detach.apply(this, arguments);
-        this.view.hide();
+        this.view[0].style.display = 'none';
         this.view = null;
         this.lastY = null;
     };
@@ -615,14 +633,14 @@ define(function (require, exports, module) {
         viewport,
         index,
         insertBefore,
-        restack,
+        restack
     ) {
         this.visible = true;
         if (this.hidden) return;
         if (restack || !this.view) {
             if (!this.view) {
                 this.view = this.stub;
-                this.view.show();
+                this.view[0].style.display = 'block';
             }
             if (insertBefore) {
                 stats.insert++;

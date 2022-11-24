@@ -7,11 +7,11 @@ define(function (require, exports, module) {
         '<button id="runButton"' +
             'class="btn-floating opaque-on-hover hidden btn btn-large waves-effect waves-light">' +
             '<i class="material-icons">play_arrow</i>' +
-            '</button>',
+            '</button>'
     );
     var appConfig = require('grace/core/config').Config.registerAll(
         {enableFloatingRunButton: 'auto'},
-        'ui',
+        'ui'
     );
     require('grace/core/config').Config.registerInfo(
         {
@@ -20,7 +20,7 @@ define(function (require, exports, module) {
                 values: ['true', 'small', 'center', 'auto', false],
             },
         },
-        'ui',
+        'ui'
     );
     rootView.$el.append(button);
     button.click(runCode);

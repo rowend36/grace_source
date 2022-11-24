@@ -4,7 +4,7 @@ define(function (require, exports, module) {
     var tabbable = require('./libs/tabbable').tabbable;
     var FocusManager = require('grace/ui/focus_manager').FocusManager;
     var keys = require('ace!lib/keys');
-    var KeyListener = require('grace/ui/key_listener').KeyListener;
+    var KeyListener = require('grace/ui/soft_keyboard_navigation').KeyListener;
     var Utils = require('grace/core/utils').Utils;
     var uiConfig = require('grace/core/config').Config.registerAll(null, 'ui');
     var candidateSelectors = [
@@ -124,7 +124,6 @@ define(function (require, exports, module) {
                     (source != 'mouse' && FocusManager.keyboardVisible)
                 ) {
                     if (tabbable.isTabbable(a)) {
-                        console.log(a.className);
                         $(a).addClass('nav-focused');
                         if (source == 'root') {
                             nav.scrollIntoView(a);
@@ -134,7 +133,7 @@ define(function (require, exports, module) {
                 }
             }
         },
-        blur: function (el) {
+        onEsc: function (el) {
             if (el.className.indexOf('ace_text-input') > -1) {
                 doSkip(el);
             } else if (FocusManager.isFocusable(el) && el != this.$receiver) {
@@ -145,7 +144,7 @@ define(function (require, exports, module) {
                 nav.pop();
             }
         },
-        onenter: function (el, e) {
+        onEnter: function (el, e) {
             if (FocusManager.isFocusable(el)) {
             } else if (el.tagName == 'SELECT') {
                 require('grace/ui/dropdown').Dropdown.openSelect(e, el);

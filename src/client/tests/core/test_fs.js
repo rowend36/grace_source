@@ -55,7 +55,7 @@ define(function(require, exports, module) {
         var files = ["index.html", "main.js", "pop.css"];
         var testData = [
             "fkdkdkdk\n\r\ndkdkdkdkdd\r\n",
-            test_equal_fs.toString()
+            test_equal_fs.label
         ];
         var cases;
         var assert_good_callback = function(cb, name) {
@@ -242,7 +242,7 @@ define(function(require, exports, module) {
         var bfs = BrowserFS.BFSRequire(
             "fs");
         require("grace/core/base_fs").BaseFs.call(bfs);
-
+        bfs.label = 'Browser FS';
 
         var lfs = require("grace/core/file_utils").FileUtils
             .createServer("inApp");

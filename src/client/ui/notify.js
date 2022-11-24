@@ -28,7 +28,7 @@ define(function (require, exports, module) {
 
     var notify = function (text, duration) {
         var len = text.length;
-        if (text.indexOf('>')) len = len * 0.7;
+        if (text.indexOf('>') > -1) len = len * 0.7;
         if (isNaN(duration)) {
             duration = len > 40 ? len * 50 : 2000;
         }
@@ -57,8 +57,8 @@ define(function (require, exports, module) {
                         },
                         function () {
                             batchView = false;
-                        },
-                    ),
+                        }
+                    )
                 ).find('.modal-content');
                 pending.length = 0;
             }
@@ -68,20 +68,20 @@ define(function (require, exports, module) {
         notify(
             "<i class='orange-text material-icons toast-icon'>warning</i>" +
                 text,
-            duration,
+            duration
         );
     };
     var info = function (text, duration) {
         notify(
             "<i class='info-text material-icons toast-icon'>error</i>" + text,
-            duration,
+            duration
         );
     };
     var error = function (error, duration) {
         var err = error && error.toString();
         notify(
             "<i class='red-text material-icons toast-icon'>error</i>" + err,
-            duration,
+            duration
         );
     };
     var errors = {};
@@ -98,7 +98,7 @@ define(function (require, exports, module) {
         document.body.appendChild(el[0]);
         el.addClass('toast modal-direction');
         el.append(
-            "<span class='material-icons toast-icon blue-text'>info</span>",
+            "<span class='material-icons toast-icon blue-text'>info</span>"
         );
         el.append('<div>' + info + '</div>');
         el.append("<button class='pl-15 material-icons'>close</button>");
@@ -149,7 +149,7 @@ define(function (require, exports, module) {
                     var p = modals.shift();
                     ask(p[0], p[1], p[2], true);
                 }
-            },
+            }
         );
     };
     //First rule of maintainaibility,
@@ -160,7 +160,7 @@ define(function (require, exports, module) {
             var header = [
                 opts.header !== false
                     ? ['<h6 class="modal-header">', opts.header, '</h6>'].join(
-                          '',
+                          ''
                       )
                     : '',
                 '<div class="modal-content">',
@@ -200,12 +200,12 @@ define(function (require, exports, module) {
                 require(['./forms'], function (mod) {
                     mod.Forms.create(
                         opts.form,
-                        el.getElementsByClassName('modal-content')[0],
+                        el.getElementsByClassName('modal-content')[0]
                     );
                     if (opts.onCreate) opts.onCreate($(el), mod.Forms);
                     else
                         console.error(
-                            'Failed to provide onCreate for modal with .form option',
+                            'Failed to provide onCreate for modal with .form option'
                         );
                 });
                 $(el).submit(false);
@@ -238,7 +238,7 @@ define(function (require, exports, module) {
             require('./navigation').Navigation.addRoot(
                 el,
                 instance.close.bind(instance),
-                true,
+                true
             );
         };
         //set this after to avoid wierd key event trapping
@@ -268,7 +268,7 @@ define(function (require, exports, module) {
         onchang,
         getValue,
         ondismis,
-        complete,
+        complete
     ) {
         if (!inputDialog) {
             var dialog = modal(
@@ -309,7 +309,7 @@ define(function (require, exports, module) {
                         isOpen = false;
                         completer = onDialogClose = onchange = null;
                     }
-                },
+                }
             );
             dialog.className = 'modal modal-alert';
             dialog.addEventListener('click', function (e) {
@@ -415,12 +415,12 @@ define(function (require, exports, module) {
                               return (input.value = text);
                           },
                       }
-                    : value_completer),
+                    : value_completer)
         );
         dialog.show();
     };
     var pick = function (name, items, onItemSelected, ondismiss) {
-        require(['./itemlist'], function (mod) {
+        require(['./item_list'], function (mod) {
             var list = new mod.ItemList('picker', items);
             list.containerClass = 'modal';
             list.headerText = name;
@@ -441,7 +441,7 @@ define(function (require, exports, module) {
                     listEl: list.el,
                     dismissible: ondismiss !== false,
                 },
-                ondismiss,
+                ondismiss
             );
         });
     };

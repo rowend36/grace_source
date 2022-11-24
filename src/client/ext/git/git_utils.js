@@ -15,7 +15,9 @@ define(function (require, exports, module) {
                       t + pad.substring(0, len - str.length - t.length) + str
                   );
               }
-            : (str, len, pad) => str.padStart(len, pad);
+            : function (str, len, pad) {
+                  str.padStart(len, pad);
+              };
     exports.padStart = padStart;
     exports.testPlain = function (str) {
         if (!str) return false;

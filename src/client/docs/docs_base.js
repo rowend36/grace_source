@@ -70,8 +70,7 @@ define(function (require, exports, module) {
     /*
     for (var id in docs) {
         var doc = docs[id];
-        if (doc.session == session || (doc.clones && doc.clones.indexOf(session) > -
-                1)) {
+        if (doc.session == session || (doc.clones && doc.clones.indexOf(session) > -1)) {
             return doc;
         }
     }*/

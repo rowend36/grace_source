@@ -30,7 +30,7 @@ define(function (require, exports, module) {
         add: function (id, closeable) {
             if (!closeable || !closeable.close)
                 throw new Error(
-                    'Error: expected a Closeable object, got ' + closeable,
+                    'Error: expected a Closeable object, got ' + closeable
                 );
             exports.AutoCloseables.remove(id);
             ids.push(id);

@@ -1,6 +1,6 @@
 /*globals $, M*/
 /*Port jquery features to cash-dom and shave a few kb of dependencies*/
-['click', 'mousedown', 'change', 'submit'].forEach(function (a) {
+["click", "mousedown", "change", "submit"].forEach(function (a) {
   $.fn[a] = function (cb) {
     if (arguments.length === 0) {
       return this.trigger(a);
@@ -14,7 +14,7 @@
     }
   };
 });
-['focus', 'blur'].forEach(function (a) {
+["focus", "blur"].forEach(function (a) {
   $.fn[a] = function (cb) {
     if (!this.length) return;
     if (arguments.length === 0) {
@@ -32,14 +32,14 @@
 $.fn.remove = (function (_default) {
   return function () {
     //off descendant elements too
-    this.filter.apply(this, arguments).find('*').off();
+    this.filter.apply(this, arguments).find("*").off();
     _default.apply(this, arguments);
     return this;
   };
 })($.fn.remove);
 $.fn.html = (function (_default) {
   return function () {
-    this.find('*').off();
+    this.find("*").off();
     return _default.apply(this, arguments);
   };
 })($.fn.html);
@@ -48,8 +48,8 @@ $.fn.attr = (function (_default) {
     if (arguments.length > 1) {
       if (!val) {
         switch (attr) {
-          case 'checked':
-          case 'disabled':
+          case "checked":
+          case "disabled":
             return this.removeAttr(attr);
         }
       }
@@ -58,20 +58,28 @@ $.fn.attr = (function (_default) {
   };
 })($.fn.attr);
 $.fn.toArray = function () {
-  return Array.from(this);
+  return this.get();
 };
 (function () {
   var queues = new Map();
   var _proceed = function (queue) {
-    var next = queue.shift();
-    if (!next) {
-      return queues.delete(this);
-    } else next.call(this, _proceed.bind(this, queue), queue);
+    try {
+      var next = queue.shift();
+      if (!next) {
+        return queues.delete(this);
+      } else next.call(this, _proceed.bind(this, queue), queue);
+    } catch (e) {
+      setTimeout(function () {
+        throw e;
+      });
+      queue.length = 0;
+      queues.delete(queue);
+    }
   };
   $.fn.$enqueue = function (next, fn) {
     var _self = this,
       _count = this.length;
-
+    if (_count < 1) return fn.call(_self), _self;
     function finish(next) {
       if (--_count === 0) fn.call(_self);
       next();
@@ -83,7 +91,6 @@ $.fn.toArray = function () {
       if (fn) queue.push(finish);
       //Start the queue
       if (!queues.has(this)) {
-        this._id = this._id || Math.floor(Math.random() * 10);
         queues.set(this, queue);
         _proceed.call(this, queue);
       }
@@ -95,18 +102,21 @@ $.fn.toArray = function () {
       return queues.has(this);
     });
     if (pending.length === 0) return this;
-    var start,
+    var start = [],
       i = pending.length;
     pending
       .$enqueue(function (next) {
-        //Wait for all queues to finish
-        if (--i === 0 && start) start();
+        //Wait for all queues to finish before calling start
+        if (--i === 0)
+          start.forEach(function (e) {
+            e();
+          });
         next();
       })
       .each(function () {
         var queue = queues.get(this);
+        //should always be true
         if (queue) {
-          //should always be true
           queues.delete(this);
           queue._finished = true;
           if (queue._current) {
@@ -116,12 +126,12 @@ $.fn.toArray = function () {
       });
     return this.$enqueue(function (next) {
       if (i === 0) next();
-      else start = next;
+      else start.push(next);
     });
   };
 })();
 $.fn.animate = function (props, speed, fn) {
-  if (typeof speed === 'function') fn = speed;
+  if (typeof speed === "function") fn = speed;
   function go(next, queue) {
     var target = this;
     var options = Object.assign({}, props, {
@@ -131,9 +141,9 @@ $.fn.animate = function (props, speed, fn) {
       Object.assign(
         {
           duration:
-            speed === 'fast' || speed === undefined
+            speed === "fast" || speed === undefined
               ? 200
-              : speed === 'slow'
+              : speed === "slow"
               ? 600
               : isNaN(speed)
               ? 400
@@ -141,8 +151,8 @@ $.fn.animate = function (props, speed, fn) {
           complete: next,
         },
         options,
-        queue._finished ? {duration: 0} : null,
-      ),
+        queue._finished ? {duration: 0} : null
+      )
     );
   }
 
@@ -150,28 +160,28 @@ $.fn.animate = function (props, speed, fn) {
 };
 $.fn.fadeIn = function (speed, cb) {
   return this.$enqueue(function (next) {
-    if ($(this).css('display') === 'none') $(this).css('opacity', 0).show();
+    if ($(this).css("display") === "none") $(this).css("opacity", 0).show();
     next();
   }).animate(
     {
       opacity: 1,
-      easing: 'linear',
+      easing: "linear",
     },
     speed,
-    cb,
+    cb
   );
 };
 $.fn.fadeOut = function (speed, cb) {
   return this.animate(
     {
       opacity: 0,
-      easing: 'linear',
+      easing: "linear",
     },
     speed,
     function () {
       $(this).hide();
       cb && cb.apply(this);
-    }.bind(this),
+    }.bind(this)
   );
 };
 
@@ -180,4 +190,4 @@ $.fn.delay = function (duration) {
     duration: duration,
   });
 };
-$.fn.jquery = 'grace';
+$.fn.jquery = "grace";

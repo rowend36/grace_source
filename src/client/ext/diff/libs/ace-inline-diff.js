@@ -823,7 +823,6 @@
         this.$adjustDiffs = this.adjustDiffs.bind(this);
         this.$changeCharacterSize = u.updateScrollOffset.bind(null, this);
         this.editor.on('change', this.$adjustDiffs);
-        this.widgetSession.once('tokenizerUpdate', this.$decorate);
         this.editor.renderer.on(
             'changeCharacterSize',
             this.$changeCharacterSize

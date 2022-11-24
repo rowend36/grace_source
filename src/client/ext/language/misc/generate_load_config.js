@@ -57,7 +57,7 @@ define(function (require, exports, module) {
         el.find('.btn').on('click', function () {
             if (!currentData)
                 return console.error(
-                    'Found impossible situation: currentData called twice',
+                    'Found impossible situation: currentData called twice'
                 );
             var type = this.name;
 
@@ -80,7 +80,7 @@ define(function (require, exports, module) {
                 currentData = null;
                 nextItem.apply(
                     null,
-                    onResult(type, path, priority, data.initialValue.priority),
+                    onResult(type, path, priority, data.initialValue.priority)
                 );
             }
             if (waiting.length) {
@@ -104,8 +104,8 @@ define(function (require, exports, module) {
                         data.storedValue.type,
                         path,
                         data.storedValue.priority,
-                        data.initialValue.priority,
-                    ),
+                        data.initialValue.priority
+                    )
                 );
             } else if (isShown) {
                 waiting.push([path, next, data]);
@@ -212,16 +212,16 @@ define(function (require, exports, module) {
                                     Configs._debug = false;
                                 }
                             },
-                            true,
+                            true
                         );
                     },
                     function () {
                         Notify.ask('Apply settings? ', function () {
                             Configs.save(config);
                         });
-                    },
+                    }
                 );
-            },
+            }
         );
     }
     function saveFile(server, path, res) {
@@ -290,15 +290,15 @@ define(function (require, exports, module) {
                                     server,
                                     projectFolder,
                                     extensions,
-                                    folders,
+                                    folders
                                 );
-                            },
+                            }
                         );
                     },
                 });
             },
             'js',
-            ['py', 'cpp,c,h,cxx', 'java', 'ts,tsx,js,jsx'],
+            ['py', 'cpp,c,h,cxx', 'java', 'ts,tsx,js,jsx']
         );
     };
 });

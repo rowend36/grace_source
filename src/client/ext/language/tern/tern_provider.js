@@ -16,7 +16,7 @@ define(function (require, exports, module) {
       ternPlugins: 'doc_comment',
       useWebWorkerForTern: false,
     },
-    'intellisense.tern',
+    'intellisense.tern'
   );
   var BaseProvider = require('grace/ext/language/base_provider').BaseProvider;
   require('grace/core/config').Config.registerInfo(
@@ -31,7 +31,7 @@ define(function (require, exports, module) {
         type: 'number',
       },
     },
-    'intellisense.tern',
+    'intellisense.tern'
   );
 
   var restart = Utils.delay(function () {
@@ -49,6 +49,8 @@ define(function (require, exports, module) {
         break;
       case 'ternPriority':
         TERN.priority = e.value();
+        /* fall through */
+      case 'enableTern':
         ServerHost.toggleProvider(TERN);
     }
   });
@@ -64,7 +66,7 @@ define(function (require, exports, module) {
       if (!ternOptions.workerScript) {
         ternOptions.workerScript = FileUtils.resolve(
           FileUtils.dirname(module.uri),
-          './libs/tern_worker.js',
+          './libs/tern_worker.js'
         );
       }
       if (ternOptions.useWorker === false) {
@@ -109,8 +111,8 @@ define(function (require, exports, module) {
     triggerRegex: /[^\.]\.$/,
     embeddable: true,
     hasArgHints: true,
-    hasKeyWords: true,
     hasRename: true,
+    hasKeyWords: true,
     priority: ternConfig.ternPriority,
   });
   BaseProvider.setupLifeCycle(TERN);
@@ -147,7 +149,7 @@ define(function (require, exports, module) {
     function fail(e) {
       debug.error(e);
       require('grace/ui/notify').Notify.error(
-        'Unable to add defs from ' + path,
+        'Unable to add defs from ' + path
       );
       cb && cb(e);
     }

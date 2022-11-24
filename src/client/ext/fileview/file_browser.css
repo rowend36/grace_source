@@ -8,31 +8,32 @@
     display: none;
 }
 
-.fileview-recycler>.fileview-footer {
+.fileview-recycler > .fileview-footer {
     position: absolute;
 }
 
-.fileview-recycler>.file-item {
+.fileview-recycler > .file-item {
     will-change: top;
+    backface-visibility: hidden;
     contain: strict;
 }
 
-.fileview-info>.file-item {
+.fileview-info > .file-item {
     height: 48px;
     line-height: 48px;
     border-bottom-width: 1px;
     border-bottom-style: solid;
 }
 
-.fileview-info>.file-item>span>.type-icon {
+.fileview-info > .file-item > span > .type-icon {
     font-size: 24px;
 }
 
-.fileview-info>.file-item>span>.folder-icon {
+.fileview-info > .file-item > span > .folder-icon {
     margin-left: -6px;
 }
 
-.fileview-info>.file-item>.file-info {
+.fileview-info > .file-item > .file-info {
     font-size: 12px;
     left: -90%;
     top: 32px;
@@ -49,7 +50,7 @@
     position: relative;
 }
 
-.fileview-footer>h6 {
+.fileview-footer > h6 {
     margin: 0;
     line-height: 40px;
 }
@@ -100,11 +101,11 @@
     border: 1px solid #070707;
 }
 
-.filenav>span:last-child>.material-icons {
+.filenav > span:last-child > .material-icons {
     font-size: 150%;
 }
 
-.filenav>span {
+.filenav > span {
     font-size: 110%;
     line-height: normal;
     margin-left: 5px;
@@ -167,7 +168,7 @@
     font-weight: normal;
 }
 
-.fileview>.fileview {
+.fileview > .fileview {
     padding: 0;
     padding-left: 12px;
     width: 100%;
@@ -176,7 +177,7 @@
     overflow: visible;
 }
 
-.fileview>.fileview-recycler {
+.fileview > .fileview-recycler {
     padding: 0;
     left: 12px;
     right: 0;
@@ -202,5 +203,12 @@
     background: none;
     height: 40px;
 }
-
+@media only screen and (min-width: 720px), only screen and (max-height: 400px) {
+    .fileview-header {
+        /*Match action_bar size in setup_actionbar.js*/
+        /*line-height: 48px;*/
+        height: 48px;
+        padding-top: 8px;
+    }
+}
 /*endregion*/

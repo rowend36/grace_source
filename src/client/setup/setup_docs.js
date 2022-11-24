@@ -10,29 +10,20 @@ define(function (require, exports, module) {
     //needed for Docs.defaults
     require('../editor/editor_settings');
 
-    appEvents.on('tabClosed', function (ev) {
-        if (Docs.has(ev.tab)) {
-            closeDoc(ev.tab);
-            console.log(ev.tab,DocsTab.numTabs());
-            if (DocsTab.numTabs() === 0) {
-                openDoc(null, '', null, {autoClose: true});
-            }
-        }
-    });
 
     var Config = require('../core/config').Config;
     Config.registerAll(
         {
             detectIndentation: true,
         },
-        'documents',
+        'documents'
     );
     Config.registerInfo(
         {
             detectIndentation:
                 'Automatically detect indentation in new files. Uses resource context.',
         },
-        'documents',
+        'documents'
     );
     appEvents.on('openDoc', function (e) {
         //TODO: usually not triggered for already loaded documents

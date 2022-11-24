@@ -1,4 +1,5 @@
 define(function (require, exports, module) {
+  /* globals Env */
   'use strict';
   /**
    * Blob is a storage mechanism for data the
@@ -6,6 +7,8 @@ define(function (require, exports, module) {
    * It is adaptable, cleans up after itself,
    * supports both sync and async data
    * and stores metadata for the data.
+   * In future async data might use IndexedDb once quota workarounds
+   * are figured out.
    * Managed data storage for stuff you can afford to lose.
    */
   var config = require('../core/config');
@@ -16,9 +19,10 @@ define(function (require, exports, module) {
   var appConfig = config.Config.registerAll(
     {
       nextCleanTime: 0,
+      maxStoreSize: Env.isWebView ? '5mb' : '500kb',
       clearCache: false,
     },
-    'documents',
+    'documents'
   );
   config.Config.registerInfo(
     {
@@ -29,7 +33,7 @@ define(function (require, exports, module) {
       },
       nextCleanTime: 'no-user-config',
     },
-    'documents',
+    'documents'
   );
   var maxStoreSize;
   config.Config.on('documents', updateSize);
@@ -42,9 +46,9 @@ define(function (require, exports, module) {
         'nextCleanTime',
         Math.min(
           appConfig.nextCleanTime,
-          new Date().getTime() + 1000 * 60 * 60 * 24,
+          new Date().getTime() + 1000 * 60 * 60 * 24
         ),
-        'documents',
+        'documents'
       );
       e.preventDefault();
     }
@@ -83,10 +87,10 @@ define(function (require, exports, module) {
       } else if (metaData.obj) value = JSON.parse(value);
     } else {
       if (cb) Utils.setImmediate(cb);
-      return undefined;
+      return;
     }
 
-    if (metaData && metaData.async) {
+    if (metaData.async || (cb && metaData.async === undefined)) {
       if (!cb)
         throw new Error('Must provide callback when retrieving async data');
       Utils.setImmediate(cb, value);
@@ -114,6 +118,10 @@ define(function (require, exports, module) {
       pr: (info && info.priority) || 1,
       key: Utils.genID('b'), //createKey
     };
+    if (BlobRegistry.get()[metaData.key]) {
+      throw new Error('ID collision ' + metaData.key);
+    }
+
     if (value !== undefined) {
       for (var i in info) {
         if (!metaData[i])
@@ -151,7 +159,6 @@ define(function (require, exports, module) {
 
     //Stage 2 - Remove duplicates and update registry
     function onSave(saved) {
-      var register = BlobRegistry.get();
       if (!saved) {
         return ret(false);
       }
@@ -160,6 +167,7 @@ define(function (require, exports, module) {
         if (oldKey) exports.removeBlob(oldKey);
       }
       if (value === undefined) return ret(false);
+      var register = BlobRegistry.get();
       register[metaData.key] = metaData;
       register.size += metaData.size;
       if (register.size > maxStoreSize) {
@@ -219,7 +227,14 @@ define(function (require, exports, module) {
       t += Utils.getCreationDate(i).getTime() - now;
       toClean.push({
         key: i,
+        created: Utils.getCreationDate(i),
+        size: size,
+        priority: priority,
         score: score,
+        force: force,
+        maxSize: maxSize,
+        maxStoreSize: maxStoreSize,
+        currentSize: register.size,
       });
     }
     toClean[toClean.length - 1].score *= 2;
@@ -267,35 +282,30 @@ define(function (require, exports, module) {
       var a = 'Getting Remaining Quota Using String Concatenation';
       try {
         while (true) {
-          localStorage['s' + i] = a;
+          storage['s' + i] = a;
           a = a + a;
         }
       } catch (e) {
         var size = a.length / 2 + (a.length > 1000 ? determineQuota(i + 1) : 0);
-        localStorage.removeItem('s' + i);
+        storage.removeItem('s' + i);
         return size;
       }
     }
     return 1e10;
   }
   function getKeys() {
-    var keys = [];
-    for (var i = 0; i < storage.length; i++) {
-      keys.push(storage.key(i));
+    if (typeof storage.getKeys == 'function') {
+      return JSON.parse(storage.getKeys());
+    } else {
+      var keys = [];
+      for (var i = 0; i < storage.length; i++) {
+        keys.push(storage.key(i));
+      }
+      return keys;
     }
-    return keys;
   }
   function routineCheck(prefix) {
-    var keys = (typeof storage.getKeys == 'function'
-      ? storage.getKeys()
-      : getKeys()
-    ).filter(function (e) {
-      return (
-        e.length == prefix.length + 9 &&
-        e.startsWith(prefix + '_') &&
-        /[_a-z0-9]{8}$/i.test(e.slice(prefix.length + 1))
-      );
-    });
+    var keys = getKeys().filter(Utils.isID.bind(null, prefix));
     return keys;
   }
 
@@ -317,7 +327,7 @@ define(function (require, exports, module) {
       configure(
         'nextCleanTime',
         Math.floor(time) + 60 /*s*/ * 60 /*m*/ * 24 /*h*/ * 7 /*days*/,
-        'documents',
+        'documents'
       );
     }
   })();

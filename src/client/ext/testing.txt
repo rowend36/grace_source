@@ -1,0 +1,7 @@
+1 Android Fs should pass fs tests
+2. Android git should pass git tests
+3. Keybinding and window key listener
+4. Partial Undo and use with ot.js or Shared Store
+5. Emmet configuration
+6. Browser fs and rest fs tests
+7. Format on save - delay appEvents.saveDoc

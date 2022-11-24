@@ -8,10 +8,8 @@ define(function (require, exports, module) {
     var getActiveEditor = require('../editor/host_editor').$getActiveEditor;
     var getMainEditor = Editors.$getEditor;
     var rootView = require('./setup_root').rootView;
-    var appEvents = require('../core/app_events').AppEvents;
     var Annotations = require('ace!annotations').Annotations;
     require('../editor/editor_fonts');
-    // var setTheme = require('../themes/themes').setTheme;
     var View = require('../ui/view').View;
 
     //Editor View
@@ -27,14 +25,14 @@ define(function (require, exports, module) {
         function (session) {
             Annotations.updateWorkers = this;
             if (session.bgTokenizer) this(session);
-        }.bind(Annotations.updateWorkers),
+        }.bind(Annotations.updateWorkers)
     );
     Annotations.removeWorkers = after(
         appEvents.on.bind(appEvents, 'fullyLoaded'),
         function (session) {
             Annotations.removeWorkers = this;
-            if (session.bgTokenizer) this(session);
-        }.bind(Annotations.removeWorkers),
+            this(session);
+        }.bind(Annotations.removeWorkers)
     );
     //We modified ace to use getPopupMargins when positioning popups.
     Editors.onEach(function (editor) {

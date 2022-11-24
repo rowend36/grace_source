@@ -42,7 +42,7 @@ define(function (require, exports, module) {
             caption,
             factory,
             config,
-            isDefault,
+            isDefault
         ) {
             serverFactories[type] = {
                 create: factory,
@@ -71,6 +71,7 @@ define(function (require, exports, module) {
             if (factory) {
                 //The factory can modify the type
                 server = factory.create(params, id);
+                server.label = factory.caption;
             } else {
                 throw new Error('Unknown server type ' + type);
             }
@@ -98,7 +99,7 @@ define(function (require, exports, module) {
                     loadedServers[i] = FileServers.createServer(
                         params.type,
                         params,
-                        i,
+                        i
                     );
                 } catch (e) {
                     debug.error(e);
@@ -162,10 +163,10 @@ define(function (require, exports, module) {
                                     {
                                         fileServer: id,
                                         encoding: intent.encoding,
-                                    },
+                                    }
                                 );
                             } else next();
-                        },
+                        }
                     );
                 },
                 function () {
@@ -173,7 +174,7 @@ define(function (require, exports, module) {
                 },
                 1,
                 false,
-                true,
+                true
             );
         },
         availableEncodings: function (server) {
@@ -282,7 +283,7 @@ define(function (require, exports, module) {
                 function (err) {
                     if (!err) server.delete(path, cb);
                     else cb && cb(err);
-                },
+                }
             );
         },
     };

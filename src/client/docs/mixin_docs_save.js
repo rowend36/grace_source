@@ -16,7 +16,7 @@ define(function (require, exports, module) {
       autoSave: false,
       autoSaveInterval: '1min',
     },
-    'documents',
+    'documents'
   );
   Config.registerInfo(
     {
@@ -26,7 +26,7 @@ define(function (require, exports, module) {
         type: 'time',
       },
     },
-    'documents',
+    'documents'
   );
 
   Config.on('documents', function (ev) {
@@ -34,14 +34,14 @@ define(function (require, exports, module) {
       case 'autoSaveInterval':
         Docs.$autoSave = Utils.delay(
           exports.saveDocs,
-          Math.max(Utils.parseTime(appConfig.autoSaveInterval), 5000),
+          Math.max(Utils.parseTime(appConfig.autoSaveInterval), 5000)
         );
         break;
       case 'autoSave':
         forEachDoc(function (doc) {
           if (doc.allowAutoSave !== undefined) {
             doc.toggleAutosave(
-              Config.forPath(doc.getSavePath(), 'documents', 'autoSave'),
+              Config.forPath(doc.getSavePath(), 'documents', 'autoSave')
             );
           }
         });
@@ -85,7 +85,7 @@ define(function (require, exports, module) {
                 mainDoc.warned = true;
                 Notify.warn(
                   'Autosave disabled for duplicates of this document.',
-                  1000,
+                  1000
                 );
               }
             }
@@ -102,18 +102,18 @@ define(function (require, exports, module) {
           //Enable autosave if not explicitly disabled
           if (doc.allowAutoSave === undefined) {
             doc.toggleAutosave(
-              Config.forPath(doc.getSavePath(), 'documents', 'autoSave'),
+              Config.forPath(doc.getSavePath(), 'documents', 'autoSave')
             );
             if (doc.allowAutoSave) Notify.info('Autosave enabled');
           }
           doc.save(callback);
-        },
+        }
       );
     }
   };
   Docs.$autoSave = Utils.delay(
     exports.saveDocs,
-    Math.max(Utils.parseTime(appConfig.autoSaveInterval), 5000),
+    Math.max(Utils.parseTime(appConfig.autoSaveInterval), 5000)
   );
   exports.saveAs = function (id, newpath, fileServer, callback) {
     var doc = getDoc(id);
@@ -174,7 +174,7 @@ define(function (require, exports, module) {
           footers: ['Rename All', 'Proceed'],
           onCreate: function (el) {
             require('../ui/ui_utils').styleClip(
-              el.find('label').addClass('clipper'),
+              el.find('label').addClass('clipper')
             );
             el.find('.modal-rename_all')
               .addClass('error')
@@ -198,7 +198,7 @@ define(function (require, exports, module) {
           el.find('input').off();
           el.find('.modal-rename_all').off();
           el.find('.modal-proceed').off();
-        },
+        }
       );
     }
     function doRename() {
@@ -239,14 +239,14 @@ define(function (require, exports, module) {
                 Notify.info('Refreshed');
               },
               true,
-              false,
+              false
             );
-          },
+          }
         );
       }
     } else {
       Notify.error(
-        'Encoding ' + encoding + ' not supported by this storage backend',
+        'Encoding ' + encoding + ' not supported by this storage backend'
       );
     }
   };
@@ -293,7 +293,7 @@ define(function (require, exports, module) {
             doc.setDirty();
           }
           callback(null, false);
-        },
+        }
       );
     }
   };

@@ -26,11 +26,12 @@ define(function (require, exports, module) {
   }
   /**
    * executes beautify on currently selected code or all code if nothing is selected
-   * @param {editor} editor
-   * @param {bool} [unselect=false] - pass true to unselect the selection after execution
-   * @param {bool} [removeBlanks=false] - pass true to remove unnecessary blank and EOL space instead of beautify (same as NotePad++ command)
+   * @param {Editor} editor
+   * @param {boolean} [unselect=false] - pass true to unselect the selection after execution
+   * @param {boolean} [removeBlanks=false] - pass true to remove unnecessary blank and EOL space instead of beautify (same as NotePad++ command)
+   * @param {boolean} [silent=false] - Disable user notification when beautify fails
    */
-  function beautify(editor, unselect, removeBlanks) {
+  function beautify(editor, unselect, removeBlanks, silent) {
     //#region determine range to beautify
     var sel = editor.getSelection();
     var session = editor.session;
@@ -51,7 +52,7 @@ define(function (require, exports, module) {
     }
     //#endregion
     //#region beautify options
-    var textContainsIndent = true;
+    var rangeContainsIndent = true;
     var indent;
     var options = {};
     if (!removeBlanks) {
@@ -65,7 +66,7 @@ define(function (require, exports, module) {
       var line = session.getLine(range.start.row);
       indent = line.match(/^\s*/)[0];
       if (range.start.column < indent.length) range.start.column = 0;
-      else textContainsIndent = false;
+      else rangeContainsIndent = false;
     }
     //#endregion
     //#region get value, set mode
@@ -116,9 +117,10 @@ define(function (require, exports, module) {
     var doc = Docs.forSession(session);
     var formatter = getFormatter(detectedMode, doc && doc.getSavePath());
     if (!formatter) {
-      Notify.warn('Unable to find formatter for this file');
+      if (!silent) Notify.warn('Unable to find formatter for this file');
       return false;
     }
+    //TODO reduce the complexity of this function.
     formatter(
       session,
       options,
@@ -144,13 +146,16 @@ define(function (require, exports, module) {
       {
         //the number of characters that indent the first line
         baseIndent: indent,
+        //Currently neither used by beautify nor handled by any plugin
+        //Since changes are applied as a diff
+        cursor: originalRangeStart,
+        silent: silent,
+        editor: editor,
         //When in partial formatting, shows whether text starts
         //from beginning of the line
-        textContainsIndent: textContainsIndent,
-        cursor: originalRangeStart,
-        editor: editor,
-        range: range,
         isPartialFormat: !formatAll,
+        range: range,
+        rangeContainsIndent: rangeContainsIndent,
       }
     );
     return true;
@@ -209,6 +214,7 @@ define(function (require, exports, module) {
       console.error(e);
     }
   }
+  exports.beautify = beautify;
   exports.FormatCommands = [
     {
       name: 'beautify',
@@ -216,7 +222,7 @@ define(function (require, exports, module) {
         mac: 'Command-B',
         win: 'Ctrl-B',
       },
-      icon: "format_align_justify",
+      icon: 'format_align_justify',
       showIn: 'actionbar.edit',
       exec: beautify,
       readOnly: false,

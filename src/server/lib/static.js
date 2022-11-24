@@ -5,7 +5,7 @@ var fs = require('fs');
  */
 exports.static = function (rootFile, rootPrefix) {
     return function (req, res) {
-        var url = req.path;
+        var url = decodeURI(req.path);
         var resolved;
         if (url.startsWith(rootPrefix))
             resolved = '/' + url.substring(rootPrefix.length);

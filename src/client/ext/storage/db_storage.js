@@ -24,7 +24,7 @@ define(function (require, exports, module) {
         onLoadItem,
         onLostItem,
         onNoItem,
-        onFinish,
+        onFinish
     ) {
         this.itemList = [];
         this._changes = {};
@@ -92,7 +92,7 @@ define(function (require, exports, module) {
     DBStorage.prototype.$setItem = function (id, data) {
         Utils.assert(
             this.itemList.indexOf(id) > -1,
-            'Saving item that does not exist',
+            'Saving item that does not exist'
         );
         if (this._inBatch) this._changes[id] = data;
         else {
@@ -114,7 +114,7 @@ define(function (require, exports, module) {
     DBStorage.prototype.removeItem = function (id) {
         Utils.assert(
             this.itemList.indexOf(id) > -1,
-            'Removing item that does not exist',
+            'Removing item that does not exist'
         );
         this.itemList.splice(this.itemList.indexOf(id), 1);
 

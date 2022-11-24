@@ -16,7 +16,7 @@ define(function (require, exports, module) {
     var Splits = require('grace/ui/split_manager').SplitManager;
     var DBStorage = require('grace/ext/storage/db_storage').DBStorage;
     require('grace/ext/fileview/setup_fileview');
-
+    require('ace!line_widgets');
     var diffRef = Docs.getPersistentRef('diffs');
     //Pane/Document handling
     /**
@@ -110,7 +110,7 @@ define(function (require, exports, module) {
      */
     function doDiffInline(tabId, panes, asNewWindow) {
         require(['./libs/ace-inline-diff', 'css!./libs/ace-diff'], function (
-            AceInlineDiff,
+            AceInlineDiff
         ) {
             function close() {
                 if (Storage.hasItem(tabId)) Storage.removeItem(tabId);
@@ -153,7 +153,7 @@ define(function (require, exports, module) {
                         typeof getView(panes, 'origin') === 'string'
                             ? 'copy'
                             : 'swap',
-                },
+                }
             );
             editor.execCommand('foldToLevel1');
             diffView.goNextDiff(editor);
@@ -174,7 +174,7 @@ define(function (require, exports, module) {
     function doDiff2(tabId, panes, asNewWindow) {
         require(['css!./libs/ace-diff', './libs/ace-diff'], function (
             css,
-            AceDiff,
+            AceDiff
         ) {
             /**@type {Array<Editor>}*/
             var editors = [];
@@ -216,7 +216,7 @@ define(function (require, exports, module) {
                 var editor = Editors.createEditor(
                     i == 0
                         ? view.element
-                        : Splits.add($(editors[i - 1].container), 'horizontal'),
+                        : Splits.add($(editors[i - 1].container), 'horizontal')
                 );
                 editor.isDiffEditor = true;
                 var value = getView(panes, e);
@@ -299,7 +299,7 @@ define(function (require, exports, module) {
                     keepDoc(e, tabId);
                 });
                 (useInlineDiff ? doDiffInline : doDiff2)(tabId, panes, true);
-            },
+            }
         );
         return tabId;
     }
@@ -330,9 +330,9 @@ define(function (require, exports, module) {
                 (item.useInlineDiff ? doDiffInline : doDiff2)(
                     tabId,
                     res,
-                    false,
+                    false
                 );
-            },
+            }
         );
     }
     /**
@@ -387,7 +387,7 @@ define(function (require, exports, module) {
                         update(this.name, isAvailable() ? this : null);
                     },
                 showIn: 'actionbar.diff',
-            },
+            }
         );
     }
 
@@ -416,7 +416,7 @@ define(function (require, exports, module) {
         },
         function () {
             return getActiveDoc() && !getActiveDoc().isTemp();
-        },
+        }
     );
 
     //Diff from another file
@@ -475,15 +475,15 @@ define(function (require, exports, module) {
         getInfo: function (id) {
             var item = Storage.getItem(id);
             return (
-                "<span class='red-text'>" +
+                "<span class='dot red'></span><b>" +
                 (item.caption.length < 15
                     ? item.caption
                     : '...' +
                       item.caption.substring(item.caption.length - 15)) +
-                '</span>' +
-                "<span class='right green-text'>" +
+                '</b><span class="right">' +
+                '<b>' +
                 getItemName(item) +
-                '</span>'
+                '</b><span class="dot green"><span></span>'
             );
         },
         getAnnotations: Utils.noop,
@@ -503,34 +503,41 @@ define(function (require, exports, module) {
         },
         null, //on lost item - Docs cleanup after themselves without refs
         null, //on no item, nothing to do.
-        DocsTab.recreate.bind(DocsTab),
+        DocsTab.recreate.bind(DocsTab)
     );
     appEvents.on('loadDoc', function (e) {
-        var waiting = registry[e.doc.id];
-        if (!waiting) return;
+        var waitingTabs = registry[e.doc.id];
+        if (!waitingTabs) return;
         e.doc.ref(diffRef);
-        waiting.forEach(function (tabId) {
+        waitingTabs.forEach(function (tabId) {
             var item = Storage.getItem(tabId);
             if (item.ids.filter(Docs.has).length === item.ids.length)
                 loadDiffView(tabId, item);
         });
     });
     appEvents.on('documentsLoaded', function () {
-        var r = false;
+        //Cleanup
+        var removedTabs = [];
         for (var i in registry) {
             var waitingTabs = registry[i];
             if (waitingTabs && !Docs.has(i) && Docs.canDiscard(i)) {
                 registry[i] = undefined;
                 waitingTabs.forEach(function (tabId) {
                     if (Storage.hasItem(tabId)) {
-                        console.log('Discarding tab ' + tabId);
+                        removedTabs.push(tabId);
                         Storage.removeItem(tabId);
                     }
                 });
-                r = true;
             }
         }
-        if (r) DocsTab.recreate();
+        if (removedTabs.length > 0) {
+            for (i in registry) {
+                for (var j = 0; j < removedTabs.length && Docs.has(i); j++) {
+                    releaseDoc(i, removedTabs[j]);
+                }
+            }
+            DocsTab.recreate();
+        }
     });
     exports.registerDiffFactory = registerDiffFactory;
     exports.addToDiffMenu = addToDiffMenu;

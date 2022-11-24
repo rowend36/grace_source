@@ -89,7 +89,7 @@ define(function (require, exports, module) {
         editor,
         closeOnCursorActivity,
         fadeOutDuration,
-        onClose,
+        onClose
     ) {
         var node = elt('div', 'ace_tooltip ' + this.cls + 'tooltip');
         if (typeof content === 'string') node.innerHTML = content;
@@ -176,7 +176,7 @@ define(function (require, exports, module) {
                     new Error().stack;
             }
 
-            debug.log('tsError:\t ', message, '\n details:', details); //log the message and deatils (if any)
+            debug.log('Client Error:\t ', message, '\n details:', details); //log the message and deatils (if any)
 
             if (typeof message === 'string' && !noPopup) {
                 //show popup
@@ -190,14 +190,14 @@ define(function (require, exports, module) {
                     message = ' (no error passed)';
                 }
                 throw new Error(
-                    'ts show error failed.' +
+                    'Client.showError failed.' +
                         message +
                         '\n\n fail error: ' +
                         ex.name +
                         '\n' +
                         ex.message +
                         '\n' +
-                        ex.stack,
+                        ex.stack
                 );
             }, 0);
         }
@@ -208,7 +208,7 @@ define(function (require, exports, module) {
         y,
         editor,
         max_width,
-        max_height,
+        max_height
     ) {
         tip.style.top = 0;
         tip.style.bottom = tip.style.right = tip.style.left = tip.style.maxWidth = tip.style.maxHeight =
@@ -265,7 +265,7 @@ define(function (require, exports, module) {
             tip.style.bottom =
                 Math.max(
                     screenHeight - top + lineHeight,
-                    margins.marginBottom,
+                    margins.marginBottom
                 ) + 'px';
         } else {
             tip.style.maxHeight = spaceBelow + 'px';
@@ -308,10 +308,14 @@ define(function (require, exports, module) {
                 'h6',
                 'tooltip-header',
                 'Rename ',
-                elt('span', 'tooltip-name', data.name || ''),
+                elt('span', 'tooltip-name', data.name || '')
             ),
             editor,
             false,
+            null,
+            function () {
+                $(goBtn).off();
+            }
         );
         tip.className += ' large-tooltip';
         tip.style.padding = '15px';
@@ -331,7 +335,7 @@ define(function (require, exports, module) {
         newNameInput.style.marginTop = '3px'; //bad
         goBtn.textContent = 'Rename';
         goBtn.setAttribute('type', 'button');
-        goBtn.addEventListener('click', function () {
+        $(goBtn).on('click', function () {
             tip.$closeThisTip();
             refocus();
             var newName = newNameInput.value;
@@ -346,8 +350,8 @@ define(function (require, exports, module) {
         tip.appendChild(elt('div', 'clearfix mt-10'));
         tip.appendChild(
             document.createTextNode(
-                '\n(WARNING: Cannot replace refs in files that are not loaded!)',
-            ),
+                '\n(WARNING: Cannot replace refs in files that are not loaded!)'
+            )
         );
         this.moveTooltip(tip, null, null, editor);
     };
@@ -387,7 +391,7 @@ define(function (require, exports, module) {
                     -1,
                     function () {
                         moveToLastFocus();
-                    },
+                    }
                 );
                 close = container.$closeThisTip;
                 container.className += ' large-tooltip';
@@ -398,12 +402,15 @@ define(function (require, exports, module) {
                 container = sideView.el;
                 //use a live list
                 sideView.options.focusable = sideView.el.getElementsByTagName(
-                    'textarea',
+                    'textarea'
                 );
                 sideView.open();
             }
             var refs = new References(container, ts, editor, data);
-            refs.blur = close;
+            refs.onEsc = function () {
+                close();
+                return true;
+            };
             refs.footer = ['Close'];
             refs.$close = close;
             refs.render();
@@ -413,8 +420,8 @@ define(function (require, exports, module) {
                     elt(
                         'i',
                         'color-inactive info-tooltip',
-                        'This is not guaranteed to find references in other files or references for non-private variables.',
-                    ),
+                        'This is not guaranteed to find references in other files or references for non-private variables.'
+                    )
                 ).style.padding = '10px';
             } else {
                 sideView.returnFocus = moveToLastFocus;
@@ -441,7 +448,7 @@ define(function (require, exports, module) {
                             editor.setOption('animatedScroll', true); //re-enable
                         }
                     },
-                    true,
+                    true
                 );
             });
 
@@ -449,7 +456,7 @@ define(function (require, exports, module) {
                 this.moveTooltip(container, null, null, editor);
                 container.style.contaner = '150px';
             } else refs.el.style.overflow = 'auto';
-        },
+        }
     );
 
     UI.prototype.showArgHints = function showArgHints(ts, editor, activeIndex) {
@@ -479,7 +486,7 @@ define(function (require, exports, module) {
                         ts.cachedArgHints.isClosed = true;
                     }
                     ts.argHintTooltip = null;
-                },
+                }
             );
         }
     };
@@ -523,7 +530,7 @@ define(function (require, exports, module) {
         });
         createSideView = null;
     };
-    var ItemList = require('grace/ui/itemlist').ItemList;
+    var ItemList = require('grace/ui/item_list').ItemList;
     var FocusManager = require('grace/ui/focus_manager').FocusManager;
     var sharedRenderer;
     //copied from SearchTab
@@ -602,7 +609,7 @@ define(function (require, exports, module) {
             } else {
                 start = clientDoc.indexToPosition(ref.span.start);
                 end = clientDoc.indexToPosition(
-                    ref.span.start + ref.span.length,
+                    ref.span.start + ref.span.length
                 );
             }
             session = clientDoc;
@@ -615,7 +622,7 @@ define(function (require, exports, module) {
             if (clientDoc.length < 10 || ref.start) {
                 //No need to get substring.
                 session = new require('ace!edit_session').EditSession(
-                    clientDoc,
+                    clientDoc
                 );
             } else {
                 //Speed up tokenization/memory usage by reducing size
@@ -632,7 +639,7 @@ define(function (require, exports, module) {
                 var res = clientDoc.substring(s, e);
                 var linesBefore = require('grace/core/utils').Utils.repeat(
                     offStart.row,
-                    '\n',
+                    '\n'
                 );
                 session = new EditSession(linesBefore + res, res);
                 // require("grace/core/utils").Utils.assert(session
@@ -683,7 +690,7 @@ define(function (require, exports, module) {
                 data.start ? data.start.row + 1 : '',
                 ', column ',
                 data.start ? data.start.column : '',
-                '</i>',
+                '</i>'
             );
         } else if (data.span) {
             parts.push('<i>Offset ', data.span.start, '</i>');

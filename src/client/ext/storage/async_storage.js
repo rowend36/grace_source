@@ -34,9 +34,6 @@ define(function (require, exports, module) {
   AsyncStorage.prototype.clear = asyncify(function () {
     return this.s.clear();
   });
-  AsyncStorage.prototype.getKeys = asyncify(function () {
-    return this.s.getKeys();
-  });
   AsyncStorage.prototype.isAsync = true;
   AsyncStorage.prototype.__doSync = asyncify(noop);
   exports.AsyncStorage = AsyncStorage;

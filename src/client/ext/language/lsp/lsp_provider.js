@@ -3,7 +3,7 @@ define(function (require, exports, module) {
         {
             lspConfigs: [],
         },
-        'intellisense',
+        'intellisense'
     );
     var Notify = require('grace/ui/notify').Notify;
 
@@ -32,7 +32,7 @@ options?: Server options to send to language service',
                 ],
             },
         },
-        'intellisense',
+        'intellisense'
     );
     var ServerHost = require('grace/ext/language/server_host').ServerHost;
     var BaseProvider = require('grace/ext/language/base_provider').BaseProvider;
@@ -92,7 +92,7 @@ options?: Server options to send to language service',
                 name: self.name,
             });
             self.attachToEditor(editor, self.instance, cb);
-        },
+        }
     );
     LspProvider.prototype.updateCapabilities = function (has) {
         var prov = this;
@@ -103,7 +103,7 @@ options?: Server options to send to language service',
                         has.completionProvider.triggerCharacters
                             .map(Utils.regEscape)
                             .join('|') +
-                        ')$',
+                        ')$'
                 );
             }
         } else prov.hasCompletions = false;
@@ -115,6 +115,7 @@ options?: Server options to send to language service',
         if (!has.documentRangeFormattingProvider)
             prov.hasRangeFormatting = false;
         if (!has.renameProvider) prov.hasRename = false;
+        if (Object.keys(has).length < 1) prov.hasAnnotations = false;
         ServerHost.toggleProvider(prov, prov.modes, true);
     };
     LspProvider.prototype.changeOptions = function () {
@@ -125,9 +126,9 @@ options?: Server options to send to language service',
                         'workspace/didChangeWorkspaceFolders',
                         {
                             settings: this.options,
-                        },
+                        }
                     );
-                }.bind(this),
+                }.bind(this)
             );
         }
     };
@@ -155,9 +156,9 @@ options?: Server options to send to language service',
                                 added: current && [current],
                                 removed: old && [old],
                             },
-                        },
+                        }
                     );
-                }.bind(this),
+                }.bind(this)
             );
         }
     };

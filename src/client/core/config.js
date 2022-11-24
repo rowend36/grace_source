@@ -5,12 +5,8 @@ define(function (require, exports, module) {
   var debug = console;
   if (window.appStorage) {
     //Android
-    window.appStorage = null;
     backend = window.appStorage;
-    var a = backend.getKeys;
-    backend.getKeys = function () {
-      return JSON.parse(a.call(backend));
-    };
+    window.appStorage = null;
   } else {
     backend = window.localStorage;
   }
@@ -37,7 +33,7 @@ define(function (require, exports, module) {
         {
           value: namespace,
           enumerable: false,
-        },
+        }
       );
     }
     return (namespaces[name] = namespace);
@@ -66,7 +62,7 @@ define(function (require, exports, module) {
     var store = namespaces[ns];
     return (store[name] = store.__memory[name] = getObj(
       ns + '.' + name,
-      defaultValue,
+      defaultValue
     ));
   }
 

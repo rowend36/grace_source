@@ -7,14 +7,14 @@ define(function (require, exports, module) {
     var getEvent = require('../setup/setup_key_listener').getEvent;
     var keys = require('ace!lib/keys');
     var Actions = require('grace/core/actions');
-
     var handleNavigate = function (editor, args) {
         var parent =
             document.activeElement &&
             $(document.activeElement).closest('.soft-navigation');
+
         var self = keyHandlers[parent.data('keyhandler')];
         if (!self) return false;
-        var ev = args.event || (args.event = getEvent());
+        var ev = args.event || getEvent();
         var el = self.el;
         if (
             ev.defaultPrevented ||
@@ -24,17 +24,16 @@ define(function (require, exports, module) {
                 this.bindKey == 'Esc'
             )
         ) {
-            waitForBlur(ev.target, ev);
+            waitForBlur(self, ev.target, ev, this.bindKey);
         } else {
             KeyListener.dispatchEvent(self, ev, this.bindKey);
         }
     };
     var _isAvailable = function () {
-        //does not work when the event originated from an editor
+        //Does not work when the event originated from an editor
         var e = getEvent();
         if (!e) return false;
-        var parent = $(e.target).closest('.soft-navigation')[0];
-        if (parent) return true;
+        return $(e.target).closest('.soft-navigation').length > 0;
     };
     [
         'Up',
@@ -42,10 +41,15 @@ define(function (require, exports, module) {
         'Left',
         'Right',
         'Tab',
+        'Shift-Up',
+        'Shift-Down',
+        'Shift-Left',
+        'Shift-Right',
         'Shift-Tab',
         'Esc',
         'Space',
         'Enter',
+        'Shift-Enter',
         'F10',
         'ContextMenu',
     ].forEach(function (e) {
@@ -55,11 +59,11 @@ define(function (require, exports, module) {
             bindKey: e,
             priority: -1,
             isAvailable: _isAvailable,
+            showInPrompt: false,
             exec: handleNavigate,
-            passEvent: true
+            passEvent: true,
         });
     });
-
     var keyHandlers = {};
     var KeyListener = exports;
     KeyListener.attach = function (el, keyHandler) {
@@ -86,6 +90,7 @@ define(function (require, exports, module) {
         //TODO remove listeners
     };
     KeyListener.dispatchEvent = function (self, ev, hash) {
+        ev.stopPropagation();
         KeyListener.repeating = ev.repeat;
         var el = self.el;
         hash = (hash || keys.keyCodeToString(ev.keyCode)).toLowerCase();
@@ -112,60 +117,64 @@ define(function (require, exports, module) {
             case 'tab':
                 next = self.getPrev(index, el, 'tab');
                 break;
-            case 'shift-tab':
-                next = self.getNext(index, el, 'tab');
-                break;
+            //The following events must be explicitly handled
+            //by returning true or preventing default.
             case 'esc':
-                self.blur(ev.target);
-                break;
+                return self.onEsc(ev.target, ev) && ev.preventDefault();
             case 'space':
             // @ts-ignore
-            case 'return':
+            case 'enter':
                 if (!self.shifted) {
-                    self.onenter(index, ev);
-                    break;
+                    return self.onEnter(index, ev) && ev.preventDefault();
                 }
             /*fall through*/
             case 'f10':
             case 'contextmenu':
-                self.onRightClick && self.onRightClick(index, ev);
+                return (
+                    self.onRightClick &&
+                    self.onRightClick(index, ev) &&
+                    ev.preventDefault()
+                );
         }
         if (next) {
-            if (next == index || !isOnScreen(next, true, self.getRoot())) {
-                if (hash.indexOf('tab') < 0 && scrollView(next, hash)) {
-                    return ev.preventDefault();
-                }
+            ev.preventDefault();
+            if (
+                hash !== 'tab' &&
+                hash !== 'shift-tab' &&
+                !isOnScreen(next, true, self.getRoot()) &&
+                scrollView(next, hash)
+            ) {
+                return;
             }
-            if (next != index) {
+            if (next !== index) {
                 self.scrollIntoView(next);
                 if (self.shifted) self.shiftTo(next, index);
                 else self.moveTo(next, index);
-                return ev.preventDefault();
             }
-        }
-        if (!Env.isHardwareKeyboard) ev.preventDefault();
+        } else if (!Env.isHardwareKeyboard) ev.preventDefault();
     };
     exports.KeyListener = KeyListener;
-    
     //Implementation
-    
     //when on an element that can take input
     //we want to be able focus the next element
     //the moment the input is blurred but only if the
     //blurring is as a result of key input
-    function waitForBlur(el, ev) {
-        el.addEventListener('blur', leaveFocusable);
+    function waitForBlur(handler, el, ev, key) {
         if (el._track) {
             el._track.lastEv = ev;
+            el._track.key = key;
             el._track.clear();
         } else {
             var data = {
                 lastEv: ev,
+                key: key,
+                handler: handler,
                 clear: Utils.debounce(clearData.bind(el), 100),
             };
             el._track = data;
             data.clear();
         }
+        el.addEventListener('blur', leaveFocusable);
     }
 
     function clearData() {
@@ -178,11 +187,10 @@ define(function (require, exports, module) {
     function leaveFocusable(ev) {
         var target = ev.target;
         var data = target._track;
-        clearData.apply(target);
+        clearData.call(target);
         if (!FocusManager.isFocusable(ev.relatedTarget))
-            KeyListener.dispatchEvent(data.handler, data.lastEv);
+            KeyListener.dispatchEvent(data.handler, data.lastEv, data.key);
     }
-
     var scrollIntoView = function (
         el /*an offset into the element*/,
         offsetX,
@@ -205,7 +213,6 @@ define(function (require, exports, module) {
                 a.scrollTop = bottom - a.offsetHeight;
             }
             offsetY = top - a.scrollTop;
-
             var baseLeft = a == el.offsetParent ? 0 : a.offsetLeft;
             var left = el.offsetLeft + offsetX - baseLeft;
             var right = left + itemWidth;
@@ -278,7 +285,6 @@ define(function (require, exports, module) {
         var overflowRegex = includeHidden
             ? /(auto|scroll|hidden)/
             : /(auto|scroll)/;
-
         if (style.position === 'fixed') return document.body;
         for (var parent = element; (parent = parent.parentElement); ) {
             style = getComputedStyle(parent);
@@ -287,8 +293,6 @@ define(function (require, exports, module) {
             }
             if (overflowRegex.test(style.overflowY)) return parent;
         }
-
         return document.body;
     }
-
 });

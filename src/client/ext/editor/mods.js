@@ -9,7 +9,7 @@ define(function (require, exports, module) {
     var setImmediate = require('grace/core/utils').Utils.setImmediate;
     var appConfig = require('grace/core/config').Config.registerAll(
         {doubleClickIntervalMs: 500},
-        'toolbars',
+        'toolbars'
     );
     var RESET_CHAR = '\n\nmod-';
     var TAIL = '\n\n';
@@ -82,7 +82,7 @@ define(function (require, exports, module) {
                 handleKey(
                     keys[char.toLowerCase()],
                     /[A-Z]/.test(char) ? keys.KEY_MODS.shift : 0,
-                    char,
+                    char
                 );
             } else if (RESET_CHAR.slice(0, -1) == char) {
                 handleKey(keys.Backspace);
@@ -228,7 +228,7 @@ define(function (require, exports, module) {
             }
             var command = clipboardHandler.findKeyCommand(
                 hashId,
-                keys[keyCode],
+                keys[keyCode]
             );
             inExec = true;
             if (command && command.exec) {

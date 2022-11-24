@@ -1,4 +1,5 @@
 define(function (require, exports, module) {
+    var cyclicRequire = require;
     //runtime class
     function circularBuffer(size) {
         if (size === undefined) size = 50;
@@ -121,7 +122,7 @@ define(function (require, exports, module) {
     });
     var _shown;
     window.addEventListener('error', function (e) {
-        if (!_shown) (_shown = true), require(['../setup/setup_console']);
+        if (!_shown) (_shown = true), cyclicRequire(['../setup/setup_console']);
         debug.error2(e.error);
     });
     window.addEventListener('unhandledrejection', function (e) {

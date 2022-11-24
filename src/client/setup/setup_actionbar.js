@@ -110,6 +110,7 @@ define(function (require, exports, module) {
         }
         if (
             ActionBar.shorter !=
+            //Media query used by filebrowser.css
             (window.innerHeight <= 400 || window.innerWidth >= 720)
         ) {
             ActionBar.shorter = window.innerHeight < 400;

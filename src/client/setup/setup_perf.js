@@ -2,9 +2,10 @@ define(function (require, exports, module) {
   "use strict";
   /* globals ace */
   var perf = require("../ext/dev/profiler");
-  //Document
+  perf.profileObject(require("../core/parser").RuleParser.prototype);
+  Document
   perf.profileObject(require("ace!document").Document.prototype);
-  //Editor
+  Editor
   perf.profileObject(ace.EditSession.prototype);
   perf.profileObject(ace.Editor.prototype);
   var prop = ace.Editor.prototype;
@@ -15,6 +16,9 @@ define(function (require, exports, module) {
   // ace.Editor.prototype.$useTouchScroller = false;3
   perf.profileObject(
     require("../editor/ace_helpers").ScrollbarMarker.prototype
+  );
+  perf.profileObject(
+    require("../ui/recycler").RecyclerRenderer.prototype
   );
   perf.profileObject(
     require("ace!virtual_renderer").VirtualRenderer.prototype

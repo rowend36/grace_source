@@ -1,7 +1,7 @@
 define(function (require, exports, module) {
   'use strict';
   var Parser = require('grace/core/parser').RuleParser;
-  var parser;
+  var parser, keys;
   /**
    * Parse out Rule objects from keys.
    * {
@@ -12,7 +12,7 @@ define(function (require, exports, module) {
    */
   exports.parseKey = function (key, errHandler) {
     if (!parser) _createParser();
-    parser.setState({text: key});
+    parser.setState({state: keys.start, text: key});
     try {
       parser.walk();
       return {
@@ -70,11 +70,11 @@ define(function (require, exports, module) {
         exit: 'end_pred',
       },
       end_pred: {
-        rules: [']','space'],//add space so we can add duplicate keys
+        rules: [']', 'space'], //add space so we can add duplicate keys
         select: ['chain', 'pred', 'key', null],
       },
       EXPR: {
-        rules: ['space'],//every EXPR eats the space around it
+        rules: ['space'], //every EXPR eats the space around it
         select: ['not', 'paren', 'expr'],
       },
       not: {
@@ -125,6 +125,7 @@ define(function (require, exports, module) {
       '(': '(',
       ')': ')',
     });
+    keys = parser.compile();
     parser.listener = {
       stack: [],
       acc: null, //acccumulator with right,op,left,not,bracket properties
@@ -137,28 +138,28 @@ define(function (require, exports, module) {
         this.exprs.length = 0;
       },
       enter: function (type, pos, all) {
-        if (type !== 'EXPR') return;
+        if (type !== keys.EXPR) return;
         this.stack.push(this.acc);
         this.acc = {};
       },
       token: function (type, pos, all, text) {
         switch (type) {
-          case 'key':
+          case keys.key:
             this.keys.push(text);
             break;
-          case 'name':
+          case keys.name:
             this.acc.ctx = text;
             break;
-          case 'eq':
+          case keys.eq:
             this.acc.eq = text == '=' ? '==' : text;
             break;
-          case 'number':
+          case keys.number:
             this.acc.value = parseFloat(text);
             break;
-          case 'string':
+          case keys.string:
             this.acc.value = text.slice(1, -1).replace(/\\(.)/, _unescape);
             break;
-          case 'blob':
+          case keys.blob:
             var val = text;
             if (text == 'true') val = true;
             else if (text == 'false') val = false;
@@ -167,26 +168,26 @@ define(function (require, exports, module) {
             else val = val.replace(/\\(.)/, _unescape);
             this.acc.value = val;
             break;
-          case 'op':
+          case keys.op:
             this.acc = {
               left: this.acc,
               op: text,
               right: [],
             };
             break;
-          case ')': //Utils.assert(this.acc.op==='(')
+          case keys[')']: //Utils.assert(this.acc.op==='(')
             this.acc.op = text;
             break;
           // The '(' is only a stand in for the later ')' value
-          case '(':
-          case 'not':
+          case keys['(']:
+          case keys.not:
             this.acc.op = text;
             this.acc.right = [];
             break;
         }
       },
       exit: function (type, pos, all) {
-        if (type !== 'EXPR') return;
+        if (type !== keys.EXPR) return;
         var left = this.stack.pop();
         if (left) {
           this.acc = this.merge(left, this.acc);

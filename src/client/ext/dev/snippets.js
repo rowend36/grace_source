@@ -15,13 +15,13 @@ define(function (require, exports) {
                     alert(
                         'Globals will be detected in ' +
                             time / 1000 +
-                            's. Reload page after that',
+                            's. Reload page after that'
                     );
                     setTimeout(function () {
                         globals = exports.Snippets.listGlobals.exec(window);
                         localStorage.setItem(
                             'd-globals',
-                            JSON.stringify(globals),
+                            JSON.stringify(globals)
                         );
                         alert('Globals saved');
                     }, time);
@@ -43,7 +43,7 @@ define(function (require, exports) {
                                     new Error().stack
                                         .split('\n')
                                         .slice(2)
-                                        .join('\n'),
+                                        .join('\n')
                                 );
                                 Object.defineProperty(window, globals[i], {
                                     value: val,
@@ -122,7 +122,7 @@ define(function (require, exports) {
                         if (this && this.isNew)
                             return new (method.bind.apply(
                                 method,
-                                [null].concat(arguments),
+                                [null].concat(arguments)
                             ))();
                         return method.apply(this, arguments);
                     });

@@ -44,7 +44,7 @@ define(function (require, exports, module) {
         preventDefault: this.preventDefault,
         stopPropagation: this.stopPropagation,
       },
-      props,
+      props
     );
   };
   EventsEmitter.prototype.trigger = function (eventName, obj, noEventProps) {
@@ -119,7 +119,7 @@ define(function (require, exports, module) {
   EventsEmitter.prototype.asyncTrigger = function (
     eventName,
     props,
-    onTasksHandled,
+    onTasksHandled
   ) {
     var task = Object.assign({}, props);
     var counter,

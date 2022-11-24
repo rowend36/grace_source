@@ -11,7 +11,7 @@ define(function (require, exports, module) {
             backButtonDelay: '700ms',
             disableBackButtonTabSwitch: false,
         },
-        'ui',
+        'ui'
     );
     var Actions = require('../core/actions').Actions;
 
@@ -41,11 +41,11 @@ define(function (require, exports, module) {
         },
         function (state) {
             return state === 'tabs' || DocsTab.hasTab(state);
-        },
+        }
     );
     appEvents.on('appResumed', function () {
         State.ensure(
-            appConfig.disableBackButtonTabSwitch ? 'tabs' : DocsTab.active,
+            appConfig.disableBackButtonTabSwitch ? 'tabs' : DocsTab.active
         );
     });
     var DocsTab = new TabHost('docstab');
@@ -61,11 +61,11 @@ define(function (require, exports, module) {
                 oldTab: lastTab,
                 tab: id,
             },
-            true,
+            true
         ).defaultPrevented;
         if (!handled) return false;
         State.ensure(
-            appConfig.disableBackButtonTabSwitch ? 'tabs' : DocsTab.active,
+            appConfig.disableBackButtonTabSwitch ? 'tabs' : DocsTab.active
         );
         return true;
     };

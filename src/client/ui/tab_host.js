@@ -117,7 +117,7 @@ define(function (require, exports, module) {
                 id,
                 annotations && annotations.length
                     ? r.createAnnotationItem(annotations)
-                    : undefined,
+                    : undefined
             );
         }
         for (var i = 0; i < this.tabs.length; ) {
@@ -211,7 +211,7 @@ define(function (require, exports, module) {
                 id,
                 annotations && annotations.length
                     ? r.createAnnotationItem(annotations)
-                    : undefined,
+                    : undefined
             );
 
             // _check2(this);
@@ -226,7 +226,7 @@ define(function (require, exports, module) {
         id,
         name,
         annotations,
-        info,
+        info
     ) {
         if (!index && index !== 0) index = this.tabs.indexOf(this.active);
         this.addTab(id, name, annotations, info);
@@ -253,7 +253,7 @@ define(function (require, exports, module) {
                 .splice(
                     _transformIndex(this.tabs, this.store.get(), index),
                     0,
-                    m,
+                    m
                 );
         }
         this.$persist();
@@ -303,7 +303,7 @@ define(function (require, exports, module) {
                 this.setActive(
                     this.tabs[pos - 1] || this.tabs[pos],
                     true,
-                    false,
+                    false
                 );
             }
         }
@@ -314,7 +314,7 @@ define(function (require, exports, module) {
             console.warn(
                 'To keep tab order, do not add closed tabs[' +
                     id +
-                    ']. Call recreate instead.',
+                    ']. Call recreate instead.'
             );
             this.store.get().splice(this.store.get().indexOf(id), 1);
         }
@@ -347,7 +347,7 @@ define(function (require, exports, module) {
                 id,
                 annotations && annotations.length
                     ? r.createAnnotationItem(annotations)
-                    : undefined,
+                    : undefined
             );
             // _confirmSync(this.tabs, r);
         }, this);
@@ -362,7 +362,7 @@ define(function (require, exports, module) {
                 id,
                 annotations && annotations.length
                     ? r.createAnnotationItem(annotations)
-                    : undefined,
+                    : undefined
             );
         });
     };
@@ -385,7 +385,7 @@ define(function (require, exports, module) {
         this.replaceTab(
             id,
             name,
-            (this.getOwner(id) || this).getAnnotations(id),
+            (this.getOwner(id) || this).getAnnotations(id)
         );
     };
 

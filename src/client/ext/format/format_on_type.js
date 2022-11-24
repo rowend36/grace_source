@@ -1,6 +1,7 @@
 define(function (require, exports, module) {
   'use strict';
   var Editors = require('grace/editor/editors').Editors;
+  var beautify = require('./format').beautify;
   function onAfterExec_Beautify(e) {
     var editor = e.editor;
     if (e.command.name === 'insertstring' && e.args === '}') {
@@ -30,7 +31,7 @@ define(function (require, exports, module) {
           start.column--;
           sel.setSelectionRange(Range.fromPoints(start, end));
           //now beautify the selection
-          editor.execCommand('beautify', true);
+          beautify(editor, true, false, true);
         }
       }
     }

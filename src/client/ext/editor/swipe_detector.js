@@ -19,7 +19,7 @@ define(function (require, exports, module) {
                 e = e.touches[0];
             }
             originalStartY = e.clientY;
-            startTimeT = new Date().getTime();
+            startTimeT = e.timeStamp;
             startY = originalStartY;
             startX = e.clientX;
             swipeDetected = false;

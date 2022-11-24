@@ -1,5 +1,4 @@
 define(function (require, exports, module) {
-    /* globals ace */
     var themelist = require('ace!ext/themelist');
     var themes = themelist.themes.map(function (t) {
         return t.theme;
@@ -23,7 +22,7 @@ define(function (require, exports, module) {
         {
             sharedTheming: true,
         },
-        'editor',
+        'editor'
     );
     require('../core/config').Config.registerInfo(
         {
@@ -63,7 +62,7 @@ define(function (require, exports, module) {
             hasCssTransforms: 'no-user-config',
             mode: 'no-user-config',
         },
-        'editor',
+        'editor'
     );
     //default settings for docs
     var sessionDefaults = {
@@ -92,7 +91,7 @@ define(function (require, exports, module) {
     //there is only a single instance of this class
     //you need to remove its dependency on Docs
     Docs.$defaults = sessionDefaults;
-    var aceOptions = ace.Editor.prototype.$options;
+    var aceOptions = Editor.prototype.$options;
     var Settings = exports;
     Settings.add = function (edit) {
         edit.setOptions(editorDefaults);
@@ -160,7 +159,7 @@ define(function (require, exports, module) {
             } else if (isForSession) {
                 doc.setOption(
                     key,
-                    val === sessionDefaults[key] ? undefined : val,
+                    val === sessionDefaults[key] ? undefined : val
                 );
             } else {
                 sessionDefaults[key] = val;
@@ -318,7 +317,7 @@ define(function (require, exports, module) {
                             i,
                             newValue[i] === undefined
                                 ? editorDefaults[i]
-                                : newValue[i],
+                                : newValue[i]
                         ) === false
                     )
                         success = false;

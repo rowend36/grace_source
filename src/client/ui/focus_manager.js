@@ -54,7 +54,7 @@ define(function (require, exports, module) {
                     recentlyFocused = true;
                     recentlyFocusedTimeout = window.setTimeout(
                         expireRecentlyFocused,
-                        recentlyFocusedTimeoutDuration,
+                        recentlyFocusedTimeoutDuration
                     );
                 }
 
@@ -204,7 +204,7 @@ define(function (require, exports, module) {
                                   // focusFail = new Error();
                                   waitTimeout = setTimeout(
                                       updateScore,
-                                      FOCUS_RESIZE_WINDOW,
+                                      FOCUS_RESIZE_WINDOW
                                   );
                                   last = la;
                               }
@@ -275,7 +275,7 @@ define(function (require, exports, module) {
             function resizeHandler() {
                 var score = getScore(
                     sizeListener.activated(virtualKeyboardVisible),
-                    focusListener.activated(virtualKeyboardVisible),
+                    focusListener.activated(virtualKeyboardVisible)
                 );
                 if (debugKey) {
                     debug.log({
@@ -412,7 +412,7 @@ define(function (require, exports, module) {
         } else
             clearRefocusTimer = setTimeout(
                 stopAutoRefocus,
-                FOCUS_RESIZE_WINDOW,
+                FOCUS_RESIZE_WINDOW
             );
     }
     var event_mousedown = 'ontouchstart' in window ? 'touchstart' : 'mousedown';

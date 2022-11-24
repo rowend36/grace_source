@@ -6,7 +6,6 @@ define(function (require, exports, module) {
     var dom = require('ace!lib/dom');
     var oop = require('ace!lib/oop');
     var removeFrom = require('../core/utils').Utils.removeFrom;
-    var noop = require('../core/utils').Utils.noop;
     var VSCROLL_WIDTH = 25;
     /** @constructor */
     function Part(top) {
@@ -35,7 +34,7 @@ define(function (require, exports, module) {
                     this.lastChild = this.childNodes[
                         (this.childElementCount = this.childNodes.push.apply(
                             this.childNodes,
-                            this.cache,
+                            this.cache
                         )) - 1
                     ];
                     this.cache.length = 0;
@@ -53,7 +52,7 @@ define(function (require, exports, module) {
 
     oop.inherits(Part, Marker);
     Part.prototype.getConfig = function (config) {
-        var config = Object.assign({}, config);
+        config = Object.assign({}, config);
         config.firstRow = this.start;
         config.lastRow = this.end;
         return config;
@@ -100,7 +99,7 @@ define(function (require, exports, module) {
         var len = this.session.getLength();
         var chunkSize = Math.max(
             this.MIN_CHUNK_SIZE,
-            (len / this.MAX_NUM_PARTS) | 0,
+            (len / this.MAX_NUM_PARTS) | 0
         );
         for (var i = 0, k = 0; k < len; i++, k += chunkSize) {
             var part = this.parts[i] || (this.parts[i] = new Part(this));
@@ -111,7 +110,7 @@ define(function (require, exports, module) {
         while (i < this.parts.length) {
             this.$cache.push.apply(
                 this.$cache,
-                this.parts.pop().element.childNodes,
+                this.parts.pop().element.childNodes
             );
         }
     };
@@ -124,7 +123,7 @@ define(function (require, exports, module) {
         var markers = Object.assign(
             {},
             this.session.getMarkers(),
-            this.session.getMarkers(true),
+            this.session.getMarkers(true)
         );
         for (var i = 0; i < this.parts.length; i++) {
             this.parts[i].setMarkers(markers);
@@ -148,11 +147,11 @@ define(function (require, exports, module) {
             var f = this.session.documentToScreenPosition(e.start);
             var left = Math.min(
                 f.column * this.config.characterWidth,
-                VSCROLL_WIDTH - 3,
+                VSCROLL_WIDTH - 3
             );
             var height = Math.max(
                 10,
-                this.editor.renderer.getLineHeight(f.row),
+                this.editor.renderer.getLineHeight(f.row)
             );
 
             this.cursors[i].style.cssText =
@@ -187,7 +186,7 @@ define(function (require, exports, module) {
                     'px;' +
                     'left:' +
                     0 +
-                    'px;',
+                    'px;'
             );
             self.viewportEl =
                 self.i > -1
@@ -249,7 +248,8 @@ define(function (require, exports, module) {
         var r = this.editor.renderer;
         this.setSession(this.editor.session);
         var isScroll = false,
-            sizeChanged = changes & (r.CHANGE_SIZE | r.CHANGE_FULL|r.CHANGE_LINES);
+            sizeChanged =
+                changes & (r.CHANGE_SIZE | r.CHANGE_FULL | r.CHANGE_LINES);
         if (sizeChanged) this.updateParts();
         if (
             changes &
@@ -272,13 +272,13 @@ define(function (require, exports, module) {
         var totalHeight = r.getScrollbarHeight();
         var scaleY = Math.min(
             1,
-            (layerConfig.height - r.scrollBarH.getHeight()) / totalHeight,
+            (layerConfig.height - r.scrollBarH.getHeight()) / totalHeight
         );
         var scaleX =
             (VSCROLL_WIDTH - 5) /
             Math.min(
                 layerConfig.width,
-                r.$size.scrollerWidth * 2 + r.scrollLeft,
+                r.$size.scrollerWidth * 2 + r.scrollLeft
             );
         var config = {
             scaleY: scaleY,
@@ -403,7 +403,7 @@ define(function (require, exports, module) {
                         'format_align_center',
                     ],
                 ]),
-                contextMenu.firstChild,
+                contextMenu.firstChild
             );
         };
         editor.on('menuClick', function () {
@@ -434,7 +434,7 @@ define(function (require, exports, module) {
         ['ontouchstart', 'ontouchmove', 'ontouchend', 'onmousemove'].forEach(
             function (f) {
                 editor.renderer.scrollBarV.element[f] = stop;
-            },
+            }
         );
         //no resizing viewport
         editor.renderer.scrollBarV.$minWidth = VSCROLL_WIDTH;
@@ -468,6 +468,7 @@ define(function (require, exports, module) {
     exports.ScrollbarMarker = Minimap;
     exports.setupEditor = function (el) {
         var editor = ace.edit(el);
+        el.env.document = null;
         editor.$enableTouchHandles = true;
         editor.renderer.setScrollMargin(5, 5, 0, 0);
         muddleTextInput(editor.textInput.getElement());

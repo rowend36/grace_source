@@ -18,7 +18,7 @@ define(function (require, exports, module) {
             forceRun: '',
             folderPrefix: null,
         },
-        'execute',
+        'execute'
     );
     require('grace/core/config').Config.registerInfo(
         {
@@ -43,7 +43,7 @@ define(function (require, exports, module) {
                     'Use this to map file paths to server paths, eg name/index.html will be mapped to <runPath>/index.html if folderPrefix is name/',
             },
         },
-        'execute',
+        'execute'
     );
 
     var api = (exports.Execute = {});
@@ -144,7 +144,7 @@ define(function (require, exports, module) {
                     values: Object.keys(runModes),
                 },
             },
-            'execute',
+            'execute'
         );
     };
 
@@ -158,7 +158,7 @@ define(function (require, exports, module) {
             var value = this.transform(doc.getValue());
             preview(
                 './preview.html?html=' + encodeURIComponent(btoa(value)),
-                this,
+                this
             );
         }.bind(this);
     }
@@ -182,7 +182,7 @@ define(function (require, exports, module) {
             location.origin +
             FileUtils.join(
                 location.pathname.replace('/index.html', ''),
-                'preview.html',
+                'preview.html'
             );
         var value = this.transform(this.doc.getValue());
         if (
@@ -196,7 +196,7 @@ define(function (require, exports, module) {
                     type: 'html',
                     data: value,
                 },
-                location.origin,
+                location.origin
             );
         } else
             frame.src =
@@ -233,12 +233,12 @@ define(function (require, exports, module) {
                 path = doc.getSavePath();
                 var folderPrefix = FileUtils.resolve(
                     FileUtils.getProject().rootDir,
-                    appConfig.folderPrefix,
+                    appConfig.folderPrefix
                 );
                 if (path && path.startsWith(folderPrefix)) {
                     path = FileUtils.join(
                         runPath,
-                        path.substring(folderPrefix.length),
+                        path.substring(folderPrefix.length)
                     );
                 }
             }
@@ -295,7 +295,7 @@ define(function (require, exports, module) {
                     'folderPrefix',
                     data['preview-prefix'],
                     'execute',
-                    true,
+                    true
                 );
             } else configure('folderPrefix', null, 'execute', true);
         },
@@ -333,7 +333,7 @@ define(function (require, exports, module) {
         ScriptRunnerSnippets.log + ScriptRunnerSnippets.fallbackConsole;
     ScriptRunner.scriptStub = ScriptRunner.scriptStub.replace(
         'NUM_LINES',
-        ScriptRunner.scriptStub.split('\n').length - 1 + '',
+        ScriptRunner.scriptStub.split('\n').length - 1 + ''
     );
     api.registerRunMode(ScriptRunner.id, ScriptRunner);
 
@@ -397,12 +397,12 @@ define(function (require, exports, module) {
                 content.appendChild(
                     Form.create(
                         runModes[i].getConfig(),
-                        $("<div class='config config-" + i + "'></div>")[0],
-                    ),
+                        $("<div class='config config-" + i + "'></div>")[0]
+                    )
                 );
             }
             controller.append(
-                '<option value="' + i + '">' + runModes[i].name + '</option>',
+                '<option value="' + i + '">' + runModes[i].name + '</option>'
             );
         }
 
@@ -447,7 +447,7 @@ define(function (require, exports, module) {
                 'useIframePreview',
                 !modal.find('#run-in-split')[0].checked,
                 'execute',
-                true,
+                true
             );
             var data = Form.parse(modal[0]);
             if (runModes[id] && runModes[id].getConfig) {

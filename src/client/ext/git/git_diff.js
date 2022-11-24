@@ -56,7 +56,7 @@ define(function (require, exports, module) {
                             panes[names[i]] = content
                                 ? decoder.decode(content)
                                 : '';
-                        }),
+                        })
                     );
                     task.stop();
                     cb(panes, refs.join('|'), ev);
@@ -112,7 +112,7 @@ define(function (require, exports, module) {
                     filepath: relative(prov.dir, ev.filepath),
                     panes: {origin: 'index', ours: doc.id},
                 },
-                true,
+                true
             );
         });
     };

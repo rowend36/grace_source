@@ -59,6 +59,7 @@ define(function (require, exports, module) {
             }
         };
     }
+
     var errors = {
         "is a directory": "EISDIR",
         "already exists": "EEXIST",
@@ -78,7 +79,7 @@ define(function (require, exports, module) {
         NoSuchFileException: "ENOENT",
         NotDirectoryException: "ENOTDIR",
     };
-
+    var lastId = -1;
     function bindOnce(app, func) {
         if (!func) return 0;
         var id = handler.createCallback(function (err, res) {
@@ -88,7 +89,18 @@ define(function (require, exports, module) {
             }
             func(err, res);
         });
-        return id;
+        return (lastId = id);
+    }
+    function tryCall(app, func) {
+        var id = lastId;
+        try {
+            func.call(app);
+        } catch (err) {
+            if (id !== lastId) {
+                handler.clearCallback(id);
+            }
+            throw err;
+        }
     }
 
     function throwError(app, accessKey, err) {
@@ -115,13 +127,13 @@ define(function (require, exports, module) {
         }
         return err;
     }
-
+    /** @constructor */
     function ReadableStream(app, accessKey, fd) {
         this.close = function () {
             app.closeReadableStream(fd, accessKey);
         };
         this.read = function (cb) {
-            app.try(function () {
+            tryCall(app, function () {
                 app.readStreamAsync(
                     fd,
                     bindOnce(
@@ -150,13 +162,13 @@ define(function (require, exports, module) {
             }
         };
     }
-
+    /** @constructor */
     function WritableStream(app, accessKey, fd) {
         this.close = function () {
             app.closeWritableStream(fd, accessKey);
         };
         this.write = function (data, cb) {
-            app.try(function () {
+            tryCall(app, function () {
                 app.writeStreamAsync(
                     fd,
                     encodeBufferToBytes(data),
@@ -177,8 +189,12 @@ define(function (require, exports, module) {
             }
         };
     }
-
+    /** @constructor */
     function AndroidFs(app, accessKey) {
+        if (!this.encodings) this.encodings = null;
+        if (!this.disk) this.disk = "local";
+        if (!this.root) this.root = "/";
+        if (!this.fileAccessPrefix) this.fileAccessPrefix = null;
         this.requestFileSystem = function (cb) {
             app.getDocumentTreeUri(bindOnce(app, cb));
         };
@@ -318,7 +334,9 @@ define(function (require, exports, module) {
                 responseType: encoding ? "text" : "arraybuffer",
                 retryCount: 3,
             }).then(
-                callback.bind(null, null),
+                function (req) {
+                    callback(null, encoding ? req.responseText : new Uint8Array(req.response));
+                },
                 function () {
                     var stat;
                     try {
@@ -342,7 +360,7 @@ define(function (require, exports, module) {
                     accessKey
                 );
             } else {
-                app.try(function () {
+                tryCall(app, function () {
                     app.getBytesAsync(
                         path,
                         bindOnce(
@@ -359,7 +377,7 @@ define(function (require, exports, module) {
             }
         };
         this.writeFile = function (path, content, opts, callback) {
-            app.try(function () {
+            tryCall(app, function () {
                 var encoding;
                 if (opts) {
                     if (!callback && typeof opts == "function") {
@@ -379,7 +397,7 @@ define(function (require, exports, module) {
             });
         };
         this.getFiles = function (path, opts, callback) {
-            app.try(function () {
+            tryCall(app, function () {
                 if (opts) {
                     if (!callback && typeof opts == "function") {
                         callback = opts;
@@ -413,7 +431,7 @@ define(function (require, exports, module) {
         this.stat = asyncify(this, this.statSync, 1);
         this.lstat = asyncify(this, this.lstatSync, 1);
         this.copyFile = function (path, dest, callback, overwrite) {
-            app.try(function () {
+            tryCall(app, function () {
                 app.copyFileAsync(
                     path,
                     dest,
@@ -424,7 +442,7 @@ define(function (require, exports, module) {
             });
         };
         this.moveFile = function (path, dest, callback, overwrite) {
-            app.try(function () {
+            tryCall(app, function () {
                 app.moveFileAsync(
                     path,
                     dest,
@@ -439,7 +457,7 @@ define(function (require, exports, module) {
         this.unlink = this.rmdir = asyncify(this, this.unlinkSync, 1);
         this.delete = asyncify(this, deleteSync, 1);
         this.$gitBlobOid = function (path, callback) {
-            app.try(function () {
+            tryCall(app, function () {
                 app.getGitBlobIdAsync(path, bindOnce(app, callback), accessKey);
             });
         };

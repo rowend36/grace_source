@@ -48,7 +48,7 @@ define(function (require, exports, module) {
                     id: 'touch-1',
                     key: key,
                     func: handler,
-                    time: new Date().getTime(),
+                    time: e.timeStamp,
                 };
             }
             var speed = targetSpeed * 5;

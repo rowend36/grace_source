@@ -11,7 +11,7 @@ define(function (require, exports, module) {
         {
             functionHintTrigger: '(),',
         },
-        'intellisense',
+        'intellisense'
     );
 
     var loadConfig = require('grace/core/config').Config.registerAll(
@@ -22,7 +22,7 @@ define(function (require, exports, module) {
             preloadConfigs: [],
             neverAllowLoad: ['**/node_modules/**/*{[!d],[!.]d}.[tj]s'],
         },
-        'intellisense',
+        'intellisense'
     );
     require('grace/core/config').Config.registerInfo(
         {
@@ -68,7 +68,7 @@ Note: When multiple configs are specified, they are loaded in the order they are
                     'On startup, the maximum amount of time to spend load files into memory. Prevents background loading from disrupting editor user interface.',
             },
         },
-        'intellisense',
+        'intellisense'
     );
     require('grace/core/config').Config.on('intellisense', function (e) {
         switch (e.config) {
@@ -84,7 +84,7 @@ Note: When multiple configs are specified, they are loaded in the order they are
                 break;
             case 'maxFileLoadSize':
                 fileLoader.opts.maxSize = Utils.parseSize(
-                    loadConfig.maxFileLoadSize,
+                    loadConfig.maxFileLoadSize
                 );
                 break;
             case 'preloadConfigs':
@@ -119,12 +119,12 @@ Note: When multiple configs are specified, they are loaded in the order they are
     var watchMemory = Utils.delay(function () {
         //memory management
         var size = fileLoader.getSize();
-        if (size.size > fileLoader.getOpts().maxSize) {
+        if (size.size > fileLoader.opts.maxSize) {
             debug.log('Trimming Memory....');
             appEvents.trigger('trimServerMemory');
         }
     }, Utils.parseSize('30mins'));
-    
+
     //the lsp true - current completionProvider
     //        object - any completer
     //        falsy(default)  - true and Tags
@@ -191,7 +191,7 @@ Note: When multiple configs are specified, they are loaded in the order they are
         var normalize = FileUtils.normalize;
         var loadFile = Utils.delay(
             currentOp.control(fileLoader.loadFile.bind(fileLoader)),
-            70,
+            70
         );
 
         //This line is one of the reasons why we have to manage memory
@@ -202,7 +202,7 @@ Note: When multiple configs are specified, they are loaded in the order they are
                 currentOp.control(function () {
                     currentOp.stop('Timed Out');
                 }),
-                timeout,
+                timeout
             );
         }
         //For each config file
@@ -222,14 +222,14 @@ Note: When multiple configs are specified, they are loaded in the order they are
                 var commonRoot = normalize(
                     FileUtils.join(
                         '/',
-                        FileUtils.resolve(defaultRoot, config.rootDir || ''),
-                    ),
+                        FileUtils.resolve(defaultRoot, config.rootDir || '')
+                    )
                 );
 
                 var extensionRe = new RegExp(
                     '\\.' +
                         config.extensions.map(Utils.regEscape).join('$|\\.') +
-                        '$',
+                        '$'
                 );
                 //TODO fix: Possible wrong results with brace expand
                 //Basically {/j,b}/* with /sdcard/  as commonRoot will be read as /sdcard/j,/sdcard/b instead of /j/,/sdcard/b
@@ -237,11 +237,11 @@ Note: When multiple configs are specified, they are loaded in the order they are
                     config.exclude &&
                     FileUtils.globToRegex(
                         config.exclude.map(
-                            FileUtils.resolve.bind(null, commonRoot),
-                        ),
+                            FileUtils.resolve.bind(null, commonRoot)
+                        )
                     );
                 var loadEagerly = config.loadEagerly.map(
-                    FileUtils.resolve.bind(null, commonRoot),
+                    FileUtils.resolve.bind(null, commonRoot)
                 );
 
                 var params = FileUtils.globToWalkParams(loadEagerly);
@@ -263,7 +263,7 @@ Note: When multiple configs are specified, they are loaded in the order they are
                         if (excludeRe && excludeRe.test(fullpath)) return false;
                         if (!matches.test(fullpath)) return false;
                         var willLoad = toLoad.filter(
-                            notAlreadyLoaded.bind(null, fullpath),
+                            notAlreadyLoaded.bind(null, fullpath)
                         );
                         //.filter(notDestroyed);
                         if (willLoad.length < 0) return next();
@@ -296,7 +296,7 @@ Note: When multiple configs are specified, they are loaded in the order they are
             function () {
                 console.debug(
                     'Server Load',
-                    Utils.toSize(fileLoader.getSize().size),
+                    Utils.toSize(fileLoader.getSize().size)
                 );
                 currentOp.clear();
                 if (currentOp == activeOp) {
@@ -307,13 +307,13 @@ Note: When multiple configs are specified, they are loaded in the order they are
             },
             0,
             false,
-            true,
+            true
         );
     };
     appEvents.on('reloadProject', function (e) {
         e.await(null, loadFiles);
     });
-    
+
     function readFile(name, cb) {
         var doc = require('grace/setup/setup_editors').getActiveDoc();
         var server = doc ? doc.getFileServer() : FileUtils.getFileServer();
@@ -322,7 +322,7 @@ Note: When multiple configs are specified, they are loaded in the order they are
             cb(
                 FileUtils.createError({
                     code: 'ENOENT',
-                }),
+                })
             );
         } else fileLoader.loadFile(name, server, cb);
     }
@@ -352,7 +352,6 @@ Note: When multiple configs are specified, they are loaded in the order they are
         $fileLoader: fileLoader,
         $watchMemory: watchMemory,
         registerProvider: function (provider) {
-            console.log('Registering ',provider.name);
             if (provider.hasCompletions)
                 completion.registerCompletionProvider(provider);
             if (provider.hasArgHints) hover.registerHoverProvider(provider);
@@ -364,12 +363,13 @@ Note: When multiple configs are specified, they are loaded in the order they are
             completion.unregisterCompletionProvider(provider);
             hover.unregisterHoverProvider(provider);
             lint.unregisterLintProvider(provider);
+            format.unregisterFormatter(provider);
             commands.unregisterProvider(provider);
         },
         //Used to update the provider for instance when new capabilities are added
-        toggleProvider: function (provider, modes, value) {
+        toggleProvider: function (provider) {
             this.unregisterProvider(provider);
-            if (value) {
+            if (provider.isEnabled()) {
                 this.registerProvider(provider);
             }
         },

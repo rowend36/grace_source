@@ -1,5 +1,5 @@
 define(function (require, exports, module) {
-    /*globals $, ace*/
+    /*globals $*/
     var Editors = require('grace/editor/editors').Editors;
     var setTab = require('grace/setup/setup_tab_host').setTab;
     var DocsTab = require('grace/setup/setup_tab_host').DocsTab;
@@ -9,6 +9,7 @@ define(function (require, exports, module) {
     var setEditor = Editors.setEditor;
     var setActiveEditor = require('grace/editor/host_editor').setActiveEditor;
     var focus = require('grace/ui/focus_manager').FocusManager.focusIfKeyboard;
+    var EditSession = require('ace!edit_session').EditSession;
     var TEMP_SESSION;
 
     function ViewPager(editor) {
@@ -76,7 +77,7 @@ define(function (require, exports, module) {
             if (shouldSetSession) {
                 //Not atomic
                 editor.setSession(
-                    TEMP_SESSION || (TEMP_SESSION = new ace.EditSession('')),
+                    TEMP_SESSION || (TEMP_SESSION = new EditSession(''))
                 );
             }
         }
@@ -106,7 +107,7 @@ define(function (require, exports, module) {
                         host.onEnter(editor, this);
                     } catch (err) {
                         console.warn(
-                            'Plugin Host.onEnter: threw exception! Force removing tab.',
+                            'Plugin Host.onEnter: threw exception! Force removing tab.'
                         );
                         console.error(err);
                         Notify.error('Plugin error !!!');
@@ -208,7 +209,7 @@ define(function (require, exports, module) {
                     id,
                     name,
                     null,
-                    info,
+                    info
                 );
             } else DocsTab.addTab(id, name, null, info);
         }

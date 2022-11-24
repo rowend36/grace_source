@@ -84,7 +84,6 @@ define(function(require, exports, module) {
     handler._notifyIntent();
 
 
-    //requires Docs
     Env.isWebView = true;
     Env.isLocalHost = false;
     Env.server = null;
@@ -131,8 +130,8 @@ define(function(require, exports, module) {
         this.disk = "local";
         this.fileAccessPrefix = isUsingFileProtocol ? "file://" :
             "http://grace.androidplatform.net/root/";
+        AndroidFs.call(this, app, accessKey);
     }
-    AppFileServer.prototype = new AndroidFs(app, accessKey);
     Object.defineProperty(AppFileServer.prototype, 'href', {
         get: function() {
             return isUsingFileProtocol ? "file://" : (
@@ -182,7 +181,7 @@ define(function(require, exports, module) {
                 stub.id = id;
                 DocumentFs.requestFileSystem(
                     function(uri) {
-                        var fs = new DocumentFs(uri);
+                        fs = new DocumentFs(uri);
                         fs.id = id;
                         storage.setItem(id, "uri:" + conf
                             .id);

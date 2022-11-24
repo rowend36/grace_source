@@ -1,22 +1,12 @@
 define(function (require, exports, module) {
-    require("grace/ext/file_utils/glob");
-    var FileUtils = require("grace/core/file_utils").FileUtils;
+    require('grace/ext/file_utils/glob');
+    var FileUtils = require('grace/core/file_utils').FileUtils;
     function FindFileServer(fileServer) {
         var filter = null;
         var b = fileServer;
         var self = Object.create(fileServer);
-        self.setFilter = function (glob) {
-            if (!glob) {
-                filter = null;
-                return;
-            }
-            if (typeof glob == "string") {
-                glob = FileUtils.globToRegex(glob);
-                console.log(glob);
-                filter = function (i, path) {
-                    return FileUtils.isDirectory(i) || (path + i).match(glob);
-                };
-            } else filter = glob;
+        self.setFilter = function (_filter) {
+            filter = _filter;
         };
         self.getFiles = function (path, callback) {
             if (filter)

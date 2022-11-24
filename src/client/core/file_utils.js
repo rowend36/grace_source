@@ -55,7 +55,7 @@ define(function (require, exports, module) {
         '.woff2',
       ],
     },
-    'files',
+    'files'
   );
   Config.registerInfo(
     {
@@ -67,7 +67,7 @@ define(function (require, exports, module) {
       binaryFilesExts:
         'The extensions in binaryFileExts are disabled for editting.',
     },
-    'files',
+    'files'
   );
   var codeFileExts = appConfig.codeFileExts;
   var binaryFileExts = appConfig.binaryFileExts;
@@ -167,6 +167,7 @@ define(function (require, exports, module) {
     },
     getDoc: function (path, server, callback, factory) {
       var Factory = factory || cyclicRequire('../docs/document').Doc;
+      server = server || FileUtils.getFileServer();
       FileUtils.readFile(path, server, function (err, res, encoding) {
         if (err) return callback(err);
         var doc = new Factory(res, path);
@@ -192,7 +193,7 @@ define(function (require, exports, module) {
           doc.setClean();
           callback && callback(null, doc);
         },
-        factory,
+        factory
       );
     },
     getDocFromEvent: function (ev, callback, forceNew, justText) {
@@ -206,7 +207,7 @@ define(function (require, exports, module) {
         FileUtils[justText ? 'readFile' : 'getDoc'](
           ev.filepath,
           ev.fs,
-          callback,
+          callback
         );
       }
     },
@@ -219,6 +220,6 @@ define(function (require, exports, module) {
     require('./project_manager').ProjectManager,
     require('./file_servers').FileServers,
     require('./register_fs_extension'),
-    require('./channels').Channels,
+    require('./channels').Channels
   );
 }); /*_EndDefine*/

@@ -3,7 +3,7 @@ define(function (require, exports, module) {
         {
             iconsProvider: 'color_icons',
         },
-        'files',
+        'files'
     );
     var extname = require('grace/core/file_utils').FileUtils.extname;
     var ext = function (name) {
@@ -14,7 +14,7 @@ define(function (require, exports, module) {
         {
             iconsProvider: {values: iconProviders},
         },
-        'files',
+        'files'
     );
     var nameToIconProvider = Object.create(null);
     exports.registerIconProvider = function (name, provider) {
@@ -32,7 +32,7 @@ define(function (require, exports, module) {
         Object.assign(
             exports.FileIcons,
             nameToIconProvider[appConfig.iconsProvider] ||
-                exports.DefaultIconProvider,
+                exports.DefaultIconProvider
         );
     }
     exports.FileIcons = {};
@@ -45,8 +45,8 @@ define(function (require, exports, module) {
                     type: new Schema.XMap(
                         Schema.IsString,
                         new Schema.XRegex(
-                            /(?:text-(?:dark|light)en-[0-4] )?(?:orange|red|yellow|blue|cyan|green|light-green|purple|amber|grey|blue-grey|pink|deep-purple|indigo|light-blue|teal|lime|deep-orange|brown|black|white)/,
-                        ),
+                            /(?:text-(?:dark|light)en-[0-4] )?(?:orange|red|yellow|blue|cyan|green|light-green|purple|amber|grey|blue-grey|pink|deep-purple|indigo|light-blue|teal|lime|deep-orange|brown|black|white)/
+                        )
                     ),
                     values: [
                         'text-lighten-1 blue',
@@ -58,7 +58,7 @@ define(function (require, exports, module) {
                     doc: 'Map file names and extensions to color classes.',
                 },
             },
-            'files',
+            'files'
         );
         var file_colors = {
             html: 'orange',

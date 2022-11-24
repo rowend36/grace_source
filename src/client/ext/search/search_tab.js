@@ -1,6 +1,6 @@
 define(function (require, exports, module) {
     'use strict';
-    /*globals $, ace*/
+    /*globals $*/
     require('grace/ext/file_utils/glob');
     require('css!./search_tab.css');
     var ProjectView =
@@ -9,7 +9,6 @@ define(function (require, exports, module) {
     var appEvents = require('grace/core/app_events').AppEvents;
     var bind = require('grace/ui/ui_utils').createSearch;
     var FindFileServer = require('grace/ext/fs/find_fs').FindFileServer;
-    //var ViewportVisualizer = require("grace/ui/recycler").ViewportVisualizer;
     var Utils = require('grace/core/utils').Utils;
     var Actions = require('grace/core/actions').Actions;
     var setImmediate = Utils.setImmediate;
@@ -22,6 +21,7 @@ define(function (require, exports, module) {
     var Notify = require('grace/ui/notify').Notify;
     var globToRegex = FileUtils.globToRegex;
     var styleCheckbox = require('grace/ui/ui_utils').styleCheckbox;
+    var styleClip = require('grace/ui/ui_utils').styleClip;
     var genQuickFilter = FileUtils.genQuickFilter;
     var SearchResults, SearchReplace, SearchList;
     var Doc = require('grace/docs/document').Doc;
@@ -72,7 +72,8 @@ define(function (require, exports, module) {
         'search'
     );
     /*Largest closure in the history of closures*/
-    var SearchTab = function (el) {
+    /**@constructor*/
+    function SearchTab(el) {
         el.html(require('text!./search_tab.html')).css('padding', '15px');
         var self = this;
         var project;
@@ -110,6 +111,9 @@ define(function (require, exports, module) {
         var searchOpenDocs = (this.searchOpenDocs = function (val) {
             configure('searchOpenDocs', !!val, 'search', true);
         });
+        this.SearchList = null;
+        this.previewBrowser = null;
+        this.rootDir = null;
         var searchInFolder = (this.searchInFolder = function (folder, server) {
             project = {
                 rootDir: folder,
@@ -123,31 +127,33 @@ define(function (require, exports, module) {
             searchedDocs.length = 0;
             if (self.previewBrowser) {
                 self.previewBrowser.fileServer = project.fileServer;
-                self.previewBrowser.setRootDir(project.rootDir);
+                self.previewBrowser.reload();
             }
         });
         var quickFilter, includeFilter, excludeFilter;
 
-        function filterFiles(name, path) {
-            var rel = relative(project.rootDir, path + name);
-            var isDirectory = FileUtils.isDirectory(rel);
+        function filterFiles(name, rootDir) {
+            var relName = relative(project.rootDir, rootDir + name);
+            var isDirectory = FileUtils.isDirectory(relName);
+            console.log(relName);
             if (searchConfig.matchBaseName) {
                 return (
                     (isDirectory ||
                         !includeFilter ||
                         includeFilter.test(name) ||
-                        includeFilter.test(rel)) &&
+                        includeFilter.test(relName)) &&
                     !(
                         excludeFilter &&
-                        (excludeFilter.test(name) || excludeFilter.test(rel))
+                        (excludeFilter.test(name) ||
+                            excludeFilter.test(relName))
                     )
                 );
             }
             return (
                 (isDirectory
-                    ? quickFilter.test(rel)
-                    : !includeFilter || includeFilter.test(rel)) &&
-                !(excludeFilter && excludeFilter.test(rel))
+                    ? quickFilter.test(relName)
+                    : !includeFilter || includeFilter.test(relName)) &&
+                !(excludeFilter && excludeFilter.test(relName))
             );
         }
         this.init = function () {
@@ -174,7 +180,7 @@ define(function (require, exports, module) {
                 return;
             }
             if (!modalEl) {
-                modalEl = createModal(self);
+                modalEl = createModal();
                 self.previewBrowser = new ProjectView(
                     modalEl.find('.fileview'),
                     project.rootDir,
@@ -186,18 +192,22 @@ define(function (require, exports, module) {
                 self.previewBrowser.childFolderDropdown = 'search-dropdown';
                 self.previewBrowser.fileDropdown = 'search-file-dropdown';
                 self.previewBrowser.foldersToIgnore = [];
-                self.previewBrowser.menuItems = {
-                    'search-dropdown': Object.create(
-                        self.previewBrowser.menuItems[
-                            self.previewBrowser.nestedFolderDropdown
-                        ]
-                    ),
-                    'search-file-dropdown': Object.create(
-                        self.previewBrowser.menuItems[
-                            self.previewBrowser.nestedFileDropdown
-                        ]
-                    ),
-                };
+                self.previewBrowser.menuItems[
+                    'search-dropdown'
+                ] = Object.create(
+                    self.previewBrowser.menuItems[
+                        self.previewBrowser.nestedFolderDropdown
+                    ]
+                );
+
+                self.previewBrowser.menuItems[
+                    'search-file-dropdown'
+                ] = Object.create(
+                    self.previewBrowser.menuItems[
+                        self.previewBrowser.nestedFileDropdown
+                    ]
+                );
+
                 filterInput = modalEl.find('#filterInput');
                 excludeInput = modalEl.find('#excludeInput');
                 filterInput.on('input', updatePreview);
@@ -264,7 +274,7 @@ define(function (require, exports, module) {
                 self.previewBrowser.stub.hide();
             } else {
                 self.previewBrowser.stub.show();
-                self.previewBrowser.findFile(filterFiles);
+                self.previewBrowser.findFile(filterFiles, 2000);
             }
         };
         var updateTimeout;
@@ -281,7 +291,7 @@ define(function (require, exports, module) {
             }
             if (updateTimeout) clearTimeout(updateTimeout);
             updateTimeout = (ev ? setTimeout : setImmediate)(function () {
-                self.previewBrowser.findFile(filterFiles);
+                self.previewBrowser.findFile(filterFiles, 2000);
                 updateTimeout = null;
             }, 2000);
         };
@@ -364,7 +374,7 @@ define(function (require, exports, module) {
                 showSearchStopped();
             } else {
                 var rootDir = project.rootDir;
-                if (rootDir != self.rootDir || !this.SearchList) {
+                if (rootDir != self.rootDir || !self.SearchList) {
                     var server = new FindFileServer(project.fileServer);
                     server.setFilter(filterFiles);
                     self.SearchList = new SearchList(rootDir, server);
@@ -516,7 +526,11 @@ define(function (require, exports, module) {
             }
             possibleNewSearch();
             renderResults(doc, ranges);
+            // console.log('unreferencing '+doc.id);
+            // console.log(doc.$refs.length);
             doc.unref(self);
+            // console.log(doc.$refs.length);
+            // console.log('done');
         }
 
         function doSearch(path, fileServer, timeout, id) {
@@ -527,7 +541,7 @@ define(function (require, exports, module) {
                 search(path, doc);
                 return;
             }
-            FileUtils.readFile(path, fileServer, function (res, err) {
+            FileUtils.readFile(path, fileServer, function (err, res) {
                 if (id != searchId) return;
                 if (err === 'binary') {
                     if (lastWarnedBinaryFile != id) {
@@ -589,6 +603,7 @@ define(function (require, exports, module) {
             function (cb) {
                 require(['./search_worker'], function (mod) {
                     createWorker = mod.createWorker;
+                    cb();
                 });
             },
             function (path, doc) {
@@ -661,7 +676,7 @@ define(function (require, exports, module) {
             path = '<li class=clipper >' + path + '</li>';
             loadEl.children('#searchStatusOp').html(status);
             loadEl.children('#searchStatusFile').html(path);
-            require('grace/ui/ui_utils').styleClip(loadEl.children().eq(1));
+            styleClip(loadEl.children().eq(1));
         }, 100);
         var showSearchStarted = function () {
             moreEl.show();
@@ -726,19 +741,20 @@ define(function (require, exports, module) {
                         'color-inactive',
                         !!ev.value()
                     );
-                    if (ev.value()) {
-                        stopSearch();
-                    }
+                    if (ev.value()) stopSearch();
                     break;
+                //@ts-ignore
                 case 'searchTabFilter':
                     includeFilter =
                         searchConfig.searchTabFilter &&
                         globToRegex(searchConfig.searchTabFilter);
                     quickFilter = genQuickFilter(searchConfig.searchTabFilter);
-                /*fall through*/
+                /*fall-through*/
                 case 'searchTabExclude':
                     if (ev.config === 'searchTabExclude')
-                        excludeFilter = globToRegex($(this).val());
+                        excludeFilter = globToRegex(
+                            searchConfig.searchTabExclude
+                        );
                     if (!searchConfigChanged && runningSearches > 0) {
                         find();
                     }
@@ -746,7 +762,7 @@ define(function (require, exports, module) {
             }
         });
         //endregion
-    };
+    }
 
     function relative(b, l) {
         if (l.startsWith(b)) return './' + l.slice(b.length, l.length);
@@ -797,6 +813,5 @@ define(function (require, exports, module) {
         'search_container',
         'search'
     );
-    var SearchPanel = new SearchTab($('#search_container'));
-    SearchPanel.init(require('grace/setup/setup_sideview').SideView);
+    new SearchTab($('#search_container')).init();
 }); /*_EndDefine*/

@@ -35,7 +35,7 @@ define(function (require, exports, module) {
     debug.log(
       e.replace(/{([^}]+)}/g, function (o, m) {
         return m == 'id' ? id : i < args.length ? args[++i] : o;
-      }),
+      })
     );
   }
   function isInvalid(deltas) {
@@ -108,7 +108,7 @@ define(function (require, exports, module) {
         .map(function (e) {
           return e[0].id;
         })
-        .join(','),
+        .join(',')
     );
     return INCORRECT;
   }
@@ -126,7 +126,7 @@ define(function (require, exports, module) {
       entry('old size {history_len}', obj.history.length);
       entry('truncating obj.history');
       obj.history.undo = obj.history.undo.slice(
-        obj.history.length - this.limits.maxUndoHistory,
+        obj.history.length - this.limits.maxUndoHistory
       );
       entry('new size ' + obj.history.length);
     }
@@ -190,7 +190,7 @@ define(function (require, exports, module) {
       entry(
         'Using disk as cache with revision: {rev} checksum {check}',
         doc.saveRev,
-        doc.getChecksum(),
+        doc.getChecksum()
       );
       if (
         _findIndex(history.undo, doc.saveRev) > -1 ||
@@ -210,7 +210,7 @@ define(function (require, exports, module) {
         if (obj.history.undo.length > 1) {
           entry('Discarding some undos');
           obj.history.undo = obj.history.undo.slice(
-            obj.history.undo.length / 2,
+            obj.history.undo.length / 2
           );
         } else if (obj.history.undo && obj.history.undo.length == 1) {
           entry('Discarded all undos');
@@ -252,7 +252,7 @@ define(function (require, exports, module) {
         'Incorrect checksum ' +
           doc.getChecksum() +
           ' instead of ' +
-          doc.savedState.checksum,
+          doc.savedState.checksum
       );
       status = status && INCORRECT;
     } else if (status === SUCCESS) {
@@ -314,7 +314,7 @@ define(function (require, exports, module) {
       entry(
         'Failed to refresh because file changed from {res} to {res}',
         doc._LSC,
-        doc.getChecksum(res),
+        doc.getChecksum(res)
       );
       doc.setValue(res, true);
     }

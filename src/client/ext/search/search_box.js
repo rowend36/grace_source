@@ -1,65 +1,66 @@
-define(function (require, exports, module) {
+define(function(require, exports, module) {
     'use strict';
     /*globals $*/
     //TODO add searchbox context
-    var getEditor = require('grace/setup/setup_editors').getEditor;
-    var FocusManager = require('grace/ui/focus_manager').FocusManager;
-    var appEvents = require('grace/core/app_events').AppEvents;
-    var editorView = require('grace/setup/setup_editors').editorView;
-    var Searchbox = require('ace!ext/searchbox').SearchBox;
-    var Config = require('grace/core/config').Config;
+    var getEditor = require('grace/setup/setup_editors')
+        .getEditor;
+    var FocusManager = require('grace/ui/focus_manager')
+        .FocusManager;
+    var appEvents = require('grace/core/app_events')
+        .AppEvents;
+    var editorView = require('grace/setup/setup_editors')
+        .editorView;
+    var Searchbox = require('ace!ext/searchbox')
+        .SearchBox;
+    var History = require('grace/ui/history')
+        .History;
+    var Config = require('grace/core/config')
+        .Config;
     var userAgent = require('ace!lib/useragent');
-    var keys = Config.registerAll(
-        {
-            toggleReplace: 'Ctrl-f|Command-f',
-            focusReplace: 'Ctrl-H|Command-Option-F',
-            findNext: 'Ctrl-G|Command-G',
-            historyPrev: 'Up',
-            historyNext: 'Down',
-            findPrev: 'Ctrl-Shift-G|Command-Shift-G',
-            closeSearchBox: 'esc',
-            acceptAndFindNext: 'Return',
-            acceptAndFindPrev: 'Shift-Return',
-            findAll: 'Alt-Return',
-            switchInput: 'Tab',
-            toggleRegexpMode: userAgent.isMac
-                ? 'Ctrl-Alt-R|Ctrl-Alt-/'
-                : 'Alt-R|Alt-/',
+    var keys = Config.registerAll({
+        toggleReplace: 'Ctrl-f|Command-f',
+        focusReplace: 'Ctrl-H|Command-Option-F',
+        findNext: 'Ctrl-G|Command-G',
+        findPrev: 'Ctrl-Shift-G|Command-Shift-G',
+        closeSearchBox: 'esc',
+        acceptAndFindNext: 'Return',
+        acceptAndFindPrev: 'Shift-Return',
+        findAll: 'Alt-Return',
+        switchInput: 'Tab',
+        toggleRegexpMode: userAgent.isMac ? 'Ctrl-Alt-R|Ctrl-Alt-/' : 'Alt-R|Alt-/',
+        toggleCaseSensitive: userAgent.isMac ? 'Ctrl-Alt-R|Ctrl-Alt-I' : 'Alt-C|Alt-I',
+        toggleWholeWords: userAgent.isMac ? 'Ctrl-Alt-B|Ctrl-Alt-W' : 'Alt-B|Alt-W',
+    }, 'keyBindings.searchbox');
 
-            toggleCaseSensitive: userAgent.isMac
-                ? 'Ctrl-Alt-R|Ctrl-Alt-I'
-                : 'Alt-C|Alt-I',
-            toggleWholeWords: userAgent.isMac
-                ? 'Ctrl-Alt-B|Ctrl-Alt-W'
-                : 'Alt-B|Alt-W',
-        },
-        'keyBindings.searchbox'
-    );
     function updateCommands() {
-        sb.$searchBarKb.commandKeyBinding = {};
+        for (var o in keys) {
+            sb.$searchBarKb.removeCommand(o, true);
+        }
         for (var i in keys) {
-            sb.$searchBarKb.bindKey(keys[i], i);
+            sb.$searchBarKb.bindKey(keys[i], sb.$searchBarKb.commands[i]);
         }
     }
+
     function handleChangeEditor(ev) {
         var e = ev.editor;
-        $(e.container).addClass('active_editor');
+        $(e.container)
+            .addClass('active_editor');
         if (ev.oldEditor) {
-            $(ev.oldEditor.container).removeClass('active_editor');
+            $(ev.oldEditor.container)
+                .removeClass('active_editor');
             ev.oldEditor.renderer.off('resize', position);
         }
         sb.setEditor(e);
         e.renderer.on('resize', position);
         position();
     }
-
     var lastPosition = 256;
+
     function position(isResize) {
         var editDiv = sb.editor.container;
         var editRect = editDiv.getBoundingClientRect();
         var el = sb.element;
         var inEditor = el.parentElement === editDiv;
-
         //Infer position
         var IN_TOP = 1;
         var IN_BOTTOM = 2;
@@ -78,10 +79,8 @@ define(function (require, exports, module) {
             if (inEditor && lastPosition === IN_TOP) return;
         }
         var contentRect = editorView.$el[0].getBoundingClientRect();
-        if (contentRect.top - editRect.bottom > SB_HEIGHT * 2)
-            possible |= OVERLAP_TOP;
-        if (editRect.top - contentRect.bottom > SB_HEIGHT * 2)
-            possible |= OVERLAP_BOTTOM;
+        if (contentRect.top - editRect.bottom > SB_HEIGHT * 2) possible |= OVERLAP_TOP;
+        if (editRect.top - contentRect.bottom > SB_HEIGHT * 2) possible |= OVERLAP_BOTTOM;
         if (editRect.top - contentRect.top > SB_HEIGHT) {
             possible |= OUT_TOP;
         }
@@ -113,7 +112,6 @@ define(function (require, exports, module) {
             }
         }
         var inContent = el.parentElement == editorView.$el[0];
-
         var trapFocus = FocusManager.activeElement;
         if (position & IN && !inEditor) {
             editDiv.appendChild(el);
@@ -122,7 +120,6 @@ define(function (require, exports, module) {
             editorView.$el[0].appendChild(el);
             if (trapFocus) trapFocus.focus();
         } else if (position === lastPosition) return;
-
         switch (position) {
             case OUT_LEFT:
                 el.style.right = SB_WIDTH + 'px';
@@ -147,7 +144,7 @@ define(function (require, exports, module) {
                 el.style.top = 0;
                 el.style.bottom = 'auto';
         }
-        switch(position){
+        switch (position) {
             case IN_BOTTOM:
             case OVERLAP_BOTTOM:
                 sb.alignContainer(sb.ALIGN_BELOW);
@@ -157,16 +154,28 @@ define(function (require, exports, module) {
                 sb.alignContainer(sb.ALIGN_ABOVE);
                 break;
             default:
-            sb.alignContainer(sb.ALIGN_NONE);
-                
+                sb.alignContainer(sb.ALIGN_NONE);
         }
     }
-
-    var sb = getEditor().searchBox || new Searchbox(getEditor());
+    var sb = getEditor()
+        .searchBox || new Searchbox(getEditor());
+    sb.searchHistory = new History();
+    sb.searchHistory.create = function() {
+        return {
+            search: sb.searchInput.value,
+            replace: sb.replaceOption.checked && sb.replaceInput.value,
+        };
+    };
+    sb.searchHistory.equals = function(val, val2) {
+        //My apologies: Push if search queries differ or replace queries both exist and are different
+        return !val2.search || (val && (val.search === val2.search) && (!val2.replace || (val.replace ? val
+            .replace === val2.replace : ((val.replace = val2.replace), true))));
+    };
     if (sb.editor != getEditor()) {
         sb.setEditor(getEditor());
     }
-    getEditor().renderer.on('resize', position);
+    getEditor()
+        .renderer.on('resize', position);
     position();
     updateCommands();
     Config.on('keyBindings.searchbox', updateCommands);

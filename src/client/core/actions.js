@@ -35,7 +35,7 @@ define(function (require, exports, module) {
       filepath: (doc && doc.getSavePath()) || '',
       filename: FileUtils.filename((doc && doc.getSavePath()) || ''),
       fs: doc ? doc.getFileServer() : FileUtils.getFileServer(),
-      rootDir: FileUtils.dirname((doc && doc.getSavePath()) || '/') || '/',
+      rootDir: FileUtils.dirname(doc && doc.getSavePath()) + '/' || '/',
       preventDefault: Utils.noop,
       stopPropagation: Utils.noop,
     };
@@ -52,7 +52,7 @@ define(function (require, exports, module) {
       return editor.commands.exec(
         this.command.command,
         editor,
-        this.command.args,
+        this.command.args
       );
     } else {
       return editor.commands.exec(this.command, editor, this.args || event);

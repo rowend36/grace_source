@@ -5,7 +5,7 @@ define(function (require, exports, module) {
         var result = [];
         if (list_text) {
             var stripSpace = /^\s*|\s*$/;
-            list_text = list_text.replace(stripSpace, '');
+            list_text = list_text.replace(stripSpace, "");
             var list = list_text.split(/\s+|\s*,\s*/);
             for (var index in list) {
                 if (list[index]) result.push(list[index]);
@@ -16,12 +16,12 @@ define(function (require, exports, module) {
 
     var repeat = String.prototype.repeat
         ? function (amount, sep) {
-              if (!amount || amount < 0) return '';
-              return String(sep === undefined ? ' ' : sep).repeat(amount);
+              if (!amount || amount < 0) return "";
+              return String(sep === undefined ? " " : sep).repeat(amount);
           }
         : function repeat(amount, sep) {
-              if (sep === undefined) sep = ' ';
-              if (!amount || amount < 0) return '';
+              if (sep === undefined) sep = " ";
+              if (!amount || amount < 0) return "";
               if (amount === 1) return sep;
               var half = amount >> 1;
               var text = sep;
@@ -45,7 +45,7 @@ define(function (require, exports, module) {
 
     /*Fancy timeouts*/
     function delay(func, wait) {
-        assert(func, 'Must provide function');
+        assert(func, "Must provide function");
         wait = wait || 30;
         var timeout, ctx, args;
         var later = function () {
@@ -119,7 +119,7 @@ define(function (require, exports, module) {
         return post;
     }
     function assert(cond, e) {
-        if (!cond) throw new Error(e || 'AssertError');
+        if (!cond) throw new Error(e || "AssertError");
         return true;
     }
     /*The most powerful async method ever built*/
@@ -136,7 +136,7 @@ define(function (require, exports, module) {
         var i = 0;
         var resume, cancel, waiting, cancelled;
         parallel = parallel || 1;
-        assert(parallel >= 1, 'Invalid parameter for parallel:' + parallel);
+        assert(parallel >= 1, "Invalid parameter for parallel:" + parallel);
         if (unfinished) {
             resume = function (finished) {
                 if (finished) unfinished = false;
@@ -166,7 +166,7 @@ define(function (require, exports, module) {
         //2 - has posted
         var next = function () {
             if (callState === 2)
-                throw new Error('Next/cancel called more than once');
+                throw new Error("Next/cancel called more than once");
             if (i >= list.length) {
                 if (--parallel == 0 && !unfinished) {
                     if (finish) {
@@ -176,8 +176,8 @@ define(function (require, exports, module) {
                 } else if (parallel < 0) {
                     debug.error(
                         new Error(
-                            'Counter error: you might be calling next twice or calling both next and cancel',
-                        ),
+                            "Counter error: you might be calling next twice or calling both next and cancel"
+                        )
                     );
                 } else {
                     waiting++;
@@ -214,9 +214,9 @@ define(function (require, exports, module) {
     }
     var toSizeString = function (size, nameType) {
         var sizes =
-            nameType == 'full'
-                ? ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte']
-                : ['byte', 'kb', 'Mb', 'Gb', 'Tb'];
+            nameType == "full"
+                ? ["byte", "kilobyte", "megabyte", "gigabyte", "terabyte"]
+                : ["byte", "kb", "Mb", "Gb", "Tb"];
         var i = 0;
         while (size > 1024) {
             i++;
@@ -225,19 +225,19 @@ define(function (require, exports, module) {
         size = Math.round(size * 100) / 100.0;
         return sizes[i].length > 2
             ? plural(size, sizes[i])
-            : size + ' ' + sizes[i];
+            : size + " " + sizes[i];
     };
 
     function plural(no, name) {
         return (
             no +
-            ' ' +
+            " " +
             name +
             (no > 1
-                ? name[name.length - 1] === 's' || name[name.length - 1] === 'z'
-                    ? 'es'
-                    : 's'
-                : '')
+                ? name[name.length - 1] === "s" || name[name.length - 1] === "z"
+                    ? "es"
+                    : "s"
+                : "")
         );
     }
     var createCounter = function (cb) {
@@ -254,21 +254,21 @@ define(function (require, exports, module) {
                 if (errors.length < 1) cb();
                 else cb(errors);
             } else if (count < 0) {
-                throw new Error('Counter error less than 0');
+                throw new Error("Counter error less than 0");
             }
         };
         return counter;
     };
     var times = {
-        '': 1,
+        "": 1,
     };
-    times.milli = times.millisecond = times.ms = times.millisec = times[''];
-    times.sec = times.second = times.s = times[''] * 1000;
+    times.milli = times.millisecond = times.ms = times.millisec = times[""];
+    times.sec = times.second = times.s = times[""] * 1000;
     times.min = times.minute = times.m = times.s * 60;
     times.hr = times.hour = times.h = times.min * 60;
     times.day = times.d = times.hr * 24;
     times.week = times.wk = times.w = times.d * 7;
-    times.b = times.byte = times[''];
+    times.b = times.byte = times[""];
     times.kb = times.kilobyte = times.kib = times.k = times.b * 1024;
     times.mb = times.megabyte = times.m = times.kb * 1024;
     times.gb = times.gigabyte = times.g = times.mb * 1024;
@@ -284,7 +284,7 @@ define(function (require, exports, module) {
         while (match) {
             var unit = match[2];
             var value = times[unit];
-            if (value === undefined && unit.endsWith('s')) {
+            if (value === undefined && unit.endsWith("s")) {
                 value = times[unit.slice(0, -1)];
             }
             if (validate === true && value === undefined) return false;
@@ -295,23 +295,23 @@ define(function (require, exports, module) {
     }
 
     function toTimeString(time) {
-        if (!time || typeof time !== 'object') time = new Date(parseInt(time));
+        if (!time || typeof time !== "object") time = new Date(parseInt(time));
         var today = new Date();
         var deltaMs = today.getTime() - time.getTime();
         var currentDay =
             today.getHours() * times.hour + today.getMinutes() * times.minute;
         if (deltaMs < times.minute)
-            return plural(Math.floor(deltaMs / 1000), 'second') + ' ago';
+            return plural(Math.floor(deltaMs / 1000), "second") + " ago";
         else if (deltaMs < times.hour)
             return (
-                plural(Math.floor(deltaMs / times.minute), 'minute') + ' ago'
+                plural(Math.floor(deltaMs / times.minute), "minute") + " ago"
             );
         else if (deltaMs < currentDay) {
-            return 'Today, ' + time.toLocaleTimeString();
+            return "Today, " + time.toLocaleTimeString();
         } else if (deltaMs < currentDay + times.day) {
-            return 'Yesterday, ' + time.toLocaleTimeString();
+            return "Yesterday, " + time.toLocaleTimeString();
         } else if (deltaMs < currentDay + 2 * times.day) {
-            return 'Two days ago, ' + time.toLocaleTimeString();
+            return "Two days ago, " + time.toLocaleTimeString();
         } else return time.toLocaleString();
     }
 
@@ -349,12 +349,12 @@ define(function (require, exports, module) {
 
     function htmlEncode(string) {
         var entityMap = {
-            '<': '&lt;',
-            '>': '&gt;',
-            '&': '&amp;',
+            "<": "&lt;",
+            ">": "&gt;",
+            "&": "&amp;",
         };
         return String(string).replace(/[<>&]/g, function (s) {
-            if (!s) return '';
+            if (!s) return "";
             return entityMap[s];
         });
     }
@@ -367,7 +367,7 @@ define(function (require, exports, module) {
         repeat: repeat,
         spread: spread,
         unimplemented: function () {
-            alert('Unimplemented');
+            alert("Unimplemented");
         },
         setProp: function (obj, prop, value) {
             if (obj[prop] != value) {
@@ -411,7 +411,7 @@ define(function (require, exports, module) {
                             off();
                             fn.apply(this, arguments);
                         },
-                        emitter,
+                        emitter
                     );
                 },
             };
@@ -421,10 +421,17 @@ define(function (require, exports, module) {
             var body = (++idCount + new Date().getTime())
                 .toString(36)
                 .slice(-8);
-            return prefix + repeat(9 - body.length, '_') + body;
+            return prefix + repeat(9 - body.length, "_") + body;
+        },
+        isID: function (prefix, e) {
+            return (
+                e.length == prefix.length + 9 &&
+                e.startsWith(prefix + "_") &&
+                /[_a-z0-9]{8}$/i.test(e.slice(prefix.length + 1))
+            );
         },
         getCreationDate: function (id) {
-            var date = parseInt(id.slice(id.lastIndexOf('_') + 1), 36);
+            var date = parseInt(id.slice(id.lastIndexOf("_") + 1), 36);
             //TODO: uncomment this in year 2059 :D
             // var today = Date.now();
             // while (today - date >= 2e11) date += Math.pow(36, 8);
@@ -445,7 +452,7 @@ define(function (require, exports, module) {
             };
         },
         smallCaps: function (text) {
-            return String(text).split(' ').map(sentenceCase).join(' ');
+            return String(text).split(" ").map(sentenceCase).join(" ");
         },
         sentenceCase: sentenceCase,
         plural: plural,
@@ -469,7 +476,14 @@ define(function (require, exports, module) {
         debounce: debounce,
         delay: delay,
         regEscape: function regExpEscape(s) {
-            return s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+            return s.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+        },
+        defProp: function (e, name, value) {
+            Object.defineProperty(e, name, {
+                writable: true,
+                enumerable: false,
+                value: value,
+            });
         },
         waterfall: function waterfall(steps) {
             var result;
@@ -486,7 +500,7 @@ define(function (require, exports, module) {
                             args.unshift(function () {
                                 if (called)
                                     throw new Error(
-                                        'Next called more than once.',
+                                        "Next called more than once."
                                     );
                                 called = true;
                                 result = _slice.call(arguments, 0);
@@ -507,7 +521,7 @@ define(function (require, exports, module) {
                 },
                 0,
                 false,
-                true,
+                true
             );
         },
     };

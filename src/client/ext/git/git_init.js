@@ -8,6 +8,7 @@ define(function (require, exports, module) {
     /*globals $*/
     /*basic tasks*/
     exports.init = function (ev, prov) {
+        console.log(prov);
         prov.init().then(function () {
             Notify.info('New repository created');
             ev.fileview.reload(true);
@@ -57,7 +58,7 @@ define(function (require, exports, module) {
             el.find('#singleBranch').change(function () {
                 el.find('#singleBranchDiv').toggle(this.checked);
             });
-            el.once('submit', handleSubmit);
+            el.one('submit', handleSubmit);
         }
         function handleSubmit(ev) {
             var el = $(ev.target);

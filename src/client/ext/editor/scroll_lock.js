@@ -10,7 +10,7 @@ define(function (require, exports, module) {
                     x: e.target.scrollLeft,
                     vel: 0,
                     orig: e.target.scrollLeft + 20,
-                    t: new Date().getTime(),
+                    t: e.timeStamp,
                     max: 0,
                     detected: false,
                     dir: 0,
@@ -29,7 +29,7 @@ define(function (require, exports, module) {
                 scrollData = null;
                 return;
             }
-            var t = new Date().getTime();
+            var t = e.timeStamp;
             var diffT = t - scrollData.t;
             var vel = Math.abs(dir) / diffT;
             scrollData = {

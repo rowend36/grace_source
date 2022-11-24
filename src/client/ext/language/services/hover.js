@@ -8,7 +8,7 @@ define(function (require, exports, module) {
         clearTimeout(editor.$debounceArgHints);
         editor.$debounceArgHints = setTimeout(
             $invokeProviders.bind(editor),
-            100,
+            100
         );
     };
     var $invokeProviders = function () {

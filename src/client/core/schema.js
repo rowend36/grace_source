@@ -238,7 +238,7 @@ define(function (require, exports, module) {
         },
         parse: function () {
             throw new Error(
-                'Must require grace/ext/parse_schema to use this feature.',
+                'Must require grace/ext/parse_schema to use this feature.'
             );
         },
         XObject: XObject,

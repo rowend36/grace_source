@@ -36,7 +36,7 @@ define(function (require, exports, module) {
         if (__editor == e) return;
         Utils.assert(
             editors.indexOf(e) > -1,
-            'Must use setActiveEditor for plugin editors.',
+            'Must use setActiveEditor for plugin editors.'
         );
         var oldEditor = __editor;
         __editor = e;
@@ -69,10 +69,10 @@ define(function (require, exports, module) {
         var overrides = Object.assign(
             {},
             editor.editorOptions,
-            doc.editorOptions,
+            doc.editorOptions
         );
         for (var i in overrides) {
-            if(settings.options.hasOwnProperty(i)){
+            if (settings.options.hasOwnProperty(i)) {
                 var value =
                     doc.editorOptions && doc.editorOptions.hasOwnProperty(i)
                         ? doc.editorOptions[i]
@@ -110,7 +110,13 @@ define(function (require, exports, module) {
         FocusManager.focusIfKeyboard(__editor.textInput.getElement());
         edit.destroy();
     }
-
+    function onThemeChange(e, renderer) {
+        if (renderer == editors[0].renderer) {
+            appEvents.once('appLoaded', function () {
+                appEvents.trigger('editorThemeLoaded', e);
+            });
+        }
+    }
     function createEditor(container, orphan) {
         var el = document.createElement('div');
         el.className = 'editor';
@@ -121,13 +127,9 @@ define(function (require, exports, module) {
 
         if (!orphan) {
             editors.push(editor);
-            editor.renderer.on('themeLoaded', function (e) {
-                if (editor == editors[0]) {
-                    appEvents.once('appLoaded', function () {
-                        appEvents.trigger('editorThemeLoaded', e);
-                    });
-                }
-            });
+            editor.renderer.on('themeLoaded', onThemeChange);
+            if (editor === editors[0])
+                onThemeChange(editor.renderer, editor.renderer);
             editor.renderer.on('changeCharacterSize', function () {
                 if (editor == editors[0]) {
                     settings.setOption('fontSize', editor.getFontSize());

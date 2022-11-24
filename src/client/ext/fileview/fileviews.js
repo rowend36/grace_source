@@ -189,7 +189,7 @@ define(function (require, exports, module) {
                 Tabs.removeTab(browserID);
                 //if no other browser, create one
                 for (var i in _fileBrowsers) {
-                    if (!_fileBrowsers[i].isHierarchy) {
+                    if (!_fileBrowsers[i].isProjectView) {
                         return;
                     }
                 }
@@ -208,7 +208,7 @@ define(function (require, exports, module) {
                 hasAlternateDisk = null;
             for (var i in _fileBrowsers) {
                 if (i == browserID) continue;
-                if (_fileBrowsers[i].isHierarchy) continue;
+                if (_fileBrowsers[i].isProjectView) continue;
                 if (_fileBrowsers[i].fileServer.id === serverID) {
                     hasAlternate = true;
                     break;
@@ -244,7 +244,7 @@ define(function (require, exports, module) {
                 if (hasAlternateDisk) {
                     Notify.ask(
                         'Reconfigure files that are still open from this drive to use available filesystem: ' +
-                            hasAlternateDisk.constructor.name +
+                            hasAlternateDisk.label +
                             '?',
                         function () {
                             for (var i in openDocs) {
@@ -359,6 +359,5 @@ define(function (require, exports, module) {
         },
     };
     Fileviews = Object.assign(new EventsEmitter(), Fileviews);
-    Fileviews._debug = true;
     exports.Fileviews = Fileviews;
 });

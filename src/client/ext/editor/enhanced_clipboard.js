@@ -90,7 +90,7 @@ define(function (require, exports, module) {
                     if (e) {
                         if (
                             failCount++ > 3 ||
-                            e.message.indexOf('denied') > 0
+                            e.message.indexOf('denied') > -1
                         ) {
                             Env.getClipboard = getClipExec;
                         }
@@ -121,7 +121,7 @@ define(function (require, exports, module) {
                     if (e) {
                         if (
                             failCount++ > 3 ||
-                            e.message.indexOf('denied') > 0
+                            e.message.indexOf('denied') > -1
                         ) {
                             Env.setClipboard = setClipExec;
                         }

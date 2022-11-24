@@ -60,7 +60,7 @@ define(function (require, exports, module) {
             defaultRemoteBranch: undefined,
             forceShowStagedDeletes: true,
         },
-        'git',
+        'git'
     );
 
     require('grace/core/config').Config.registerInfo(
@@ -95,7 +95,7 @@ define(function (require, exports, module) {
             forceShowStagedDeletes:
                 "Set to 'false' if viewStage operation seems too slow",
         },
-        'git',
+        'git'
     );
     //FileUtils guarantees only one fileview  will
     //use overflow at a time
@@ -109,7 +109,7 @@ define(function (require, exports, module) {
                     'show-file-status',
                     isDirectory(rootEvent.filepath || '')
                         ? null
-                        : self['!show-file-status'],
+                        : self['!show-file-status']
                 );
             },
         ],
@@ -308,12 +308,11 @@ define(function (require, exports, module) {
                     function () {
                         configure('gitdir', '.git', 'git', true);
                         findRoot(rootDir, fs).then(resolve, reject);
-                    },
+                    }
                 );
             }
             var check = function (root) {
                 fs.readdir(join(root, dir), function (e) {
-                    console.log(root);
                     if (!e) {
                         resolve(root);
                     } else {
@@ -332,9 +331,7 @@ define(function (require, exports, module) {
 
     //Detect Repositiory When Triggered In Fileview
     function detectRepo(ev, yes, no) {
-        console.log('fmffnn');
         require(['./iso_git'], function (git) {
-            console.log('yipee');
             if (!ev) return;
             var dir = ev.rootDir;
             rootEvent = ev;
@@ -344,14 +341,14 @@ define(function (require, exports, module) {
                 prov = new GitImpl(
                     path || dir,
                     join(path || dir, appConfig.gitdir),
-                    fs,
+                    fs
                 );
                 if (path) {
                     yes.show(ev.anchor);
                     if (yes == GitOverflow) {
                         prov.currentBranch().then(
                             GitMenu.currentBranch.update,
-                            GitUtils.failure,
+                            GitUtils.failure
                         );
                     }
                 } else no.show(ev.anchor);
@@ -363,7 +360,6 @@ define(function (require, exports, module) {
 
     //Detect Repositiory When Triggered In Projectview
     var detectProjectRepo = function (ev, yes, no) {
-        console.log('detect rodod');
         ev.fileview.menu && ev.fileview.menu.hide();
         ev.fileview.expandFolder(ev.filename, function (cb) {
             detectRepo(
@@ -373,7 +369,7 @@ define(function (require, exports, module) {
                     anchor: ev.fileview.getElement(ev.filename)[0],
                 }),
                 yes,
-                no,
+                no
             );
         });
     };
@@ -395,11 +391,18 @@ define(function (require, exports, module) {
                 var fs = ev.fs;
                 if (!path) {
                     path = FileUtils.getProject().rootDir;
-                    fs = FileUtils.getProject().fileServer;
+                    if (
+                        !dir.startsWith(path) &&
+                        (item.id === 'git.init' || item.id === 'git.clone')
+                    ) {
+                        path = dir;
+                    } else {
+                        fs = FileUtils.getProject().fileServer;
+                    }
                 }
                 var GitImpl = fs.$gitImpl || git.Git;
                 prov = new GitImpl(path, join(path, appConfig.gitdir), fs);
-                mod[item.action](event, prov);
+                mod[item.action](ev, prov);
             });
         });
     };
@@ -415,7 +418,7 @@ define(function (require, exports, module) {
         e,
         id,
         span,
-        data,
+        data
     ) {
         prov = prov.cached(id);
         if (!data.action) return false;
@@ -426,7 +429,7 @@ define(function (require, exports, module) {
         return true; //Not used
     };
     GitOverflow.ondismiss = GitFileOverflow.ondismiss = NoGitOverflow.ondismiss = function (
-        e,
+        e
     ) {
         var parent = rootEvent.fileview.menu;
         rootEvent = null;
@@ -480,7 +483,6 @@ define(function (require, exports, module) {
         },
         showIn: ['fleview.file', 'fileview.folder'],
         handle: function (ev) {
-            console.log('File option');
             detectRepo(ev, GitFileOverflow, NoGitOverflow);
             ev.preventDefault();
         },
@@ -499,7 +501,7 @@ define(function (require, exports, module) {
             (ev.fileview.isProjectView ? detectProjectRepo : detectRepo)(
                 ev,
                 GitOverflow,
-                NoGitOverflow,
+                NoGitOverflow
             );
             ev.preventDefault();
         },

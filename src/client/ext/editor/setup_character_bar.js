@@ -44,7 +44,7 @@ define(function (require, exports, module) {
                 '--S--',
             ],
         },
-        'toolbars',
+        'toolbars'
     );
 
     var configEvents = require('grace/core/config').Config;
@@ -74,7 +74,7 @@ It's a bit similar to snippets. But with a different syntax\n\
             enableLockScrolling: 'Allows character bar to jump to clamp scroll',
             enableArrowKeys: 'Whether to show directional keys',
         },
-        'toolbars',
+        'toolbars'
     );
     var postRebuild;
     configEvents.on('toolbars', function (e) {
@@ -107,12 +107,12 @@ It's a bit similar to snippets. But with a different syntax\n\
             setCls(
                 name,
                 'mod-key-active',
-                !isMod || (ev.pressed[key] && !ev.held[key]),
+                !isMod || (ev.pressed[key] && !ev.held[key])
             );
             setCls(
                 name,
                 'color-inactive',
-                isMod && !(ev.held[key] || ev.pressed[key]),
+                isMod && !(ev.held[key] || ev.pressed[key])
             );
             target.className = name.join(' ').replace('  ', ' '); //:)
         } else {
@@ -185,21 +185,21 @@ It's a bit similar to snippets. But with a different syntax\n\
     function createFloatingToggle() {
         if (!floatingToggle) {
             floatingToggle = $(
-                '<button id="toolbar-toggle" class="shadow-top opaque-on-hover">' +
+                '<button id="toolbar-toggle" class="btn shadow-top opaque-on-hover">' +
                     '<i class="material-icons">keyboard_arrow_down</i>' +
-                    '</button>',
+                    '</button>'
             );
             floatingToggle.click(function (e) {
                 bottomView.toggle();
                 if (bottomView.hidden) {
                     this.style.bottom = '10px';
                     floatingToggle.html(
-                        '<i class="material-icons">keyboard_arrow_up</i>',
+                        '<i class="material-icons">keyboard_arrow_up</i>'
                     );
                 } else {
                     this.style.bottom = bottomBar.css('height');
                     floatingToggle.html(
-                        '<i class="material-icons">keyboard_arrow_down</i>',
+                        '<i class="material-icons">keyboard_arrow_down</i>'
                     );
                 }
                 e.stopPropagation();
@@ -333,7 +333,7 @@ It's a bit similar to snippets. But with a different syntax\n\
                     .replace('--W--', '')
                     .replace(
                         /\t/g,
-                        "<i class='material-icons'>keyboard_tab</i>",
+                        "<i class='material-icons'>keyboard_tab</i>"
                     )
                     .replace(/\n/g, '&rdsh;');
             el += caption + '</button>';
@@ -358,7 +358,7 @@ It's a bit similar to snippets. But with a different syntax\n\
             FocusManager.activeElement || editor.textInput.getElement();
         var edit = TextEdit.from(target);
         var sel = edit.selection();
-        if (val.indexOf('--W--') > 0) {
+        if (val.indexOf('--W--') > -1) {
             var prec = edit.wordBefore();
             val = val.replace(/--W--/g, prec);
             edit.delete(prec.length);
@@ -441,13 +441,13 @@ It's a bit similar to snippets. But with a different syntax\n\
                 createToolsView(tools, [
                     ['esc', 'shift', 'ctrl', 'a-left'],
                     ['cut', 'copy', 'paste'],
-                ]),
+                ])
             );
         if (modtools && modtools.length) {
             metabar = $(createToolsView(modtools));
         }
         Mods.setClipboard(
-            require('grace/ext/editor/enhanced_clipboard').clipboard,
+            require('grace/ext/editor/enhanced_clipboard').clipboard
         );
 
         if (toolbar || metabar) {

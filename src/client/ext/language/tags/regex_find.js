@@ -30,7 +30,7 @@ define(function (require, exports, module) {
     }
     require('grace/core/utils').Utils.inherits(
         RegexFind,
-        require('./async_find').AsyncFind,
+        require('./async_find').AsyncFind
     );
     RegexFind.prototype.onBatch = function (ctx) {
         ctx.index = ctx.index || 0;
@@ -51,7 +51,7 @@ define(function (require, exports, module) {
             }
             var data = currentPass.handle.apply(
                 currentPass,
-                [res.index].concat(res),
+                [res.index].concat(res)
             );
             if (data) {
                 if (data.forEach) {
@@ -153,13 +153,17 @@ define(function (require, exports, module) {
         add: function (reg, reg2, reg3, reg4, reg5, reg6, reg7, reg8, reg9) {
             var obj = this;
             obj.source += reg.source;
-            return reg2 ? obj.add(reg2, reg3, reg4, reg5, reg6, reg7, reg8, reg9) : obj;
+            return reg2
+                ? obj.add(reg2, reg3, reg4, reg5, reg6, reg7, reg8, reg9)
+                : obj;
         },
         /** @returns {S} */
         _add: function (reg, reg2, reg3, reg4, reg5, reg6, reg7, reg8, reg9) {
             var obj = this;
             obj.source = '(' + obj.source + reg.source + '|' + obj.source + ')';
-            return reg2 ? obj.add(reg2, reg3, reg4, reg5, reg6, reg7, reg8, reg9) : obj;
+            return reg2
+                ? obj.add(reg2, reg3, reg4, reg5, reg6, reg7, reg8, reg9)
+                : obj;
         },
         /** @returns {S} */
         wrap: function () {
@@ -292,7 +296,7 @@ define(function (require, exports, module) {
                     e +
                     s +
                     '])|#BRACKET){0,5}' +
-                    e,
+                    e
             ).recurse('#BRACKET', 2);
         },
         /** @returns {S} */
@@ -300,7 +304,7 @@ define(function (require, exports, module) {
             if (this != S) throw new Error('Static method');
             s = '\\' + s;
             return S.s(
-                s + '(?:[^' + s + '\r\n\\\\]|\\\\\\\\|\\\\' + s + ')*' + s,
+                s + '(?:[^' + s + '\r\n\\\\]|\\\\\\\\|\\\\' + s + ')*' + s
             );
         },
         oneOf: function (words) {
@@ -335,8 +339,8 @@ define(function (require, exports, module) {
                         debug.log(
                             toChars(res[0]),
                             toChars(
-                                typeof willPass == 'string' ? willPass : str,
-                            ),
+                                typeof willPass == 'string' ? willPass : str
+                            )
                         );
                         throw new Error('Mismatch : ' + res[0]);
                     }
@@ -412,7 +416,7 @@ define(function (require, exports, module) {
             S.s().sp1(),
             S.ident().group(4),
             S.s(/[^\{]*/).group(5),
-            S.s('\\{'),
+            S.s('\\{')
         )
         .create();
 
@@ -432,7 +436,7 @@ define(function (require, exports, module) {
                     .sp()
                     .add(S.s(/\d+/).sp().maybe())
                     .t('\\]')
-                    .star(),
+                    .star()
             )
             .wrap()
             .test('Main<STRING EXTAEnds Pako>[][67]')
@@ -455,7 +459,7 @@ define(function (require, exports, module) {
         //strings,
         S.bracketRange('{', '}').test('{abcd,{}}}', '{abcd,{}}'),
         S.bracketRange('(', ')'),
-        S.bracketRange('[', ']'),
+        S.bracketRange('[', ']')
     )
         .wrap()
         .t('{1,3}')
@@ -491,10 +495,10 @@ define(function (require, exports, module) {
 
     S.c_decl = S.c_start()
         .add(
-            S.s().sp().group(1), //indent
+            S.s().sp().group(1) //indent
         )
         .add(
-            S.modifier_list().group(2), //modifier
+            S.modifier_list().group(2) //modifier
         )
         .o(); //done
     S.c_args = S.s()
@@ -505,7 +509,7 @@ define(function (require, exports, module) {
                 .sp()
                 .add(S.scope().t(',').star().add(S.scope().maybe()))
                 .sp()
-                .t('\\)'),
+                .t('\\)')
         )
         .test('abcd(a b cd[ ], bcd ef{)', null)
         .test('abcd(a b cd[ ], bcd ef)hekko', '(a b cd[ ], bcd ef)')
@@ -562,7 +566,7 @@ define(function (require, exports, module) {
                 indent,
                 fnKeyword,
                 name,
-                args,
+                args
             ) {
                 if (!fnKeyword && this.nonFnKeywords.indexOf(name) > -1)
                     return null;
@@ -582,10 +586,10 @@ define(function (require, exports, module) {
                                   args,
                                   comments,
                                   '',
-                                  fnKeyword || 'method',
+                                  fnKeyword || 'method'
                               ),
                           ]
-                        : [],
+                        : []
                 );
             },
         },
@@ -604,7 +608,7 @@ define(function (require, exports, module) {
                         .add(S.jsArguments().group())
                         .sp2()
                         .test('async function hello(var y)')
-                        .add(S.s(/=\s*>|\{/).maybe()),
+                        .add(S.s(/=\s*>|\{/).maybe())
                 )
                 .test('async  function     hello(){')
                 .test('color: function (){}', 'color: function (){')
@@ -620,7 +624,7 @@ define(function (require, exports, module) {
                 key,
                 fnKeyword,
                 name2,
-                args,
+                args
             ) {
                 var anon = text[text.length - 1] == '>';
                 var decl = text[text.length - 1] == '{';
@@ -637,7 +641,7 @@ define(function (require, exports, module) {
                             indent,
                             fnKeyword,
                             name2,
-                            args,
+                            args
                         ) || [];
                 } else results = argument(args || '', index, text);
                 if (key)
@@ -648,8 +652,8 @@ define(function (require, exports, module) {
                             args,
                             comments,
                             '',
-                            join(anon && 'anonymous', ' ', 'function'),
-                        ),
+                            join(anon && 'anonymous', ' ', 'function')
+                        )
                     );
 
                 return results;
@@ -666,7 +670,7 @@ define(function (require, exports, module) {
             re: S.jsLaxStart()
                 .maybe()
                 .add(
-                    S.oneOf(['var', 'const', 'let', 'readOnly']).group(3).sp1(),
+                    S.oneOf(['var', 'const', 'let', 'readOnly']).group(3).sp1()
                 )
                 .add(
                     S.c_ident()
@@ -681,9 +685,9 @@ define(function (require, exports, module) {
                                         .add(S.c_ident())
                                         .add(S.safeVal().maybe())
                                         .wrap()
-                                        .t('+'),
+                                        .t('+')
                                 )
-                                .maybe(),
+                                .maybe()
                         )
                         .test('a')
                         .test('a=b,p')
@@ -691,9 +695,9 @@ define(function (require, exports, module) {
                         .test('a=v,a={{}', 'a=v,a')
                         .test(
                             'a=v',
-                            false,
+                            false
                         ) /*Don't handle singleVariable assignments*/
-                        .group(4),
+                        .group(4)
                 )
                 .sp()
                 .add(/[;$\n\r\{]/)
@@ -706,7 +710,7 @@ define(function (require, exports, module) {
                     names,
                     pos + text.indexOf(list),
                     type,
-                    this.paramRe,
+                    this.paramRe
                 );
             },
         },
@@ -721,7 +725,7 @@ define(function (require, exports, module) {
                     S.s(/(?:new *(\w+)\b)/)
                         .maybe() /*7*/
                         .add(S.s(/.{0,50}/).group(8), S.s(/\,\{|\;|$/).wrap())
-                        .group(6),
+                        .group(6)
                 )
                 .create(),
             handle: function (
@@ -734,7 +738,7 @@ define(function (require, exports, module) {
                 name,
                 rightHandSide,
                 type,
-                value,
+                value
             ) {
                 type =
                     type ||
@@ -769,7 +773,7 @@ define(function (require, exports, module) {
                                 name,
                                 type || propChain,
                                 isProperty ? 'property' : 'var',
-                                join(propChain, '\n', comments),
+                                join(propChain, '\n', comments)
                             ),
                         ];
                     }
@@ -790,14 +794,14 @@ define(function (require, exports, module) {
                 indent,
                 type,
                 name,
-                everyOtherThing,
+                everyOtherThing
             ) {
                 return variable(
                     index,
                     name,
                     type,
                     'class',
-                    join(everyOtherThing, '\n', comments),
+                    join(everyOtherThing, '\n', comments)
                 );
             },
         },
@@ -821,18 +825,18 @@ define(function (require, exports, module) {
                                 .sp3()
                                 .test(
                                     '  \n  /*hello*/   \n    p',
-                                    '/*hello*/   \n',
-                                ),
+                                    '/*hello*/   \n'
+                                )
                         )
                         .maybe(),
-                    S.s().sp2().add(S.decorator().sp3()).maybe(),
+                    S.s().sp2().add(S.decorator().sp3()).maybe()
                 )
                 .test('')
                 .test('\n', '') //leaking whitespace issue
                 .test('@Override /*djxjdjdjs*/helloe', '')
                 .test(
                     '@Override\n/*A simple comment*/\n@Another annotation\n    p',
-                    '@Override\n/*A simple comment*/\n@Another annotation\n',
+                    '@Override\n/*A simple comment*/\n@Another annotation\n'
                 )
                 .add(S.c_decl(/*indent 2 and modifiers 3*/))
                 .add(
@@ -840,7 +844,7 @@ define(function (require, exports, module) {
                         .group(4)
                         .test('public static void', 'public')
                         .sp1()
-                        .maybe(/*Optional for contructors*/),
+                        .maybe(/*Optional for contructors*/)
                 ) /*return type*/
                 .test('/*Method comment*/\n@Override\npublic static void ')
                 .add(S.c_ident().group(5)) /*function name*/
@@ -849,16 +853,16 @@ define(function (require, exports, module) {
                 .add(
                     S.c_args()
                         .group(6)
-                        .test('pako(guyh{},klddjd())', '(guyh{},klddjd())'),
+                        .test('pako(guyh{},klddjd())', '(guyh{},klddjd())')
                 )
                 .test(
                     'class Test{   public static Man[] main()',
-                    '{   public static Man[] main()',
+                    '{   public static Man[] main()'
                 )
                 .test('public static Man[] mako(String<kop> hi,/*opop*/)')
                 .test(
                     '{\n    public static Man main(){\n        \n    }\n    public static Mako mail(){\n}',
-                    '    public static Man main()',
+                    '    public static Man main()'
                 )
                 .create(),
             handle: function (
@@ -869,7 +873,7 @@ define(function (require, exports, module) {
                 modifier,
                 ret,
                 name,
-                args,
+                args
             ) {
                 if (this.keywords.indexOf(name.toLowerCase()) > -1) {
                     return null;
@@ -891,7 +895,7 @@ define(function (require, exports, module) {
                         name,
                         args,
                         join(join('modifiers:', ' ', modifier), '\n', comments),
-                        ret,
+                        ret
                     ),
                 ]);
             },
@@ -902,7 +906,7 @@ define(function (require, exports, module) {
             pointer: /^\s*\*\s*/,
             re: S.c_decl(/*groups 1 and 2*/)
                 .add(
-                    S.c_ident().group(3).sp1(), //type
+                    S.c_ident().group(3).sp1() //type
                 )
                 .add(
                     S.c_ident()
@@ -916,10 +920,10 @@ define(function (require, exports, module) {
                                         .sp2()
                                         .add(S.c_ident())
                                         .add(S.safeVal().maybe())
-                                        .star(),
-                                ),
+                                        .star()
+                                )
                         )
-                        .group(4),
+                        .group(4)
                 )
                 .sp()
                 .add(/[;\n\{\r]/)
@@ -935,7 +939,7 @@ define(function (require, exports, module) {
                         name.replace(this, ''),
                         type,
                         'var',
-                        all,
+                        all
                     );
                 }, this.pointer);
             },
@@ -968,9 +972,9 @@ define(function (require, exports, module) {
                                 '[Ii]nterface',
                                 'struct',
                                 'union',
-                            ]),
+                            ])
                         )
-                        .test('class'),
+                        .test('class')
                 )
                 .sp1()
                 .add(S.ident().group(3))
@@ -979,7 +983,7 @@ define(function (require, exports, module) {
                     S.s('[^\\{]')
                         .star()
                         .group(4)
-                        .test(' extends Pako {', ' extends Pako '),
+                        .test(' extends Pako {', ' extends Pako ')
                 )
                 .sp()
                 .t('(?=\\{)')
@@ -990,7 +994,7 @@ define(function (require, exports, module) {
                     name,
                     scope,
                     'class',
-                    olothers,
+                    olothers
                 );
             },
         },
@@ -1007,7 +1011,7 @@ define(function (require, exports, module) {
                     .group(5)
                     .sp()
                     .maybe(),
-                S.s(':'),
+                S.s(':')
             ),
             handle: function (index, text, doc, indent, name, args, ret) {
                 return argument(args || '', index, text).concat([
@@ -1029,7 +1033,7 @@ define(function (require, exports, module) {
                     name,
                     cls,
                     'class',
-                    res,
+                    res
                 );
             },
         },

@@ -55,7 +55,7 @@ define(function (require, exports, module) {
                         info,
                         FileUtils.createError({
                             code: SearchReplace.SERVER_DELETED,
-                        }),
+                        })
                     );
                     return next();
                 }
@@ -103,7 +103,7 @@ define(function (require, exports, module) {
                 var replacer = opts.getReplacer(
                     input,
                     replacement,
-                    range.match,
+                    range.match
                 );
                 if (replacer !== null) {
                     range.end = session.replace(range, replacer);
@@ -138,7 +138,7 @@ define(function (require, exports, module) {
                             doc,
                             replacement,
                             e,
-                            doc.getFileServer(),
+                            doc.getFileServer()
                         );
                         refs++;
                         return next();
@@ -156,7 +156,7 @@ define(function (require, exports, module) {
                             doc,
                             replacement,
                             e,
-                            defaultServer,
+                            defaultServer
                         );
                         refs++;
                         doc.save(function (doc, err) {
@@ -165,7 +165,7 @@ define(function (require, exports, module) {
                                     {path: e, server: defaultServer.id},
                                     doc,
                                     err,
-                                    true,
+                                    true
                                 );
                             doc.unref('search_replace');
                             next();
@@ -175,7 +175,7 @@ define(function (require, exports, module) {
                 function () {
                     opts.onReplaceFinished &&
                         opts.onReplaceFinished(refs, replaced);
-                },
+                }
             );
         }
         this.undo = undoReplace;
@@ -210,7 +210,7 @@ define(function (require, exports, module) {
         },
         onReplaceFinished: function (refs, replaced) {
             Notify.info(
-                'Replaced ' + replaced + ' instances in ' + refs + ' files',
+                'Replaced ' + replaced + ' instances in ' + refs + ' files'
             );
         },
         getReplacer: function (input, replacement, range) {

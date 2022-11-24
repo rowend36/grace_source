@@ -20,12 +20,12 @@ define(function (require, exports, module) {
         this.isQueued = false;
         this.$triggerUpdate = this.triggerUpdate.bind(this);
         this.$annotate = require('grace/core/utils').Utils.debounce(
-            this.annotate,
+            this.annotate
         );
     }
     require('grace/core/utils').Utils.inherits(
         Merge3Worker,
-        require('grace/core/events_emitter').EventsEmitter,
+        require('grace/core/events_emitter').EventsEmitter
     );
     Merge3Worker.prototype.triggerUpdate = function (change, doc) {
         if (this.isQueued) return;
@@ -157,7 +157,7 @@ define(function (require, exports, module) {
         return new Merge3Worker();
     };
     Merge3Mode.isSupport = true;
-    
+
     Annotations.registerProvider(Merge3Mode);
     config.defineOptions(EditSession.prototype, 'edit_session', {
         highlightMerge3: {
@@ -187,7 +187,7 @@ define(function (require, exports, module) {
 .ace_editor .ace_merge.ace_arrows.ace_null{\
     color: green;\
 }',
-        'merge3highlight.css',
+        'merge3highlight.css'
     );
     update();
     exports.highlightMerge3 = update;

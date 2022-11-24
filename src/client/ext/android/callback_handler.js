@@ -22,8 +22,6 @@ define(function(require, exports, module) {
         appEvents.pause();
     };
     handler._resume = function() {
-        setTimeout(window.blur.bind(window), 50);
-        //if(window.Grace && window.Grace.loaded)
         appEvents.trigger('appResumed');
     };
 
@@ -46,6 +44,6 @@ define(function(require, exports, module) {
     handler.clearCallback = function(id) {
         delete handler._callbacks[id];
     };
-    exports.callBackHandler = handler;
+    exports.callbackHandler = handler;
 
 });

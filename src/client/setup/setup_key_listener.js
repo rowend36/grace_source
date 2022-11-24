@@ -2,66 +2,76 @@ define(function (require, exports, module) {
   var event = require('ace!lib/event');
   var getEditor = require('./setup_editors').getEditor;
   var keys = require('ace!lib/keys');
-  var FocusManager = require('../ui/focus_manager').FocusManager;
-  exports.addListener = function (target, capture) {
-    if (capture) {
-      target.addEventListener('keydown', captureEvent, {
-        passive: true,
+  /**
+   * captureAll takes all the key events from this listener.
+   * Mostly for use with invisible textareas.
+   */
+  exports.addListener = function (target, captureAll) {
+    event.addCommandKeyListener(target, handleEvent);
+    if (captureAll) {
+      target.addEventListener('beforeinput', captureInput, {
         capture: true,
+        passive: false,
       });
-    } else event.addCommandKeyListener(target, handleEvent);
+    }
   };
-  function captureEvent(e) {
-    var hashId = event.getModifierString(e);
-    var keyCode = e.keyCode;
-    handleEvent(e, hashId, keyCode);
+
+  function captureInput(e) {
+    var keyCode = e.data.charCodeAt(e.data.length - 1);
+    if (keyCode !== undefined) handleEvent(e, 0, keyCode);
+    event.stopEvent(e);
   }
-  /**This class is tied to Editor for simplicity.
-  The alternative is to add a new hash handler
-  */
+  /**
+   * This class is tied to Editor for simplicity.
+   * The alternative is to add a new hash handler
+   */
   var CONTEXT = {};
   function ensureContext(e) {
     if (e.args === CONTEXT) {
       if (!e.command.hasOwnProperty('context')) {
         //Not an action
-        event.stopEvent(e);
-        return false;
+        return event.stopEvent(e); //returns false preventing scrollintoview
       }
       if (e.command.passEvent != true) CONTEXT.stopEvent = true;
+      return e.command.exec(e.editor, CONTEXT, e.event, false);
     }
   }
-  var currentEvent;
+  var currentEvent, lastEvent;
   function handleEvent(e, hashId, keyCode) {
+    if (e === lastEvent) return;
+    //Action would have already been handled
+    if (e.target.className.indexOf('ace_text-input') > -1) return;
+    lastEvent = currentEvent = e;
     var editor = getEditor();
-    if (e.target === editor.textInput.getElement()) return;
-    else if (hashId === -1 && FocusManager.isFocusable(e.target)) {
-      return;
-    }
-    editor.commands.on('exec', ensureContext);
-    var keyString = keys.keyCodeToString(keyCode);
+    editor.commands.setDefaultHandler('exec', ensureContext);
     try {
+      var keyString = keys.keyCodeToString(keyCode);
       CONTEXT.stopEvent = false;
-      var handlers = [editor.commands, editor.keyBinding.$userKbHandler]; //filter handlers that can actually have actions
+      //Use only handlers that can actually have actions
+      var handler = editor.commands;
       var commands = editor.commands;
-      for (var i = handlers.length; i-- > 0; ) {
+      var i = 0;
+      do {
         var toExecute =
-          handlers[i] &&
-          handlers[i].handleKeyboard(CONTEXT, hashId, keyString, keyCode, e);
+          handler &&
+          handler.handleKeyboard(CONTEXT, hashId, keyString, keyCode, e);
         if (
           toExecute &&
           toExecute.command &&
           (toExecute.command === 'null' ||
             commands.exec(toExecute.command, editor, CONTEXT))
         ) {
-          if (e && hashId != -1 && CONTEXT.stopEvent) {
+          if (e && hashId !== 0 && CONTEXT.stopEvent) {
             event.stopEvent(e);
           }
           break;
         }
-      }
+        //Repeat this with the userKbHandler
+        handler = editor.keyBinding.$userKbHandler;
+      } while (++i === 1);
     } finally {
       currentEvent = null;
-      editor.commands.off('exec', ensureContext); //not needed most of the time
+      editor.commands.removeDefaultHandler('exec', ensureContext);
     }
   }
   exports.getEvent = function () {

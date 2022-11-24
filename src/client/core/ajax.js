@@ -21,6 +21,7 @@ define(function (require, exports, module) {
      * @param {number} [opts.timeout]
      * @param {import("ext/stop_signal").StopSignal} [opts.stopSignal]
      * @callback {({loaded,total?})} [opts.onProgress]
+     * @returns {Promise<XMLHttpRequest>}
      */
 
     function ajax(url, opts) {

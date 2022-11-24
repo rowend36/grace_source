@@ -1,33 +1,33 @@
 define(function (require, exports, module) {
-    require("./brace-expansion");
+    require('./brace-expansion');
     var braceExpand = window.braceExpand;
-    var regEscape = require("grace/core/utils").Utils.regEscape;
-    var appConfig = require("grace/core/config").Config.registerAll(
+    var regEscape = require('grace/core/utils').Utils.regEscape;
+    var appConfig = require('grace/core/config').Config.registerAll(
         {
             dotStar: false,
         },
-        "files"
+        'files'
     );
-    require("grace/core/config").Config.registerValues(
+    require('grace/core/config').Config.registerInfo(
         {
             dotStar:
-                "Enable dotstar matching for globs.eg main/* matches main/.tmp",
+                'Enable dotstar matching for globs.eg main/* matches main/.tmp',
         },
-        "files"
+        'files'
     );
-    var FileUtils = require("grace/core/file_utils").FileUtils;
+    var FileUtils = require('grace/core/file_utils').FileUtils;
     var SEP = FileUtils.sep;
     //A regex that matches any of the parent directories of a path
     function genQuickFilter(g) {
         var globs = preprocess(g);
         var a = [];
         for (var i in globs) {
-            var start = "";
+            var start = '';
             var segments = FileUtils.normalize(globs[i]).split(FileUtils.sep);
-            if (segments[0] == ".") segments.shift();
+            if (segments[0] == '.') segments.shift();
             var base = segments[segments.length - 1];
             //remove file matches
-            if (!base.endsWith("**")) {
+            if (!base.endsWith('**')) {
                 segments.pop();
             }
             if (!segments[0]) {
@@ -38,17 +38,17 @@ define(function (require, exports, module) {
             //retrieve the part of the regex that is plain
             var first = true;
             for (j = 0; j < segments.length; j++) {
-                var stop = segments[j].indexOf("**") + 1;
+                var stop = segments[j].indexOf('**') + 1;
                 if (stop === 1) {
                     if (j > 0) {
-                        start += ".*";
+                        start += '.*';
                         break;
                     } else return alwaysTrue;
                 } else {
                     if (first) {
-                        start += "(?:";
+                        start += '(?:';
                         first = false;
-                    } else start += "(?:\\/";
+                    } else start += '(?:\\/';
                     try {
                         start += tryParseSegment(segments[j]).source;
                     } catch (e) {
@@ -56,59 +56,61 @@ define(function (require, exports, module) {
                         //e.g [! , / , ]*";
                         //Better to have false positives than true negatives
                         var letters = /\w+/.exec(segments[j]);
-                        start += (letters ? letters[0] : "") + "[^/]*/|";
+                        start += (letters ? letters[0] : '') + '[^/]*/|';
                         segments[j + 1] =
                             segments[j] + FileUtils.sep + segments[j + 1];
                         first = true;
                     }
                     //since we allowed it @globToRegex, non-standard glob
                     //handle the /path** -> \/path.*
-                    if (stop) {
-                        start += ".*";
-                        j++;
-                        break;
-                    }
+                    // if (stop) {
+                    //     start += ".*";
+                    //     j++;
+                    //     break;
+                    // }
                 }
             }
             /*As a bonus, we could match all files in the directory
                 start += "(?:\/[^/]*|\/?)$";
             */
-            start += "/?"; //but we just match any trailing slash
+            start += '/?'; //but we just match any trailing slash
             for (; j-- > 0; ) {
-                start += "|/?)";
+                start += '|/?)';
             }
             a.push(start);
         }
-        return new RegExp("^(?:\\./)?(?:" + a.join("|") + ")$");
+        return new RegExp('^(?:\\./)?(?:' + a.join('|') + ')$');
     }
     var alwaysTrue = {
         test: function () {
             return true;
         },
-        source: ".*",
+        source: '.*',
     };
+
+    function uniq(e, i, arr) {
+        return e !== arr[i - 1];
+    }
 
     function preprocess(g) {
         var globs;
 
-        if (typeof g == "object") {
+        if (typeof g == 'object') {
             globs = g.reduce(function (a, i) {
                 a.push.apply(a, braceExpand(i));
                 return a;
             }, []);
         } else {
             if (/\{|\}/.test(g)) {
-                g = braceExpand("{" + g + ",}").join(",");
+                g = braceExpand('{' + g + ',}').join(',');
             }
-            globs = g.split(",");
+            globs = g.split(',');
         }
         return globs
             .map(FileUtils.normalize)
-            .sort()
             .filter(isNotSpace)
-            .filter(function (e, i, arr) {
-                return e !== arr[i - 1];
-            });
+            .sort()
+            .filter(uniq);
     }
     var isNotSpace = function (t) {
         return /\S/.test(t);
@@ -119,28 +121,30 @@ define(function (require, exports, module) {
     Supported globs, *, ?, **, brace-expansion, [A-Z],[!A-Z],!a
     //Could return a function object.test that tests each glob but this is more convenient
     */
-    var globParts = /\\(?:(\\\\?(.))|(\*\\\*+)(\/|$)|((?:\*)+)|(\?(?:(?:\\\?)+(?=\\\*))?)|(\[(?:!|\\\^))|(\[)|(\]))/g;
-    var singleLetter = "[^/]";
-    var star = singleLetter + "*";
-    var doublestar = "(?:" + star + "/)*";
+    var globParts = /(\/|^)(?:(\\\*\\\*)(?:\\\*)*(\/|$))+|\\(?:(\\\\?(.))|(\/)?(\*)|(\?)|(\[(?:!|\\\^))|(\[)|(\]))/g;
+    var singleLetter = '[^/]';
+    var star = singleLetter + '*';
+    var doublestar = '(?:' + star + '/)*';
 
     function parseGlob(seg) {
-        var dotstar = appConfig.dotStar ? star : "(?:[^/\\.][^/]*)?";
+        var dotstar = appConfig.dotStar ? star : '(?:[^/\\.][^/]*)?';
         globParts.lastIndex = 0;
         var lastIndex = -1,
             //not foolproof but should stop someone from accidentally breaking this.
             //Not like it ever happened except during tests specifically designed to cause it
-            starHeight;
+            starHeight; //[*,**/,**/?, **/*]
         var p = regEscape(seg).replace(
             globParts,
             function (
                 match,
+                double_star_pre_slash,
+                double_star,
+                double_star_post_slash,
                 escaped_sequence,
                 escaped_char,
-                double_star,
-                double_star_is_directory,
+                anyStar_pre_slash,
                 anyStar,
-                one_or_zero,
+                single_char,
                 negBracket,
                 posBracket,
                 closeBracket,
@@ -152,42 +156,58 @@ define(function (require, exports, module) {
                 if (!isAdjacent) {
                     starHeight = -1;
                 }
-                if (one_or_zero) {
-                    if (starHeight < 1) return singleLetter + "?";
+                //?
+                if (single_char) {
+                    if (starHeight == 2) starHeight = 3;
+                    return singleLetter;
                 }
+                //*
                 if (anyStar) {
-                    if (starHeight < 1) {
+                    //**/*/*
+                    if (starHeight === 4) return '';
+                    if (anyStar_pre_slash || starHeight < 1) {
                         starHeight = 1;
+                        return anyStar_pre_slash
+                            ? anyStar_pre_slash + dotstar
+                            : index === 0
+                            ? dotstar
+                            : star;
+                    }
+                    //a**,**a etc
+                    if (starHeight === 1) return '';
+                    //**/*
+                    if (starHeight === 2) {
+                        starHeight = 4;
                         return dotstar;
                     }
-                    if (starHeight == 2) {
-                        starHeight = 3;
-                        return dotstar;
-                    }
+                    //**/?*
+                    // if (starHeight === 3) {
+                    star   ght = 4;
+                           star;
+                    
                 }
                 if (double_star) {
-                    if (starHeight < 2) {
-                        if (double_star_is_directory) {
+                    if (starHeight < 2 || starHeight === 3) {
+                        //**/
+                        if (double_star_post_slash) {
                             starHeight = 2;
-                            return doublestar;
+                            return double_star_pre_slash + doublestar;
                         }
-                        starHeight = 3;
-                        return doublestar + star;
-                    } else if (starHeight < 3) {
-                        starHeight = 3;
-                        return star;
+                        //**
+                        starHeight = 4;
+                        return double_star_pre_slash + doublestar + star;
                     }
+                    return '';
                 }
+                starHeight = -1;
                 if (escaped_sequence) {
-                    return "\\" + escaped_char;
+                    return '\\' + escaped_char;
                 }
-                if (negBracket) return "[^\\/";
-                if (posBracket) return "[";
-                if (closeBracket) return "]";
-                return "";
+                if (negBracket) return '[^\\/';
+                if (posBracket) return '[';
+                if (closeBracket) return ']';
             }
         );
-
         return p;
     }
 
@@ -198,9 +218,9 @@ define(function (require, exports, module) {
     function globToRegex(g) {
         var globs = preprocess(g).map(parseGlob);
         if (!globs.length) return null;
-        var curdir = "^(?:\\./)?(?:";
-        var tail = ")/?$";
-        return new RegExp(curdir + globs.join("|") + tail);
+        var curdir = '^(?:\\./)?(?:';
+        var tail = ')/?$';
+        return new RegExp(curdir + globs.join('|') + tail);
     }
 
     function doNothing(e) {
@@ -273,7 +293,7 @@ define(function (require, exports, module) {
                 commonRoot = head;
                 var part2 = transform(next.substring(mergeStart)).source;
                 transformIndex = mergeStart;
-                return head + "(?:" + part1 + "|" + part2 + ")";
+                return head + '(?:' + part1 + '|' + part2 + ')';
             } else {
                 //Or discard the chunk
                 transformIndex = Infinity;
@@ -291,47 +311,48 @@ define(function (require, exports, module) {
             reduce seems to handle better
         */
         var options = globs;
-        var commonRoot = "";
+        var commonRoot = '';
 
         function lastDir(path) {
-            var star = path.lastIndexOf("*");
+            var star = path.lastIndexOf('*');
             if (star > -1) path = path.substring(0, star);
-            star = path.lastIndexOf("?");
+            star = path.lastIndexOf('?');
             if (star > -1) path = path.substring(0, star);
             var escapedPath = path.substring(0, path.lastIndexOf(SEP) + 1);
-            return escapedPath.replace(/\\(.)/g, "$1");
+            return escapedPath.replace(/\\(.)/g, '$1');
         }
         if (options.length < 2) {
             if (options.length == 0)
                 return {
                     regex: null,
-                    commonRoot: "",
+                    commonRoot: '',
                 };
             commonRoot = options[0];
             var meta = META.exec(commonRoot);
             if (meta) commonRoot = commonRoot.substring(0, meta.index);
             return {
                 commonRoot: lastDir(commonRoot),
-                regex: tryParseSegment(options[0]),
+                regex: new RegExp('^(?:\\./)?' + parseGlob(options[0]) + '/?$'),
             };
         }
+        /** @type {typeof doNothing} */
         var transform = tryParseSegment;
         do {
             LAST_INDEX = options.length - 1;
             globs = options;
-            globs.push(""); //so final path always gets converted
+            globs.push(''); //so final path always gets converted
             options = [];
             globs.reduce(shrink);
             transform = doNothing; //don't repeat tryParseSegment
         } while (globs.length > options.length + 1);
         //Validate commonRoot
-        if (options.length > 1) commonRoot = "";
+        if (options.length > 1) commonRoot = '';
         else commonRoot = lastDir(commonRoot);
         //todo remove commonRoot from regex
         //so we don't have to join it back in walk
         return {
             commonRoot: commonRoot,
-            regex: new RegExp("^(?:\\./)?(?:" + options.join("|") + ")/?$"),
+            regex: new RegExp('^(?:\\./)?(?:' + options.join('|') + ')/?$'),
         };
     }
 

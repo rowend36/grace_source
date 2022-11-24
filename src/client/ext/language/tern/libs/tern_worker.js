@@ -178,7 +178,6 @@
                 getFile: getFile,
                 async: true,
                 defs: defs,
-                projectDir: '',
                 plugins: plugins,
             });
         };
@@ -197,7 +196,7 @@
 //prevent amd definition
 (function(define,require){
 
-//#region acorn/dist/acorn.js
+//#region tern/node_modules/acorn/dist/acorn.js
 (function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
   typeof define === 'function' && define.amd ? define(['exports'], factory) :
@@ -5193,7 +5192,7 @@
 //#endregion
 
 
-//#region acorn-loose/dist/acorn-loose.js
+//#region tern/node_modules/acorn-loose/dist/acorn-loose.js
 (function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports, require('acorn')) :
   typeof define === 'function' && define.amd ? define(['exports', 'acorn'], factory) :
@@ -6571,7 +6570,7 @@
 //#endregion
 
 
-//#region acorn-walk/dist/walk.js
+//#region tern/node_modules/acorn-walk/dist/walk.js
 (function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
   typeof define === 'function' && define.amd ? define(['exports'], factory) :
@@ -7384,7 +7383,7 @@
     });
     return file;
   }
-  
+
   function ensureFile(srv, name, parent, text) {
     var known = srv.findFile(name);
     if (known) {
@@ -8140,7 +8139,7 @@
       var spanFile = span.node.sourceFile || srv.fileMap[span.origin];
       var start = outputPos(query, spanFile, span.node.start), end = outputPos(query, spanFile, span.node.end);
       result.start = start; result.end = end;
-      result.file = (spanFile && spanFile.name)||span.origin;
+      result.file = (spanFile && spanFile.name) || span.origin;
       var cxStart = Math.max(0, span.node.start - 50);
       result.contextOffset = span.node.start - cxStart;
       result.context = spanFile.text.slice(cxStart, cxStart + 50);
@@ -10202,7 +10201,7 @@
 
   function rmScope(node) { if (node.scope) node.scope = null }
   var scopeClearer = {BlockStatement: rmScope, Function: rmScope, CatchClause: rmScope,
-                      ForInStateMent: rmScope, ForStatement: rmScope};
+                      ForInStatement: rmScope, ForStatement: rmScope};
   exports.clearScopes = function(ast) {
     walk.simple(ast, scopeClearer);
   };
@@ -10800,6 +10799,7 @@
 
     cx.curOrigin = null;
   };
+
   // PURGING
 
   exports.purge = function(origins, start, end) {
@@ -11192,7 +11192,7 @@
       if (parent.type == "MemberExpression" && !parent.computed && !!node.object) return;
       if (node.name != name ||
           (node == ast.id && ast.type == "FunctionDeclaration")) return;
-      if (parent.property === node) return;
+      if (parent.property === node && node.type !== 'Identifier') return;
       for (var s = scope; s; s = s.prev) {
         if (s == refScope) f(node, scope, ancestors);
         if (name in s.props) return;
@@ -11221,7 +11221,7 @@
     function isObjTypeProto(type) {
       // Check whether the found type has objType in its hierarchy
       while (type && type != objType) {
-        // Ff property is overriden higher in the hierarchy, return false
+        // Ff property is overridden higher in the hierarchy, return false
         if (type.props[name] || (type.maybeProps && type.maybeProps[name])) {
           return false;
         }
@@ -16228,16 +16228,12 @@
     var cx = infer.cx();
 
     var re = /\s@typedef\s+(.*)/g, m;
-    var paramRe = /\s+@prop(?:erty)?\s+(.*)/;
-    var next = re.exec(text);
-    var a = 0;
-    while ((m=next)) {
-      next = re.exec(text);
+    while (m = re.exec(text)) {
       var parsed = parseTypeOuter(scope, m[1]);
       var name = parsed && m[1].slice(parsed.end).match(/^\s*(\S+)/);
       if (name && parsed.type instanceof infer.Obj) {
-        var rest = text.slice(m.index + m[0].length,next?next.index:Infinity);
-        while ((m = paramRe.exec(rest))) {
+        var rest = text.slice(m.index + m[0].length);
+        while (m = /\s+@prop(?:erty)?\s+(.*)/.exec(rest)) {
           var propType = parseTypeOuter(scope, m[1]), propName;
           if (propType && (propName = m[1].slice(propType.end).match(/^\s*(\S+)/)))
             propType.type.propagate(parsed.type.defProp(propName[1]));
@@ -16355,6 +16351,7 @@
   }
 });
 //#endregion
+
 
 //#region node-express.js
 (function(mod) {
@@ -24036,6 +24033,48 @@ tern_Defs.ecmascript = {
          "!url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/WeakSet/has"
        }
      }
+   },
+   "TextDecoder": {
+     "!type": "fn(encoding?: string, options?: object)",
+     "!doc": "The TextDecoder interface represents a decoder for a specific text encoding, such as UTF-8, ISO-8859-2, KOI8-R, GBK, etc. A decoder takes a stream of bytes as input and emits a stream of code points.",
+     "!url": "https://developer.mozilla.org/en-US/docs/Web/API/TextDecoder/TextDecoder",
+     "prototype": {
+       "decode": {
+         "!type": "fn(buffer?: +ArrayBuffer|+TypedArray|+DataView, options?: object) -> string",
+         "!doc": "The decode() method returns the buffer decoded with the ecoding property."
+       },
+       "encoding": {
+         "!type": "string",
+         "!doc": "A read-only string describing the method the TextDecoder will use."
+       },
+       "fatal": {
+         "!type": "bool",
+         "!doc": "A read-only boolean indicating whether the error mode is fatal."
+       },
+       "ignoreBOM": {
+         "!type": "bool",
+         "!doc": "A read-only boolean indicating whether the byte order marker is ignored."
+       }
+     }
+   },
+   "TextEncoder": {
+     "!type": "fn()",
+     "!doc": "TextEncoder takes a stream of code points as input and emits a stream of UTF-8 bytes.",
+     "!url": "https://developer.mozilla.org/en-US/docs/Web/API/TextEncoder/TextEncoder",
+     "prototype": {
+       "encode": {
+         "!type": "fn(text?: string) -> +Uint8Array",
+         "!doc": "The encode() method returns the given text encoded into an Uint8Array."
+       },
+       "encoding": {
+         "!type": "string",
+         "!doc": "A read-only string describing the method the TextEncoder will use. The only available encoding is utf-8."
+       },
+       "encodeInto": {
+         "!type": "fn(text: string, dest: +Uint8Array) -> object",
+         "!doc": "The encodeInto() encodes the text into the dest and returns an object indicating the progress of the encoding."
+       }
+     }
    }
  }
  //#endregion
@@ -27342,5 +27381,6 @@ tern_Defs.react ={
   }
 }
 //#endregion
+
 
 

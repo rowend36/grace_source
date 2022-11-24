@@ -11,8 +11,7 @@ define(function (require, exports, module) {
     require('./misc/snippets');
     require('./tern/tern_provider');
     require('./lsp/lsp_provider');
-    
-    
+
     /*
        It's faster to reload workers than to reload the application
        Especially on Android where we have to restart the entire activity.
@@ -22,7 +21,7 @@ define(function (require, exports, module) {
             appEvents.trigger('pauseAutocomplete');
             appEvents.once('appResumed', resumeServers);
         },
-        Env.isWebView ? 10000 : 1000,
+        Env.isWebView ? 10000 : 1000
     );
     appEvents.on('appResumed', stopServers.cancel);
 
@@ -78,13 +77,13 @@ define(function (require, exports, module) {
                 },
             },
         },
-        {showIn: 'fileview.language'},
+        {showIn: 'fileview.language'}
     );
     Actions.registerActionHost('fileview.language', function (action) {
         languageOptions[action.id] = action;
         languageOptions['!changed'] = true;
     });
-    
+
     appEvents.on('showDocInfo', function (e) {
         var editor = require('grace/setup/setup_editors').getEditor();
         var instance = editor.getMainCompleter();
@@ -94,7 +93,7 @@ define(function (require, exports, module) {
                 return (
                     e.name ||
                     (e.provider && e.provider.name) ||
-                    e.constructor.name
+                    'Unnamed completer'
                 );
             });
         e.data['Loaded Documents'] = instance ? Object.keys(instance.docs) : '';

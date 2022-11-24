@@ -6,7 +6,7 @@ define(function (require, exports, module) {
 
     setBreakpoint('start-app', function () {
         Notify.error(
-            'Error During Previous Load!!! If issue persists, contact developer',
+            'Error During Previous Load!!! If issue persists, contact developer'
         );
         require(['./setup_console']);
     });

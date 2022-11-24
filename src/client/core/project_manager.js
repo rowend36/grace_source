@@ -12,7 +12,7 @@ define(function (require, exports, module) {
       projectName: '',
       projectConfigFile: 'grace.json',
     },
-    'files',
+    'files'
   );
 
   Config.registerInfo(
@@ -25,7 +25,7 @@ define(function (require, exports, module) {
       },
       projectFileServer: 'no-user-config',
     },
-    'files',
+    'files'
   );
 
   var project = {
@@ -76,7 +76,7 @@ define(function (require, exports, module) {
         paths.resolve(project.rootDir, name),
         content,
         'utf8',
-        cb,
+        cb
       );
     },
 
@@ -90,7 +90,7 @@ define(function (require, exports, module) {
         appEvents.trigger('renameProject');
         Config.putObj(
           'project',
-          {rootDir: path, fileServer: fileServer.id},
+          {rootDir: path, fileServer: fileServer.id}
         );
         if (loadConfigsTask) loadConfigsTask.stop();
         require(['../ext/config/configs'], function (mod) {
@@ -115,7 +115,7 @@ define(function (require, exports, module) {
     if (project.fileServer == e.server) {
       ProjectManager.openProject(
         ProjectManager.NO_PROJECT,
-        FileServers.$getDefaultServer(),
+        FileServers.$getDefaultServer()
       );
     }
   });
@@ -125,7 +125,7 @@ define(function (require, exports, module) {
       ProjectManager.openProject(
         data.rootDir || NO_PROJECT,
         FileServers.getFileServer(data.fileServer, true),
-        appConfig.projectName,
+        appConfig.projectName
       );
     });
   });
