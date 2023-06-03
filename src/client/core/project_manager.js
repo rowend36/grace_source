@@ -81,17 +81,14 @@ define(function (require, exports, module) {
     },
 
     openProject: function (path, fileServer, name) {
+      var reset = !name;
+      if (reset) name = path.length > 50 ? '...' + path.slice(-45) : path;
       if (path !== project.rootDir || fileServer != project.fileServer) {
         project.rootDir = path;
         project.fileServer = fileServer;
-        project.name =
-          name || (path.length > 50 ? '...' + path.substring(-45) : path);
+        Config.configure('projectName', name, 'files', true);
         appEvents.trigger('changeProject', {project: project});
-        appEvents.trigger('renameProject');
-        Config.putObj(
-          'project',
-          {rootDir: path, fileServer: fileServer.id}
-        );
+        Config.putObj('project', {rootDir: path, fileServer: fileServer.id});
         if (loadConfigsTask) loadConfigsTask.stop();
         require(['../ext/config/configs'], function (mod) {
           if (old.length) {
@@ -100,8 +97,16 @@ define(function (require, exports, module) {
             mod.Configs.commit();
           } else appEvents.once('fullyLoaded', loadConfigs);
         });
+      } else if (name !== project.name) {
+        Config.configure('projectName', name, 'files', true);
+        if (reset)
+          require(['../ext/config/configs'], function (mod) {
+            mod.Configs.configure('projectName', name, 'files');
+          });
       }
-      Config.configure('projectName', project.name, 'files');
+    },
+    configFiles: function () {
+      return old;
     },
   };
   exports.ProjectManager = ProjectManager;
@@ -148,8 +153,8 @@ define(function (require, exports, module) {
   var old = [];
   function loadConfigs() {
     var m = Utils.parseList(appConfig.projectConfigFile);
-    var removed = m.filter(Utils.notIn(old));
-    var added = old.filter(Utils.notIn(m));
+    var added = m.filter(Utils.notIn(old));
+    var removed = old.filter(Utils.notIn(m));
     old = m;
     require([
       '../ext/config/configs',
@@ -171,7 +176,7 @@ define(function (require, exports, module) {
           } else {
             loadConfigsTask.toRemove.forEach(mod1.Configs.removeConfig);
             loaded.forEach(function (e) {
-              if (loadConfigsTask.toRemove.indexOf(e.path) > -1) {
+              if (loadConfigsTask.toRemove.indexOf(e.path) < 0) {
                 mod1.Configs.setConfig(e.path, e.data, false);
               }
             });

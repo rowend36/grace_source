@@ -1,14 +1,17 @@
 define(function (require, exports, module) {
-    'use strict';
-    var UndoManager = require('ace!undomanager').UndoManager;
+    "use strict";
+    var UndoManager = require("ace!undomanager").UndoManager;
     /**
      * For two delta sets, the following should be the same if
      * uid - applying both of them would duplicate a change
      * rev - applying both of them will produce the same content.
      * id - should never be the same. ids should be roughly sorted in the undo stack.
-     * origin - if they originated from the same source. The uid, id and rev rules are localized to origins ie only respected when they originated from the same origin.
+     * origin - if they originated from the same source.
+     * The uid, id and rev are not unique/checked between revs from different origins.
      */
-
+    /**
+     * @returns {{src: number, dest:number}|undefined} - returns the highest matching indices in both stacks
+     */
     function _findCommonBase(ds1, ds2) {
         for (var i = ds1.length - 1, j = ds2.length - 1; i > -1 && j > -1; ) {
             if (ds1[i][0].id < ds2[j][0].id) j--;
@@ -30,37 +33,41 @@ define(function (require, exports, module) {
         return e[0].rev || e[0].id;
     }
     function getPatch(um1, um2, originId) {
-        var from = um1.$undoStack;
-        var fromOffset = 0;
-        if (um1.$redoStackBaseRev === um1.$rev) {
-            from = from.concat(um1.$redoStack.slice().reverse());
-            fromOffset = um1.$redoStack.length;
-        }
-        var to = um2.$undoStack;
-        var toOffset = 0;
+        var ours = um1.$undoStack;
+        var cursorOurs = 0;
         //Todo transform these deltas so we can keep redo stack.
+        if (um1.$redoStackBaseRev === um1.$rev) {
+            ours = ours.concat(um1.$redoStack.slice().reverse());
+            cursorOurs = um1.$redoStack.length;
+        }
+
+        var theirs = um2.$undoStack;
+        var cursorTheirs = 0;
         if (um2.$redoStackBaseRev === um2.$rev) {
-            to = to.concat(um2.$redoStack.slice().reverse());
-            toOffset = um2.$redoStack.length;
+            theirs = theirs.concat(um2.$redoStack.slice().reverse());
+            cursorTheirs = um2.$redoStack.length;
         }
-        var base = _findCommonBase(from, to);
+
+        var base = _findCommonBase(ours, theirs);
         if (!base) {
-            //Try to see this as a fast-forward patch
-            if (to[0] && to[0][0].id === um1.$maxRev + 1)
-                base = {src: from.length - 1, dest: -1};
-            else if (!base) return false;
+            //Try theirs see if this as a fast-forward patch
+            if (theirs[0] && theirs[0][0].id === um1.$maxRev + 1)
+                base = {src: ours.length - 1, dest: -1};
+            else return false;
         }
-        //The position of the undo stack head.
-        //When base.dest = to.length-1; offset = -toOffset
-        //e.g 1,[2] (3), + 1,2,(3),4 => 1,[2],(3),4
-        //to.length=3, toOffset = 1, base.dest(3) = 2
+        //The position of the undo stack cursor in the final stack relative to
+        //the base.
+        //Check: when base.dest = theirs.length-1; offset = -cursorTheirs
+        //e.g ours 1,[2] (3), theirs 1,2,(3),4 => final 1,[2],(3),4
+        // (3) is the matching delta ie base, [2] is the currentRev
+        //theirs.length = 3, cursorTheirs(index of ([2])) = 1, base.dest(index of (3)) = 2
         //offset = -1;
-        var offset = to.length - 1 - base.dest - toOffset;
-        //Confirm that the revs that will be undone by the offset are in from.
+        var offset = theirs.length - 1 - base.dest - cursorTheirs;
+        //Confirm that the revs that will be undone by the offset are the same as those in ours.
         for (var k = offset; k < 0; k++) {
             if (
-                from[base.src + k] &&
-                _rev(from[base.src + k]) === _rev(to[base.dest + k])
+                ours[base.src + k] &&
+                _rev(ours[base.src + k]) === _rev(theirs[base.dest + k])
             ) {
                 break;
             }
@@ -71,19 +78,20 @@ define(function (require, exports, module) {
             offset = k;
         }
         var patch = {
-            //The direction from origin revision, we should undo/redo to get to the base. Call expandPatch to convert this to an array of deltas to be undone.
-            undo: base.src - from.length + fromOffset + 1,
-            // common: from[base.src],
+            //The number of deltas from origin revision, we should undo/redo to get to the base.
+            //Call expandPatch to convert this to an array of deltas to be undone.
+            //Poositive numbers imply redo
+            undo: -(ours.length - 1 - base.src - cursorOurs),
             //Deltas to be applied from the base to get to the top of the target stack.
             add: [],
-            //Offset determines how far the target revision is from the top base along the target stack.
+            //Offset determines how far the target revision is from the base in the target stack.
             offset: offset,
         };
 
-        for (var j = base.dest + 1; j < to.length; j++) {
-            var change = to[j][0];
+        for (var j = base.dest + 1; j < theirs.length; j++) {
+            var change = theirs[j][0];
             if (!change.origin) change.origin = originId;
-            patch.add.push(to[j]);
+            patch.add.push(theirs[j]);
         }
         return patch;
     }
@@ -91,14 +99,14 @@ define(function (require, exports, module) {
     function expandPatch(patch, origin) {
         var len = origin.$undoStack.length;
         var offset = patch.offset;
-        if (typeof patch.undo === 'number') {
+        if (typeof patch.undo === "number") {
             if (patch.undo < 0) {
-                //changes from origin undone before add
+                //changes from base to be undone before add
                 var toUndo = -patch.undo;
                 patch.undo = origin.$undoStack.slice(len - toUndo);
                 len -= toUndo;
             } else {
-                //changes from origin redone before add
+                //changes from base to be redone before add
                 var toRedo = patch.undo;
                 patch.undo = [];
                 patch.add.unshift.apply(
@@ -110,8 +118,9 @@ define(function (require, exports, module) {
                 offset += toRedo;
             }
         }
+        //Copy deltas so offset is a positive number.
         for (var i = offset; i < 0; i++) {
-            var top = origin.$undoStack[len + patch.offset - i - 1];
+            var top = origin.$undoStack[len + offset - i - 1];
             patch.undo.push(top);
             patch.add.unshift(top);
         }
@@ -134,9 +143,16 @@ define(function (require, exports, module) {
     //   return patch;
     // }
     var _splice = Array.prototype.splice;
+    /**
+     * Procedure
+     * Undo all the changes in patch.undo
+     * We are now at the base revision
+     * Replace redostack with patch.add
+     * Redo changes based on patch.offset
+     */
     function applyPatch(patch, um, session) {
         if (!session && session !== null)
-            throw new Error('Missing parameter session');
+            throw new Error("Missing parameter session");
         var isCompressed = patch.offset < 0;
         patch = expandPatch(patch, um);
         var u = um.$undoStack;
@@ -144,7 +160,7 @@ define(function (require, exports, module) {
             var top = patch.undo[i];
             //Without offset compression, this will not undo swapped undos.
             if (isCompressed ? u[u.length - 1] !== top : um.$rev != _rev(top))
-                throw new Error('Failed Precondition');
+                throw new Error("Failed Precondition");
             var ignore = top[0].ignore;
             if (ignore) top[0].ignore = false;
             session ? um.undo(session) : um.$undoStack.pop();
@@ -153,7 +169,7 @@ define(function (require, exports, module) {
         um.$syncRev();
         var r = um.$redoStack;
         _splice.apply(r, [0, r.length].concat(patch.add));
-        r.reverse();
+        r.reverse();//for descending ids without reverse for loop
         r.forEach(function (e) {
             if (!e[0].id) e[0].id = ++um.$maxRev;
         });
@@ -161,7 +177,7 @@ define(function (require, exports, module) {
             var next = patch.add[j];
             session ? um.redo(session) : u.push(r.pop());
             if (u[u.length - 1] !== next)
-                throw new Error('Failed Postcondition');
+                throw new Error("Failed Postcondition");
         }
         if (!session) um.$syncRev();
     }
@@ -174,10 +190,10 @@ define(function (require, exports, module) {
         delta = delta
             .filter(function (m) {
                 return (m.action =
-                    m.action === 'insert'
-                        ? 'remove'
-                        : m.action === 'remove'
-                        ? 'insert'
+                    m.action === "insert"
+                        ? "remove"
+                        : m.action === "remove"
+                        ? "insert"
                         : false);
             })
             .reverse();
@@ -200,7 +216,7 @@ define(function (require, exports, module) {
 
     //Uniquely identify a change
     function _uid(d) {
-        return d[0].origin + '.' + (d[0].uid || d[0].id);
+        return d[0].origin + "." + (d[0].uid || d[0].id);
     }
     function transformDeltasUnique(deltas, prevDeltas) {
         var base = _findCommonBase(deltas, prevDeltas);

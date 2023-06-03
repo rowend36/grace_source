@@ -2,8 +2,9 @@ define(function (require, exports, module) {
   var setBlob = require('./mixin_docs_blob').setBlob;
   var getBlob = require('./mixin_docs_blob').getBlob;
   var getBlobInfo = require('./mixin_docs_blob').getBlobInfo;
-  var hasBlob = require('./mixin_docs_blob').hasBlob;
   var removeBlob = require('./mixin_docs_blob').removeBlob;
+  var getName = require('./docs_base').getName;
+  var hasBlob = require('./mixin_docs_blob').hasBlob;
   var Notify = require('../ui/notify').Notify;
   var syncRequire = require('../core/depend').syncRequire;
   var CONTENT_PRIORITY = 10;
@@ -26,7 +27,7 @@ define(function (require, exports, module) {
   var id = null;
   var context = function (doc) {
     id = doc.id;
-    entry('Handling {id} ...');
+    entry('=== Handling {id}... ===');
   };
   function entry(e) {
     if (!exports._debug) return;
@@ -57,14 +58,15 @@ define(function (require, exports, module) {
     to update the value of a session reducing how often we have to save
     the entire content.
     
-   * Issue(willnotfix): bails out too early for revs from swapped undos in undo stack. id'rev
+   * Issue(willnotfix): bails out too early for revs from swapped undos in undo stack.
+   * Format: versions as id'rev, | is undo cursor position
    * 1 2 3 4 [7'10] [5'11] 6'7 8 |9 12 <-- find 10 or 11 fails because of 9
    * Similar issue in redo stack
    * 9 8 [6'7] |5'11 7'10 4 3 2 1 <-- find 7 will fail because of 5'11
    * 
   */
   function _findIndex(stack, revision, isRedo) {
-    if (revision === 0 && !isRedo) return 0; // Assumption
+    if (revision === 0 && !isRedo) return 0; // Assumption that we are at the beginning of undo stack
     for (var i = stack.length; i--; ) {
       var delta = stack[i][0];
       if ((delta.rev || delta.id) == revision) {
@@ -84,17 +86,16 @@ define(function (require, exports, module) {
     if (isInvalid(stack)) return ERROR;
     var i = currentRev === 0 ? 0 : _findIndex(stack, currentRev);
     if (i > -1) {
-      entry('Redoing ' + (stack.length - i) + ' changes');
+      entry('Redoing {num_changes} changes', stack.length - i);
       stack.slice(i).forEach(function (deltaSet) {
         session.redoChanges(deltaSet, true);
       });
       return SUCCESS;
     } else {
       stack = undoManager.$redoStack;
-      if (isInvalid(stack)) return ERROR;
       i = _findIndex(stack, currentRev, true);
       if (i > -1) {
-        entry('Undoing ' + (stack.length - i) + ' changes');
+        entry('Undoing {num_changes} changes', stack.length - i);
         stack.slice(i).forEach(function (deltaSet) {
           session.undoChanges(deltaSet, true);
         });
@@ -104,16 +105,24 @@ define(function (require, exports, module) {
     entry(
       'Failed to find revision {currentRev} in {stack}',
       currentRev,
-      undoManager.$undoStack
-        .map(function (e) {
-          return e[0].id;
-        })
-        .join(',')
+      '[' +
+        undoManager.$undoStack
+          .map(function (e) {
+            return e[0].id;
+          })
+          .concat(
+            undoManager.$redoStack.map(function (e) {
+              return e[0].id;
+            })
+          )
+          .join(',') +
+        ']'
     );
     return INCORRECT;
   }
   exports._debug = false;
-  exports.limits = null; //Will be set by doc_persist
+  exports.limits = null; //Will be set by mixin_doc_persist
+  //TODO return object result
   exports.save = function (doc, keepContent) {
     context(doc);
     var obj = doc.serialize();
@@ -133,15 +142,14 @@ define(function (require, exports, module) {
     entry('Serializing {id}...');
     var content;
     if (keepContent === undefined)
-      keepContent =
-        obj.content.length < exports.limits.maxDocDataSize / 10; //50kb
+      keepContent = obj.content.length < exports.limits.maxDocDataSize / 10; //50kb
     //Compute checksum
     if (!keepContent) {
       content = obj.content;
       obj.checksum = doc.getChecksum(content);
       obj.content = null;
     }
-    entry('{Action} content ..', keepContent ? 'Keeping' : 'Discarding');
+    entry('{Action} content...', keepContent ? 'Keeping' : 'Separating');
     entry('Data has{hist} history', obj.history ? '' : ' no');
 
     //Shrink Data
@@ -156,8 +164,8 @@ define(function (require, exports, module) {
     var lastSave = hasBlob(doc.id, 'content');
     var cacheIndex = 0;
     if (lastSave) {
-      //add 1 to index to make this falsy
       var info = getBlobInfo(lastSave);
+      //add 1 to index to make this 0 when not found instead of -1
       cacheIndex =
         -(_findIndex(history.undo, info.rev) + 1) ||
         _findIndex(history.redo, info.rev, true) + 1;
@@ -169,6 +177,7 @@ define(function (require, exports, module) {
           ? history.undo.length + cacheIndex
           : Infinity;
       if (editDistance < 75) {
+        // Current revision is an undo/redo not a new change
         entry('Reused last save');
         return res;
       }
@@ -177,28 +186,31 @@ define(function (require, exports, module) {
       (history.undo.length || history.redo.length) &&
       content.length < this.limits.maxDocDataSize / 2 //250kb
     ) {
-      entry('Creating new save');
-      setBlob(doc.id, 'content', content, {
-        rev: doc.getRevision(),
-        priority: CONTENT_PRIORITY,
-      });
-    } else if (cacheIndex !== 0) {
+      entry('Creating new save for revision {revision}', doc.getRevision());
+      if (
+        setBlob(doc.id, 'content', content, {
+          rev: doc.getRevision(),
+          priority: CONTENT_PRIORITY,
+        })
+      )
+        return res;
+      else entry('Creating save failed');
+    }
+    if (cacheIndex !== 0) {
       entry('Forced to reuse last save');
       return res;
-    } else if (!doc.isTemp() && doc.saveRev !== null) {
+    }
+    if (!doc.isTemp() && doc.saveRev !== null) {
       //Ensure cache is still valid
-      entry(
-        'Using disk as cache with revision: {rev} checksum {check}',
-        doc.saveRev,
-        doc.getChecksum()
-      );
       if (
         _findIndex(history.undo, doc.saveRev) > -1 ||
         _findIndex(history.redo, doc.saveRev, true) > -1
-      )
+      ) {
+        entry('Using disk as cache from revision: {rev}', doc.saveRev);
         return res;
+      }
     }
-    entry('Failed to save content');
+    entry('Cannot save content');
     return false;
   };
   exports.shrinkData = function (obj) {
@@ -228,17 +240,20 @@ define(function (require, exports, module) {
     }
     return data;
   };
-  exports.$completeLoad = function (doc, res, currentRev) {
+  exports.$completeLoad = function (doc, content, revision) {
     var status = SUCCESS;
-    entry('Attempting to load {id} at ' + currentRev);
+    entry(
+      'Attempting to load {id} at with content at revision {rev}',
+      revision
+    );
     try {
       var um = doc.session.getUndoManager();
       if (um.$undoStack && um.$undoStack.length) {
-        debug.warn('Discarding user history....');
+        debug.warn("Discarding user's changes....");
         doc.clearHistory();
       }
-      doc.setValue(res);
-      status = trySyncContent(doc.session, doc.savedHistory, currentRev);
+      doc.setValue(content);
+      status = trySyncContent(doc.session, doc.savedHistory, revision);
     } catch (e) {
       entry('Unknown error {error}', e.message);
       debug.log(e);
@@ -286,10 +301,12 @@ define(function (require, exports, module) {
         doc.$fromSerial = false;
       }
     }
-    entry('Waiting for refresh....');
+    if (doc.savedState) entry('Waiting for refresh....');
     doc.$needsRefreshToCompleteLoad = !!doc.savedState; //removed on complete load success
   };
   exports.refresh = function (doc, res) {
+    context(doc);
+    entry('Checking if valid refresh...');
     doc.$needsRefreshToCompleteLoad = undefined;
     if (doc.isLastSavedValue(res)) {
       entry('Reload from refresh');
@@ -339,12 +356,20 @@ define(function (require, exports, module) {
       var um = doc.session.getUndoManager();
       var target = doc.createHistory(obj);
       var patch = mod.getPatch(um, target);
+      //This will happen when the undo stacks don't overlap.
+      //TODO: we could use completeLoad with saved content or disk content.
+      //Note: this will bring a host of problems due to async.
       if (!patch) {
-        return Notify.warn('Document Synchronization Failed!!');
+        return Notify.direct(
+          'Synchronization failed for ' + getName(doc.id) + '!! Please refresh.'
+        );
       }
       doc.$fromSerial = true;
-      mod.applyPatch(patch, um, doc.session);
-      doc.$fromSerial = false;
+      try {
+        mod.applyPatch(patch, um, doc.session);
+      } finally {
+        doc.$fromSerial = false;
+      }
       um.$maxRev = target.$maxRev;
       obj.content = null;
       obj.history = null;

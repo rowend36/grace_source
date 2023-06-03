@@ -110,7 +110,7 @@ define(function (require, exports, module) {
     var data = contentLoader.save(doc);
     if (data === false) {
       return Notify.warn(
-        'Cache size exceeded!!!. Save document to avoid losing changes.'
+        'Cache limits exceeded!!!. Please save document to avoid losing changes.'
       );
     }
     try {
@@ -138,12 +138,14 @@ define(function (require, exports, module) {
   //or 60 seconds after the last save whichever comes first.
   //This way changes are persisted quickly for one-off changes 
   //but sparsely for long editting sessions.
-  var scheduleSave = Utils.delay(persistDoc, 5000);
+  var PERSIST_DELAY = 1000;
+  var scheduleSave = Utils.delay(persistDoc, PERSIST_DELAY);
   exports.$persistDoc = function () {
     var now = new Date().getTime();
     if (now - lastSaveT > 55000) scheduleSave();
     else scheduleSave.later();
   };
+  
   var DB = new Store('docs', {});
   DB.onChange = function (old, newValue) {
     //Keep all open documents open
@@ -335,6 +337,7 @@ define(function (require, exports, module) {
       },
     });
   }
+  
   //Keep documents on close
   exports.stashDoc = function (docId) {
     var key;
@@ -387,6 +390,7 @@ define(function (require, exports, module) {
       doc.$fromStash = false;
     });
   };
+  
   function cleanStash() {
     var current = new Date().getTime();
     current -= Utils.parseTime(appConfig.stashExpiryTime);
@@ -417,6 +421,7 @@ define(function (require, exports, module) {
     exports.persist(); //bug
   }
   exports.$clearDocData = clearDocData;
+  
   exports.$finishLoad = function (doc, res) {
     contentLoader.refresh(doc, res);
     exports.$checkInit(doc);

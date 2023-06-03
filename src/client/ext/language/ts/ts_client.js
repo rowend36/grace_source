@@ -60,7 +60,7 @@ define(function (require, exports, module) {
             var changes = ts.getChanges(doc);
             var message;
             if (doc.version && changes) {
-                changes[changes.length - 1].checksum = sum(doc.doc);
+                changes[changes.length - 1].tsChecksum = sum(doc.doc);
                 message = {
                     type: 'updateDoc',
                     args: [this.$fixName(doc.name), changes, doc.version],

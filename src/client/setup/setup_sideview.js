@@ -55,7 +55,7 @@ define(function (require, exports, module) {
                                 refocus = true;
                             }
                         }
-                    }// else document.activeElement.blur();
+                    } // else document.activeElement.blur();
                 }
                 Navigation.addRoot(
                     SidenavLeft.el,
@@ -126,11 +126,11 @@ define(function (require, exports, module) {
     };
 
     SidenavLeftTab.addTab('hierarchy_tab', 'work');
-    var doclist = new TabRenderer(sideViewEl.find('#opendocs'));
-    doclist.createItem = function (id, name) {
+    var docList = new TabRenderer(sideViewEl.find('#opendocs'));
+    docList.createItem = function (id, name) {
         return (
-            '<li tabIndex=0 draggable=true class="file-item '+
-            (Docs.has(id) && Docs.get(id).dirty?'indicator-pending':'')+
+            '<li tabIndex=0 draggable=true class="file-item ' +
+            (Docs.has(id) && Docs.get(id).dirty ? 'indicator-pending' : '') +
             '" data-file=' +
             id +
             '><i class="material-icons">insert_drive_file</i>' +
@@ -140,13 +140,13 @@ define(function (require, exports, module) {
             '<i class="material-icons">close</i></span></li>'
         );
     };
-    doclist.ID_ATTR = 'data-file';
-    doclist.TAB_ITEM_CLS = 'file-item';
-    doclist.CLOSE_BTN_CLS = 'dropdown-btn';
-    doclist.createAnnotationItem = Utils.noop;
-    doclist.scrollIntoView = Utils.noop;
+    docList.ID_ATTR = 'data-file';
+    docList.TAB_ITEM_CLS = 'file-item';
+    docList.CLOSE_BTN_CLS = 'dropdown-btn';
+    docList.createAnnotationItem = Utils.noop;
+    docList.scrollIntoView = Utils.noop;
     //depending on execution order here
-    doclist.$el.on('click', '.dropdown-btn', function (e) {
+    docList.$el.on('click', '.dropdown-btn', function (e) {
         if (SidenavLeft.isOpen && SidenavLeft.isOverlay) {
             e.stopPropagation();
             //closing tabs in doclist causes tab switch
@@ -158,10 +158,10 @@ define(function (require, exports, module) {
             });
         }
     });
-    doclist.$el.on(
+    docList.$el.on(
         'click',
         '.file-item',
-        doclist.getOnClickListener(DocsTab, true)
+        docList.getOnClickListener(DocsTab, true)
     );
     appEvents.on('docStatusChanged', function (ev) {
         var doc = ev.doc;
@@ -170,7 +170,7 @@ define(function (require, exports, module) {
             doc.dirty
         );
     });
-    DocsTab.addRenderer(doclist);
+    DocsTab.addRenderer(docList);
     DocsTab.recreate();
 
     var sidenavTrigger = new View(
@@ -186,12 +186,13 @@ define(function (require, exports, module) {
     actionBar.render();
 
     //toggle below in hierarchy_tabs
-    (function (temp) {
+    (function () {
+        var configInfo = {};
         var toggleBelow = function (e) {
             var KEY = 'expand-' + this.id;
             var target = $('#' + this.id.replace('-toggle', ''));
             e.stopPropagation();
-            if (uiConfig[KEY]) {
+            if (!uiConfig[KEY]) {
                 configure(KEY, true, 'ui');
                 target.show();
                 $(this).children().removeClass('btn-toggle__activated');
@@ -207,18 +208,18 @@ define(function (require, exports, module) {
                 }
             }
         };
-        $('.toggleBelow')
+        $('.toggle-below')
             .click(toggleBelow)
             .each(function (e, el) {
                 var KEY = 'expand-' + el.id;
-                register(KEY, null, true);
-                temp[KEY] = 'no-user-config';
+                register(KEY, 'ui', true);
+                configInfo[KEY] = 'no-user-config';
                 if (!uiConfig[KEY]) {
                     el.click();
                 }
             });
-        Config.registerInfo(temp);
-    })({});
+        Config.registerInfo(configInfo);
+    })();
 
     exports.SideView = SidenavLeft;
     exports.SideViewTabs = SidenavLeftTab;

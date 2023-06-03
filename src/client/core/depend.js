@@ -47,7 +47,7 @@ define(function (require, exports, module) {
         if (loaded) return cb.apply(null, deps.map(require));
         else require(deps, cb);
     };
-    //return a promisified form of define
+    //return a promisified form of after
     //e.g generateAllNames = m.promise(generateAllNames)
     //async function b(){
     //  await generateAllNames();
@@ -56,10 +56,10 @@ define(function (require, exports, module) {
     //  await generateAllNames();
     //}
     exports.promise = function (init) {
-        var define = exports.after(init);
+        var waitForInit = exports.after(init);
         return function () {
             return new Promise(function (r /*, j*/) {
-                define(r);
+                waitForInit(r);
             });
         };
     };

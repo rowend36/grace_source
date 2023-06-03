@@ -1,0 +1,45 @@
+{
+    "files.projectName":"GRACE",
+    "formattting.prettier":{
+      arrowParens: "always",
+
+      // Include spaces in object literals
+      bracketSpacing: false,
+
+      // Specify how long you want your lines to be
+      printWidth: 80,
+
+      // How to wrap prose.
+      // --->always
+      // Wrap prose if it exceeds the print width.
+      // --->never
+      // Do not wrap prose.
+      // --->preserve
+      // Wrap prose as-is.
+      proseWrap: "preserve",
+
+      // Change when properties in objects are quoted.
+      // --->as-needed
+      // Only add quotes around object properties where required.
+      // --->consistent
+      // If at least one property in an object requires quotes, quote all properties.
+      // --->preserve
+      // Respect the input use of quotes in object properties.
+      quoteProps: "as-needed",
+
+      // Print semicolons.
+      semi: true,
+
+      // Use single quotes instead of double quotes.
+      singleQuote: false,
+
+      // Print trailing commas wherever possible when multi-line.
+      // --->es5
+      // Trailing commas where valid in ES5 (objects, arrays, etc.)
+      // --->none
+      // No trailing commas.
+      // --->all
+      // Trailing commas wherever possible (including function arguments).
+      trailingComma: "es5",
+    }
+}

@@ -156,6 +156,7 @@ define(function (require, exports, module) {
     },
     readFile: function (path, server, cb) {
       server = server || FileUtils.getFileServer();
+      //This method call is the reason this method is not in file_servers.js
       if (FileUtils.isBinaryFile(path)) {
         return cb('binary');
       }

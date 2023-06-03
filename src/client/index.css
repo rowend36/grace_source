@@ -423,12 +423,12 @@ input[type='url'] {
     right: 40px;
 }
 
-.toggleBelow {
+.toggle-below {
     height: 2.15rem;
     line-height: 2.15rem;
 }
 
-.toggleBelow .btn-toggle {
+.toggle-below .btn-toggle {
     float: right;
     margin-top: 0.375rem;
     width: 1.5rem;

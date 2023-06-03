@@ -2,7 +2,7 @@ define(function (require, exports, module) {
   var Fileviews = require('./fileviews').Fileviews;
   var Dropdown = require('grace/ui/dropdown').Dropdown;
   var FileUtils = require('grace/core/file_utils').FileUtils;
-  var menuItems = {
+  var DefaultMenuItems = {
     'folder-dropdown': {
       '!save-as': 'Save As',
       'open-folder': {
@@ -128,19 +128,19 @@ define(function (require, exports, module) {
   };
   (function () {
     //Add ordering
-    for (var i in menuItems) {
+    for (var i in DefaultMenuItems) {
       var o = 1;
-      for (var j in menuItems[i]) {
-        if (typeof menuItems[i][j] == 'string') {
-          menuItems[i][j] = {
-            caption: menuItems[i][j],
+      for (var j in DefaultMenuItems[i]) {
+        if (typeof DefaultMenuItems[i][j] == 'string') {
+          DefaultMenuItems[i][j] = {
+            caption: DefaultMenuItems[i][j],
           };
         }
-        menuItems[i][j].sortIndex = menuItems[i][j].sortIndex || o++;
+        DefaultMenuItems[i][j].sortIndex = DefaultMenuItems[i][j].sortIndex || o++;
       }
     }
   })();
-
+  //Add menu items for NestedViews
   (function (m) {
     Object.assign(m, {
       'nested-header-dropdown': Object.create(m['header-dropdown']),
@@ -211,10 +211,12 @@ define(function (require, exports, module) {
     Dropdown.assign(m['child-folder-dropdown'], m['nested-folder-dropdown']);
     Dropdown.assign(m['nested-header-dropdown'], m['nested-folder-dropdown']);
     Dropdown.assign(m['child-file-dropdown'], m['nested-file-dropdown']);
-  })(menuItems);
-  menuItems['project-dropdown'] = Object.assign(
-    menuItems['nested-folder-dropdown'],
-    menuItems['folder-dropdown']
+  })(DefaultMenuItems);
+  
+  //Add menu items for project root.
+  DefaultMenuItems['project-dropdown'] = Object.assign(
+    DefaultMenuItems['nested-folder-dropdown'],
+    DefaultMenuItems['folder-dropdown']
   );
-  exports.fileMenus = menuItems;
+  exports.fileMenus = DefaultMenuItems;
 });

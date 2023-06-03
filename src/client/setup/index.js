@@ -9,8 +9,8 @@ define(function (require, exports, module) {
     require("./setup_window_vars");
     require("./setup_immersive");
     require("./setup_actionbar");
-    // require("../ext/index");
+    require("../ext/index");
     // require("./setup_perf");
-    require("../tests/index");
+    // require("../tests/index");
     require('../core/app_events').AppEvents.triggerForever('appLoaded');
 });

@@ -1,47 +1,47 @@
 define(function (require, exports, module) {
-  'use strict';
-  var appEvents = require('../core/app_events').AppEvents;
-  var Notify = require('../ui/notify').Notify;
-  var FileUtils = require('../core/file_utils').FileUtils;
-  var Docs = require('./docs_base').Docs;
-  var finishLoad = require('./mixin_docs_persist').$finishLoad;
-  var openDoc = require('./mixin_docs_tabs').openDoc;
+  "use strict";
+  var appEvents = require("../core/app_events").AppEvents;
+  var Notify = require("../ui/notify").Notify;
+  var FileUtils = require("../core/file_utils").FileUtils;
+  var Docs = require("./docs_base").Docs;
+  var finishLoad = require("./mixin_docs_persist").$finishLoad;
+  var openDoc = require("./mixin_docs_tabs").openDoc;
   var forEachDoc = Docs.forEach;
   var getDoc = Docs.get;
-  var Config = require('../core/config').Config;
-  var Utils = require('../core/utils').Utils;
+  var Config = require("../core/config").Config;
+  var Utils = require("../core/utils").Utils;
 
   var appConfig = Config.registerAll(
     {
       autoSave: false,
-      autoSaveInterval: '1min',
+      autoSaveInterval: "1min",
     },
-    'documents'
+    "documents"
   );
   Config.registerInfo(
     {
       autoSave:
-        'Enable saving on change once a document has been saved once. Uses resource context.',
+        "Enable saving on change once a document has been saved once. Uses resource context.",
       autoSaveInterval: {
-        type: 'time',
+        type: "time",
       },
     },
-    'documents'
+    "documents"
   );
 
-  Config.on('documents', function (ev) {
+  Config.on("documents", function (ev) {
     switch (ev.config) {
-      case 'autoSaveInterval':
+      case "autoSaveInterval":
         Docs.$autoSave = Utils.delay(
           exports.saveDocs,
           Math.max(Utils.parseTime(appConfig.autoSaveInterval), 5000)
         );
         break;
-      case 'autoSave':
+      case "autoSave":
         forEachDoc(function (doc) {
           if (doc.allowAutoSave !== undefined) {
             doc.toggleAutosave(
-              Config.forPath(doc.getSavePath(), 'documents', 'autoSave')
+              Config.forPath(doc.getSavePath(), "documents", "autoSave")
             );
           }
         });
@@ -49,7 +49,7 @@ define(function (require, exports, module) {
   });
   exports.$updateStatus = function (id) {
     if (Docs.has(id))
-      appEvents.trigger('docStatusChanged', {
+      appEvents.trigger("docStatusChanged", {
         doc: getDoc(id),
       });
   };
@@ -66,49 +66,43 @@ define(function (require, exports, module) {
       });
     } else {
       var doc = getDoc(id);
-      appEvents.asyncTrigger(
-        'saveDoc',
-        {
-          doc: doc,
-        },
-        function (ev) {
-          if (ev.defaultPrevented) return;
-          if (doc.duplicateId) {
-            var savePath = doc.getSavePath();
-            //Make this doc the mainDoc
-            var mainDoc = Docs.forPath(savePath, doc.getFileServer());
+      appEvents.asyncTrigger("saveDoc", {doc: doc}, function (ev) {
+        if (ev.defaultPrevented) return;
+        if (doc.duplicateId) {
+          var savePath = doc.getSavePath();
+          //Make this doc the mainDoc - the doc which matches the file on disk
+          var mainDoc = Docs.forPath(savePath, doc.getFileServer());
 
-            if (mainDoc) {
-              mainDoc.duplicateId = doc.duplicateId;
-              //Warn that autosave will no longer work in the  mainDoc
-              if (mainDoc.allowAutoSave && !mainDoc.warned) {
-                mainDoc.warned = true;
-                Notify.warn(
-                  'Autosave disabled for duplicates of this document.',
-                  1000
-                );
-              }
+          if (mainDoc) {
+            mainDoc.duplicateId = doc.duplicateId;
+            //Warn that autosave will no longer work in the  mainDoc
+            if (mainDoc.allowAutoSave && !mainDoc.warned) {
+              mainDoc.warned = true;
+              Notify.warn(
+                "Autosave disabled for duplicates of this document.",
+                1000
+              );
             }
-            doc.duplicateId = false;
-
-            //Set all the other documents as dirty
-            forEachDoc(function (doc) {
-              if (doc.duplicateId && doc.getSavePath() == savePath) {
-                doc.setDirty();
-              }
-            });
           }
+          doc.duplicateId = false;
 
-          //Enable autosave if not explicitly disabled
-          if (doc.allowAutoSave === undefined) {
-            doc.toggleAutosave(
-              Config.forPath(doc.getSavePath(), 'documents', 'autoSave')
-            );
-            if (doc.allowAutoSave) Notify.info('Autosave enabled');
-          }
-          doc.save(callback);
+          //Set all the other documents as dirty
+          forEachDoc(function (doc) {
+            if (doc.duplicateId && doc.getSavePath() == savePath) {
+              doc.setDirty();
+            }
+          });
         }
-      );
+
+        //Enable autosave if not explicitly disabled
+        if (doc.allowAutoSave === undefined) {
+          doc.toggleAutosave(
+            Config.forPath(doc.getSavePath(), "documents", "autoSave")
+          );
+          if (doc.allowAutoSave) Notify.info("Autosave enabled");
+        }
+        doc.save(callback);
+      });
     }
   };
   Docs.$autoSave = Utils.delay(
@@ -120,11 +114,11 @@ define(function (require, exports, module) {
     fileServer = fileServer || FileUtils.getFileServer();
     if (doc.isTemp()) {
       doc.setPath(newpath);
-      appEvents.trigger('renameDoc', {
+      appEvents.trigger("renameDoc", {
         doc: getDoc(id),
       });
     } else {
-      id = openDoc('', '', newpath);
+      id = openDoc("", "", newpath);
       getDoc(id).restoreState(doc.saveState());
     }
     getDoc(id).fileServer = fileServer.id;
@@ -132,9 +126,9 @@ define(function (require, exports, module) {
       var alias = fileServer.isEncoding(doc.encoding);
       if (!alias) {
         getDoc(id).encoding = FileUtils.detectEncoding(newpath, fileServer);
-        Notify.info('Encoding reset to default');
+        Notify.info("Encoding reset to default");
       } else
-        getDoc(id).encoding = typeof alias == 'string' ? alias : doc.encoding;
+        getDoc(id).encoding = typeof alias == "string" ? alias : doc.encoding;
     }
     exports.saveDocs(id, callback);
   };
@@ -161,52 +155,52 @@ define(function (require, exports, module) {
     } else {
       Notify.modal(
         {
-          header: 'Update documents to match new path?',
+          header: "Update documents to match new path?",
           dismissible: false,
           form: affected.map(function (doc, i) {
             return {
-              name: 'doc' + i,
-              type: 'accept',
+              name: "doc" + i,
+              type: "accept",
               value: true,
               caption: doc.getPath(),
             };
           }),
-          footers: ['Rename All', 'Proceed'],
+          footers: ["Rename All", "Proceed"],
           onCreate: function (el) {
-            require('../ui/ui_utils').styleClip(
-              el.find('label').addClass('clipper')
+            require("../ui/ui_utils").styleClip(
+              el.find("label").addClass("clipper")
             );
-            el.find('.modal-rename_all')
-              .addClass('error')
+            el.find(".modal-rename_all")
+              .addClass("error")
               .click(function () {
-                el.modal('close');
+                el.modal("close");
                 doRename();
               });
-            el.find('.modal-proceed').click(function () {
-              var els = el.find('input');
+            el.find(".modal-proceed").click(function () {
+              var els = el.find("input");
               for (var i = els.length; i-- > 0; ) {
                 if (!els[i].checked) {
                   affected.splice(i, 1);
                 }
               }
-              el.modal('close');
+              el.modal("close");
               doRename();
             });
           },
         },
         function (el) {
-          el.find('input').off();
-          el.find('.modal-rename_all').off();
-          el.find('.modal-proceed').off();
+          el.find("input").off();
+          el.find(".modal-rename_all").off();
+          el.find(".modal-proceed").off();
         }
       );
     }
     function doRename() {
       affected.forEach(function (doc) {
-        var docpath = (doc && doc.getSavePath()) || '';
+        var docpath = (doc && doc.getSavePath()) || "";
         if (docpath.startsWith(path)) {
           doc.setPath(newpath + docpath.substring(path.length));
-          appEvents.trigger('renameDoc', {
+          appEvents.trigger("renameDoc", {
             doc: doc,
           });
         }
@@ -217,7 +211,7 @@ define(function (require, exports, module) {
     path = FileUtils.removeTrailingSlash(path);
     exports.filterWithin(path, fs).forEach(function (doc) {
       doc.setDirty();
-      appEvents.trigger('deleteDoc', {
+      appEvents.trigger("deleteDoc", {
         doc: doc,
       });
     });
@@ -228,15 +222,15 @@ define(function (require, exports, module) {
     var doc = getDoc(id);
     var alias = doc.getFileServer().isEncoding(encoding);
     if (alias) {
-      if (typeof alias == 'string') doc.setEncoding(alias);
+      if (typeof alias == "string") doc.setEncoding(alias);
       else doc.setEncoding(encoding);
       if (!doc.isTemp()) {
         Notify.ask(
-          'Reload file with new encoding ' + encoding + '?',
+          "Reload file with new encoding " + encoding + "?",
           function () {
             doc.refresh(
               function () {
-                Notify.info('Refreshed');
+                Notify.info("Refreshed");
               },
               true,
               false
@@ -246,7 +240,7 @@ define(function (require, exports, module) {
       }
     } else {
       Notify.error(
-        'Encoding ' + encoding + ' not supported by this storage backend'
+        "Encoding " + encoding + " not supported by this storage backend"
       );
     }
   };
@@ -255,10 +249,10 @@ define(function (require, exports, module) {
     var name = FileUtils.filename(doc.getPath());
     if (err) {
       doc.setDirty();
-      if (err.code === 'ENOENT') {
-        Notify.info('File deleted ' + name);
+      if (err.code === "ENOENT") {
+        Notify.info("File deleted " + name);
       } else {
-        Notify.error('Failed to read ' + doc.getPath() + ' ' + err.code);
+        Notify.error("Failed to read " + doc.getPath() + " " + err.code);
       }
       return callback(err, false);
     }
@@ -280,7 +274,7 @@ define(function (require, exports, module) {
       var known = !ignoreDirty && doc.dirty && doc.isLastSavedValue(res);
       if (!known) doc.setDirty(); //Doc no longer knows which revision matches the stored file.
       Notify.ask(
-        'File changed. Reload ' + name + '?',
+        "File changed. Reload " + name + "?",
         function () {
           doc.updateValue(res, true);
           callback(null, true);

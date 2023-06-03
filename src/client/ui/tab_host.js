@@ -64,6 +64,8 @@ define(function (require, exports, module) {
         //Saved Tabs are thus never deleted
         /** @type {Store<string[]>} */
         this.store = new Store(id, []);
+        //Tabs store is deliberately synced.
+        //Instead, I'm looking for a way to use sessionStorage.
         this.activeStore = new Store(id + '.active');
         this.$persist = Utils.delay(this.store.save.bind(this.store), 2000);
         //The first letter of a tab id shows the populator

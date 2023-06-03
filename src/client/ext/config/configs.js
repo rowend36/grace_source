@@ -12,7 +12,7 @@ define(function (require, exports, module) {
     var DOT = '.'; //separates deep set keys
     var SEP = ', '; //separates string lists
     var Configs = exports;
-    Configs._debug = false;
+    Configs._debug = true;
     /*Adds methods for validating && batch updating config*/
 
     /*region Error Handling*/
@@ -566,6 +566,17 @@ define(function (require, exports, module) {
             errorFlag = p;
         }
     });
+    
+    //Drop in replacement for Config.configure
+    //Difference is that, rather than just editting the tree,
+    //it recomputes the new value based on loaded configs.
+    //This, of course, is not always the desired behaviour.
+    //So we have to choose based on context.
+    Configs.configure = function (key, value, ns) {
+        var temp = {};
+        (ns ? (temp[ns] = {}) : temp)[key] = value;
+        return Configs.save(temp);
+    };
 
     //Like #save but saves only the changes to
     //the current configuration.

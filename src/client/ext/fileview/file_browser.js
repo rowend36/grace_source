@@ -2320,15 +2320,15 @@ Warning: This will not stop the user from deleting parent folders.',
     }
     Utils.inherits(ProjectView, NestedBrowser);
     ProjectView.prototype.superProjectView = NestedBrowser.prototype;
-    ProjectView.prototype.rename = function (name, newname) {
-        if (name === this.names[0]) {
-            this.getElement(name).find('.filename').html(newname);
+    ProjectView.prototype.rename = function (oldName, newName) {
+        if (oldName === this.names[0]) {
+            this.getElement(oldName).find('.filename').html(newName);
             var project = FileUtils.getProject();
-            if (project.name !== newname) {
+            if (project.name !== newName) {
                 FileUtils.openProject(
                     project.rootDir,
                     project.fileServer,
-                    newname
+                    newName
                 );
             }
         }
