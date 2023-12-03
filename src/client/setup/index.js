@@ -5,11 +5,13 @@ define(function (require, exports, module) {
     require("./setup_docs");
     require("./setup_editors");
     /*Extra functionality*/
+    require("./setup_service_worker");
     require("./setup_error_message");
     require("./setup_window_vars");
     require("./setup_immersive");
     require("./setup_actionbar");
     require("../ext/index");
+    // require("./setup_console");
     // require("./setup_perf");
     // require("../tests/index");
     require('../core/app_events').AppEvents.triggerForever('appLoaded');

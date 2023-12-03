@@ -38,6 +38,8 @@ var allowedOrigins = [
     "https://files.androidplatform.net",
     "http://files.androidplatform.net",
     "file://",
+    "http://localhost:8000",
+    "http://localhost:3000",
     /https?:\/\/192\.168\.43.*/,
     // "http://www.apirequest.io",
 ];

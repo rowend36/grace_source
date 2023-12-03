@@ -125,6 +125,7 @@ define(function(require, exports, module) {
 
     var isUsingFileProtocol = window.location.protocol == "file";
     
+    // TODO makr sure this does not interact with the service worker
     function AppFileServer(path) {
         this.root = path || "/sdcard/";
         this.disk = "local";
