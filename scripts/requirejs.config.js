@@ -64,6 +64,7 @@
   ],
   // optimize: 'none',
   bundlesConfigOutFile: './index.js',
-  keepBuildDir: true,
+  keepBuildDir: false,
+  optimizeCss: "standard",
   removeCombined: true,
 });

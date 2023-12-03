@@ -320,7 +320,6 @@ define(function (require, exports, module) {
       if (appConfig.nextCleanTime) {
         var keys = routineCheck('b');
         var register = BlobRegistry.get();
-        console.log({keys})
         keys.forEach(function (e) {
           if (!register[e]) blobStorage.removeItem(e);
         });

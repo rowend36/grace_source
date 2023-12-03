@@ -156,6 +156,7 @@ select {
     -o-user-select: none;
     user-select: none;
     vertical-align: top;
+    font-size: 0.9375rem;
 }
 
 .file-item>span {

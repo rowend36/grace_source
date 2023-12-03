@@ -3,7 +3,7 @@
   "short_name": "Grace",
   "description": "You don't want to know.",
   "start_url": "/",
-  "theme_color": "#0d47a1",
+  "theme_color": "#181818",
   "background_color": "#181818",
   "display": "standalone",
   "icons": [
