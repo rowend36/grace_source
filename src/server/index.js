@@ -37,6 +37,7 @@ var allowedOrigins = [
     "https://grace.androidplatform.net",
     "https://files.androidplatform.net",
     "http://files.androidplatform.net",
+    "https://grace-editor.web.app",
     "file://",
     "http://localhost:8000",
     "http://localhost:3000",
