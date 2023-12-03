@@ -1,5 +1,5 @@
 // Choose a cache name
-const cacheName = "cache-v2";
+const cacheName = "cache-v4";
 // List the files to precache
 const precacheResources = ['/', '/index.html', '/index.js', '/ext/all.js'];
 
@@ -59,16 +59,10 @@ const cacheFirst = async ({request, fallbackUrl}) => {
     // there is nothing we can do, but we must always
     // return a Response object
     return new Response(
-      "<h2>Network error happened</h2>" +
-        [request.method, request.url].join("|") +
-        "<ul>" +
-        (await (await caches.open(cacheName)).keys())
-          .map((e) => "<li>" + e.url + "</li>")
-          .join("") +
-        "</ul>",
+      "No network. Cannot "+ request.method+" "+ request.url,
       {
         status: 408,
-        headers: {"Content-Type": "text/html"},
+        headers: {"Content-Type": "text/plain"},
       }
     );
   }
@@ -82,3 +76,4 @@ self.addEventListener("fetch", (event) => {
     })
   );
 });
+

@@ -5,21 +5,10 @@
   "main": "webpack.config.js",
   "dependencies": {
     "css-loader": "^6.7.1",
-    "micromatch": "^4.0.5",
-    "path-browserify": "^1.0.1",
-    "process": "^0.11.10",
     "raw-loader": "^4.0.2",
     "require-css": "^0.1.10",
     "requirejs": "^2.3.6",
-    "text": "^2.0.16",
-    "util": "^0.12.4"
-  },
-  "devDependencies": {
-    "@babel/core": "^7.17.8",
-    "uglify-js": "^2.8.29",
-    "@babel/preset-env": "^7.16.11",
-    "babel-loader": "^8.2.4",
-    "html-webpack-plugin": "^5.5.0"
+    "text": "^2.0.16"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
