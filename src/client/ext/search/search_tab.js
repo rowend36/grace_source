@@ -25,7 +25,8 @@ define(function (require, exports, module) {
     var genQuickFilter = FileUtils.genQuickFilter;
     var SearchResults, SearchReplace, SearchList;
     var Doc = require('grace/docs/document').Doc;
-
+    var FocusManager = require('grace/ui/focus_manager').FocusManager;
+    
     var configure = require('grace/core/config').Config.configure;
     var ConfigEvents = require('grace/core/config').Config;
     var searchConfig = require('grace/core/config').Config.registerAll(
@@ -127,6 +128,7 @@ define(function (require, exports, module) {
             searchedDocs.length = 0;
             if (self.previewBrowser) {
                 self.previewBrowser.fileServer = project.fileServer;
+                self.previewBrowser.setRootDir(project.rootDir);
                 self.previewBrowser.reload();
             }
         });
@@ -134,10 +136,11 @@ define(function (require, exports, module) {
 
         function filterFiles(name, rootDir) {
             var relName = relative(project.rootDir, rootDir + name);
+            
             var isDirectory = FileUtils.isDirectory(relName);
-            console.log(relName);
+            var match = false;
             if (searchConfig.matchBaseName) {
-                return (
+                match = (
                     (isDirectory ||
                         !includeFilter ||
                         includeFilter.test(name) ||
@@ -149,12 +152,13 @@ define(function (require, exports, module) {
                     )
                 );
             }
-            return (
+            match = (
                 (isDirectory
                     ? quickFilter.test(relName)
                     : !includeFilter || includeFilter.test(relName)) &&
                 !(excludeFilter && excludeFilter.test(relName))
             );
+            return match;
         }
         this.init = function () {
             var project = FileUtils.getProject();
@@ -241,8 +245,8 @@ define(function (require, exports, module) {
                         if (FileUtils.activeFileBrowser) {
                             FileUtils.activeFileBrowser.menu.hide();
                         }
-                        self.previewBrowser.inFilter &&
-                            self.previewBrowser.stopFind();
+                        self.previewBrowser.filterTask &&
+                            self.previewBrowser.filterTask.stop();
                         if (searchConfigChanged && runningSearches > 0) {
                             searchConfigChanged = false;
                             find();
@@ -286,8 +290,8 @@ define(function (require, exports, module) {
             } else if (this == excludeInput[0]) {
                 configure('searchTabExclude', $(this).val(), 'search', true);
             }
-            if (self.previewBrowser.inFilter) {
-                self.previewBrowser.stopFind();
+            if (self.previewBrowser.filterTask) {
+                self.previewBrowser.filterTask.stop();
             }
             if (updateTimeout) clearTimeout(updateTimeout);
             updateTimeout = (ev ? setTimeout : setImmediate)(function () {
@@ -803,6 +807,7 @@ define(function (require, exports, module) {
         modalEl.find('.close-icon').click(function () {
             modalEl.modal('close');
         });
+        FocusManager.trap(modalEl);
         return modalEl;
     };
 

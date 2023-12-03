@@ -70,6 +70,9 @@ define(function (require, exports, module) {
     }
     return obj;
   };
+  EventsEmitter.prototype.emit = function (eventName, obj) {
+    return this.trigger(eventName, obj, true);
+  };
   /**
      Trigger an event in a way guarantees arrival order among
      other signalled events similar to using setImmediate.

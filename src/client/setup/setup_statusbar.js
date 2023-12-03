@@ -19,6 +19,7 @@ define(function (require, exports, module) {
             $("#status-filename", statusBar.$el).html(
                 populator.getInfo(DocsTab.active)
             );
+            require("../ui/ui_utils").styleClip($("#status-filename"));
         }
     }
     require("../ui/focus_manager").FocusManager.trap(statusBar.$el, true);

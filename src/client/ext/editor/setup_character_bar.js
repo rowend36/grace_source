@@ -1,57 +1,57 @@
 define(function (require, exports, module) {
     /*globals $*/
-    var TextEdit = require('./textedit').TextEdit;
-    var Mods = require('./mods').Mods;
-    var rootView = require('grace/setup/setup_root').rootView;
+    var TextEdit = require("./textedit").TextEdit;
+    var Mods = require("./mods").Mods;
+    var rootView = require("grace/setup/setup_root").rootView;
     //Could just use Hammer for these
     //swipe to open
-    var SwipeDetector = require('./swipe_detector').SwipeDetector;
-    var ScrollLock = require('./scroll_lock').ScrollLock;
-    var RepeatDetector = require('./repeat_detector').RepeatDetector;
-    var FocusManager = require('grace/ui/focus_manager').FocusManager;
-    var allTools = require('./all_tools').allTools;
-    var appConfig = require('grace/core/config').Config.registerAll(
+    var SwipeDetector = require("./swipe_detector").SwipeDetector;
+    var ScrollLock = require("./scroll_lock").ScrollLock;
+    var RepeatDetector = require("./repeat_detector").RepeatDetector;
+    var FocusManager = require("grace/ui/focus_manager").FocusManager;
+    var allTools = require("./all_tools").allTools;
+    var appConfig = require("grace/core/config").Config.registerAll(
         {
             showCharacterBar: !Env.isHardwareKeyboard,
-            toolbarPosition: 'below',
-            enableModKeys: Env.isHardwareKeyboard ? '' : 'shift,ctrl,alt',
+            toolbarPosition: "below",
+            enableModKeys: Env.isHardwareKeyboard ? "" : "shift,ctrl,alt",
             enableArrowKeys: !Env.isHardwareKeyboard,
             enableLockScrolling: true,
             showToolbarToggle: true,
             characterBarChars: [
-                '\t',
-                '<',
-                '</',
-                '>',
-                '/',
-                '=',
-                '{--S--}',
-                '</>--N--<--W----C--></--W-->',
-                '--L--@',
-                ':',
-                '*',
-                '+',
-                '-',
-                '(',
-                ')',
-                '[',
-                ']',
-                '{',
-                '}',
-                '_--L--',
-                'func--N----L--function(){\n\t--C--}',
-                'class--N--class --W-- {\n--C--}',
-                '--S--',
+                "\t",
+                "<",
+                "</",
+                ">",
+                "/",
+                "=",
+                "{--S--}",
+                "</>--N--<--W----C--></--W-->",
+                "--L--@",
+                ":",
+                "*",
+                "+",
+                "-",
+                "(",
+                ")",
+                "[",
+                "]",
+                "{",
+                "}",
+                "_--L--",
+                "func--N----L--function(){\n\t--C--}",
+                "class--N--class --W-- {\n--C--}",
+                "--S--",
             ],
         },
-        'toolbars'
+        "toolbars"
     );
 
-    var configEvents = require('grace/core/config').Config;
-    var Utils = require('grace/core/utils').Utils;
-    var View = require('grace/ui/view').View;
-    var MOD_KEYS = ['shift', 'ctrl', 'alt', 'esc', 'home', 'end'];
-    require('grace/core/config').Config.registerInfo(
+    var configEvents = require("grace/core/config").Config;
+    var Utils = require("grace/core/utils").Utils;
+    var View = require("grace/ui/view").View;
+    var MOD_KEYS = ["shift", "ctrl", "alt", "esc", "home", "end"];
+    require("grace/core/config").Config.registerInfo(
         {
             characterBarChars:
                 "characters to show on character bar\n\
@@ -61,25 +61,25 @@ It's a bit similar to snippets. But with a different syntax\n\
 <caption>--N-- denotes the display caption(must come before any other text example: func--N----L--function(){\t--C--}) , \
 \n--L-- a point to lock character bar scrolling see .lockScrolling\n\
 --W-- represents the word before the cursor - Note: using it will also remove the word\n",
-            showCharacterBar: 'Whether to show character bar',
+            showCharacterBar: "Whether to show character bar",
             toolbarPosition: {
-                doc: 'How to show toolbar',
-                values: ['above', 'below', [false, "Don't show"]],
+                doc: "How to show toolbar",
+                values: ["above", "below", [false, "Don't show"]],
             },
             enableModKeys: {
-                doc: 'Modifier keys to show in toolbar',
+                doc: "Modifier keys to show in toolbar",
                 values: MOD_KEYS,
                 isList: true,
             },
-            enableLockScrolling: 'Allows character bar to jump to clamp scroll',
-            enableArrowKeys: 'Whether to show directional keys',
+            enableLockScrolling: "Allows character bar to jump to clamp scroll",
+            enableArrowKeys: "Whether to show directional keys",
         },
-        'toolbars'
+        "toolbars"
     );
     var postRebuild;
-    configEvents.on('toolbars', function (e) {
+    configEvents.on("toolbars", function (e) {
         switch (e.config) {
-            case 'characterBarChars':
+            case "characterBarChars":
                 setChars(e.value());
                 break;
             default:
@@ -100,23 +100,23 @@ It's a bit similar to snippets. But with a different syntax\n\
         var element = metabar || toolbar;
         if (!element) return;
         if (key) {
-            var target = element.find('#' + key)[0];
-            var isMod = key == 'ctrl' || key == 'alt' || key == 'shift';
-            var name = target.className.split(' ');
-            setCls(name, 'mod-key-held', ev.held[key]);
+            var target = element.find("#" + key)[0];
+            var isMod = key == "ctrl" || key == "alt" || key == "shift";
+            var name = target.className.split(" ");
+            setCls(name, "mod-key-held", ev.held[key]);
             setCls(
                 name,
-                'mod-key-active',
+                "mod-key-active",
                 !isMod || (ev.pressed[key] && !ev.held[key])
             );
             setCls(
                 name,
-                'color-inactive',
+                "color-inactive",
                 isMod && !(ev.held[key] || ev.pressed[key])
             );
-            target.className = name.join(' ').replace('  ', ' '); //:)
+            target.className = name.join(" ").replace("  ", " "); //:)
         } else {
-            var all = element.find('.mod-key');
+            var all = element.find(".mod-key");
             for (var i = 0; i < all.length; i++) {
                 update(all[i].id, ev);
             }
@@ -128,19 +128,19 @@ It's a bit similar to snippets. But with a different syntax\n\
     var topEl, topBar, bottomEls, bottomBar, pageToggle;
 
     function createToolbar(pos) {
-        var bar = document.createElement('div');
-        bar.style[pos] = '0';
-        bar.className = 'toolbar sidenav-pushable';
+        var bar = document.createElement("div");
+        bar.style[pos] = "0";
+        bar.className = "toolbar sidenav-pushable";
 
         FocusManager.trap($(bar), true);
         return bar;
     }
 
     function createPageToggle(bar) {
-        bar.className += ' edge_box-1-0';
-        var toggle = document.createElement('button');
-        toggle.style.paddingLeft = '10px';
-        toggle.className = 'tool-swapper side-1';
+        bar.className += " edge_box-1-0";
+        var toggle = document.createElement("button");
+        toggle.style.paddingLeft = "10px";
+        toggle.className = "tool-swapper side-1";
         toggle.innerHTML = '<i class="material-icons">swap_horiz</i>';
         bar.insertBefore(toggle, bar.firstChild);
         var index = 0;
@@ -157,27 +157,27 @@ It's a bit similar to snippets. But with a different syntax\n\
 
     function addElement(el, above) {
         if (above) {
-            if (topEl) throw 'Error: multiple top bars';
+            if (topEl) throw "Error: multiple top bars";
             topEl = el;
             if (!topBar) {
-                topBar = $(createToolbar('top'));
-                topBar.addClass('top-bar shadow-bottom');
+                topBar = $(createToolbar("top"));
+                topBar.addClass("top-bar shadow-bottom");
             }
             topBar[0].appendChild(topEl[0]);
         } else {
             if (!bottomBar) {
                 bottomEls = [];
-                bottomBar = $(createToolbar('bottom'));
-                bottomBar.addClass('bottom-bar shadow-top');
+                bottomBar = $(createToolbar("bottom"));
+                bottomBar.addClass("bottom-bar shadow-top");
             }
             bottomEls.push(el);
             bottomBar[0].appendChild(el[0]);
             if (bottomEls.length > 1 && !pageToggle) {
                 pageToggle = createPageToggle(bottomBar[0]);
-                el[0].style.display = 'none';
+                el[0].style.display = "none";
             }
         }
-        el.addClass('fill_box');
+        el.addClass("fill_box");
     }
 
     var floatingToggle;
@@ -187,17 +187,18 @@ It's a bit similar to snippets. But with a different syntax\n\
             floatingToggle = $(
                 '<button id="toolbar-toggle" class="btn shadow-top opaque-on-hover">' +
                     '<i class="material-icons">keyboard_arrow_down</i>' +
-                    '</button>'
+                    "</button>"
             );
             floatingToggle.click(function (e) {
                 bottomView.toggle();
                 if (bottomView.hidden) {
-                    this.style.bottom = '10px';
+                    this.style.bottom = "30px";
                     floatingToggle.html(
                         '<i class="material-icons">keyboard_arrow_up</i>'
                     );
                 } else {
-                    this.style.bottom = bottomBar.css('height');
+                    this.style.bottom =
+                        parseInt(bottomBar.css("height")) + 30 + "px";
                     floatingToggle.html(
                         '<i class="material-icons">keyboard_arrow_down</i>'
                     );
@@ -213,10 +214,10 @@ It's a bit similar to snippets. But with a different syntax\n\
     var bottomView, topView;
 
     function createToolsView(tools, scrollPoints) {
-        var toolbar = document.createElement('div');
+        var toolbar = document.createElement("div");
         var lockScroll = {};
         for (var o in scrollPoints) {
-            if (typeof scrollPoints[o] == 'string') {
+            if (typeof scrollPoints[o] == "string") {
                 lockScroll[scrollPoints[o]] = true;
             } else {
                 for (var p in scrollPoints[o]) {
@@ -231,53 +232,53 @@ It's a bit similar to snippets. But with a different syntax\n\
             var command = tools[b];
             var data = allTools[command];
             if (!data) continue;
-            var icon = typeof data == 'string' ? data : data.icon;
+            var icon = typeof data == "string" ? data : data.icon;
             var text =
-                data.caption || "<i class='material-icons'>" + icon + '</i>';
-            var span = document.createElement('button');
+                data.caption || "<i class='material-icons'>" + icon + "</i>";
+            var span = document.createElement("button");
             span.innerHTML = text;
             if (data.caption) {
-                span.className = 'mod-key';
+                span.className = "mod-key";
             }
             if (lockScroll[command]) {
-                span.className += ' scroll-point';
+                span.className += " scroll-point";
             }
-            span.setAttribute('id', command);
+            span.setAttribute("id", command);
             toolbar.appendChild(span);
         }
         return toolbar;
     }
 
     function handleToolClick(e) {
-        var target = $(e.target).closest('button')[0];
+        var target = $(e.target).closest("button")[0];
         if (!target) return;
-        var id = target.getAttribute('id');
+        var id = target.getAttribute("id");
         switch (id) {
-            case 'shift':
-            case 'ctrl':
-            case 'alt':
+            case "shift":
+            case "ctrl":
+            case "alt":
                 Mods.press(id, target);
                 break;
-            case 'a-right':
-            case 'a-left':
-            case 'a-up':
-            case 'a-down':
+            case "a-right":
+            case "a-left":
+            case "a-up":
+            case "a-down":
                 Mods.dispatch(id.slice(2));
                 break;
-            case 'esc':
-            case 'home':
-            case 'end':
+            case "esc":
+            case "home":
+            case "end":
                 Mods.dispatch(id);
                 break;
-            case 'copy':
-            case 'cut':
-            case 'paste':
+            case "copy":
+            case "cut":
+            case "paste":
                 Mods.handleClipboard(id);
                 break;
-            case 'find':
-            case 'gotoline':
+            case "find":
+            case "gotoline":
             // @ts-ignore
-            case 'openCommandPallete':
+            case "openCommandPallete":
                 //require focus-
                 //may later decide to use settimeout
                 FocusManager.hintChangeFocus();
@@ -289,11 +290,11 @@ It's a bit similar to snippets. But with a different syntax\n\
     }
 
     function handleContextMenu(e) {
-        var target = $(e.target).closest('button')[0];
+        var target = $(e.target).closest("button")[0];
         if (!target) return;
-        var id = target.getAttribute('id');
+        var id = target.getAttribute("id");
         var action = allTools[id] && allTools[id].onhold;
-        if (action && action !== 'repeat' && action !== 'repeatKey') {
+        if (action && action !== "repeat" && action !== "repeatKey") {
             editor.execCommand(allTools[id].onhold);
         }
         e.preventDefault();
@@ -304,22 +305,22 @@ It's a bit similar to snippets. But with a different syntax\n\
     }
 
     function createCharactersView(chars) {
-        var bar = document.createElement('div');
+        var bar = document.createElement("div");
         for (var o in chars) {
-            var i = require('grace/core/utils')
+            var i = require("grace/core/utils")
                 .Utils.htmlEncode(chars[o])
                 .replace(/'/g, "\\'");
 
-            var caption = '';
+            var caption = "";
             var t = null;
-            if (i.indexOf('--N--') > -1) {
-                t = i.split('--N--');
+            if (i.indexOf("--N--") > -1) {
+                t = i.split("--N--");
                 caption = t[0];
                 i = t[t.length - 1];
             }
             var el = "<button value='";
-            if (i.indexOf('--L--') > -1) {
-                i = i.replace('--L--', '');
+            if (i.indexOf("--L--") > -1) {
+                i = i.replace("--L--", "");
                 el += i + "' class='scroll-point'>";
             } else {
                 el += i + "'>";
@@ -328,44 +329,44 @@ It's a bit similar to snippets. But with a different syntax\n\
             caption =
                 caption ||
                 i
-                    .replace('--C--', '')
-                    .replace(/--S--/g, '')
-                    .replace('--W--', '')
+                    .replace("--C--", "")
+                    .replace(/--S--/g, "")
+                    .replace("--W--", "")
                     .replace(
                         /\t/g,
                         "<i class='material-icons'>keyboard_tab</i>"
                     )
-                    .replace(/\n/g, '&rdsh;');
-            el += caption + '</button>';
+                    .replace(/\n/g, "&rdsh;");
+            el += caption + "</button>";
             $(bar).append(el);
             if (t) {
-                var displayLength = caption.replace(/&\w+;/g, '-').length;
+                var displayLength = caption.replace(/&\w+;/g, "-").length;
                 $(bar)
                     .children()
                     .last()
-                    .css('font-size', 60.0 / displayLength);
+                    .css("font-size", 60.0 / displayLength);
             }
         }
         return bar;
     }
 
     function handleCharClick(e) {
-        var val = $(this).attr('value');
-        if (val == '\t' /*special case*/) {
-            return Mods.dispatch('tab');
+        var val = $(this).attr("value");
+        if (val == "\t" /*special case*/) {
+            return Mods.dispatch("tab");
         }
         var target =
             FocusManager.activeElement || editor.textInput.getElement();
         var edit = TextEdit.from(target);
         var sel = edit.selection();
-        if (val.indexOf('--W--') > -1) {
+        if (val.indexOf("--W--") > -1) {
             var prec = edit.wordBefore();
             val = val.replace(/--W--/g, prec);
             edit.delete(prec.length);
         }
         val = val.replace(/--S--/g, sel);
-        var cursor_pos = val.indexOf('--C--');
-        val = val.replace('--C--', '');
+        var cursor_pos = val.indexOf("--C--");
+        val = val.replace("--C--", "");
         edit.insert(val);
         if (cursor_pos > -1) {
             edit.moveAnchor(cursor_pos - val.length);
@@ -398,29 +399,29 @@ It's a bit similar to snippets. But with a different syntax\n\
         var toRemove = MOD_KEYS;
         var totalMods = MOD_KEYS.length + 4;
         if (!appConfig.enableArrowKeys) {
-            tools.splice(tools.indexOf('a-left'), 4);
+            tools.splice(tools.indexOf("a-left"), 4);
             totalMods -= 4;
         }
-        var items = Utils.parseList(appConfig.enableModKeys || '');
+        var items = Utils.parseList(appConfig.enableModKeys || "");
         toRemove = toRemove.filter(Utils.notIn(items));
 
         var filtered = tools.filter(Utils.notIn(toRemove));
         totalMods -= tools.length - filtered.length;
         tools = filtered;
 
-        if (totalMods > 0 && appConfig.toolbarPosition !== 'below') {
+        if (totalMods > 0 && appConfig.toolbarPosition !== "below") {
             modtools = [
-                'startAutocomplete',
-                'esc',
-                'shift',
-                'ctrl',
-                'a-left',
-                'a-down',
-                'a-up',
-                'a-right',
-                'alt',
-                'home',
-                'end',
+                "startAutocomplete",
+                "esc",
+                "shift",
+                "ctrl",
+                "a-left",
+                "a-down",
+                "a-up",
+                "a-right",
+                "alt",
+                "home",
+                "end",
             ].filter(Utils.notIn(toRemove));
             tools = tools.filter(Utils.notIn(modtools));
         }
@@ -430,24 +431,24 @@ It's a bit similar to snippets. But with a different syntax\n\
             lock = ScrollLock();
         }
         var event_mousedown =
-            'ontouchstart' in window ? 'touchstart' : 'mousedown';
-        var event_mouseup = 'ontouchend' in window ? 'touchend' : 'mouseup';
+            "ontouchstart" in window ? "touchstart" : "mousedown";
+        var event_mouseup = "ontouchend" in window ? "touchend" : "mouseup";
         var event_mousemove =
-            'ontouchmove' in window ? 'touchmove' : 'mousemove';
+            "ontouchmove" in window ? "touchmove" : "mousemove";
 
         var repeat;
         if (appConfig.toolbarPosition)
             toolbar = $(
                 createToolsView(tools, [
-                    ['esc', 'shift', 'ctrl', 'a-left'],
-                    ['cut', 'copy', 'paste'],
+                    ["esc", "shift", "ctrl", "a-left"],
+                    ["cut", "copy", "paste"],
                 ])
             );
         if (modtools && modtools.length) {
             metabar = $(createToolsView(modtools));
         }
         Mods.setClipboard(
-            require('grace/ext/editor/enhanced_clipboard').clipboard
+            require("grace/ext/editor/enhanced_clipboard").clipboard
         );
 
         if (toolbar || metabar) {
@@ -457,70 +458,74 @@ It's a bit similar to snippets. But with a different syntax\n\
         }
         //not mousedown because of focus
         if (toolbar) {
-            toolbar.on('click', handleToolClick);
+            toolbar.on("click", handleToolClick);
             toolbar.on(event_mousedown, repeat.start);
             lock && toolbar.on(event_mousedown, lock.cancel);
             lock && toolbar.on(event_mouseup, lock.onRelease);
             toolbar.on(event_mouseup, repeat.end);
-            toolbar.on('scroll', repeat.cancel);
-            toolbar.on('contextmenu', handleContextMenu);
-            lock && toolbar.on('scroll', lock.onScroll);
-            addElement(toolbar, appConfig.toolbarPosition == 'above');
+            toolbar.on("scroll", repeat.cancel);
+            toolbar.on("contextmenu", handleContextMenu);
+            lock && toolbar.on("scroll", lock.onScroll);
+            addElement(toolbar, appConfig.toolbarPosition == "above");
         }
         if (metabar) {
-            metabar.on('click', handleToolClick);
+            metabar.on("click", handleToolClick);
             metabar.on(event_mousedown, repeat.start);
             metabar.on(event_mouseup, repeat.end);
-            metabar.on('scroll', repeat.cancel);
+            metabar.on("scroll", repeat.cancel);
             addElement(metabar);
         }
 
         if (appConfig.showCharacterBar) {
             charbar = $(createCharactersView(appConfig.characterBarChars));
-            charbar.on('mousedown', 'button', handleCharClick);
-            lock && charbar.on('scroll', lock.onScroll);
+            charbar.on("mousedown", "button", handleCharClick);
+            lock && charbar.on("scroll", lock.onScroll);
             lock && charbar.on(event_mousedown, lock.cancel);
             lock && charbar.on(event_mouseup, lock.onRelease);
             addElement(charbar);
-        }
-        if (bottomBar && bottomEls.length > 0 && appConfig.showToolbarToggle) {
-            if (floatingToggle) floatingToggle.show();
-            else createFloatingToggle();
-            $('#status-filename').css('left', '60px');
-        } else {
-            if (floatingToggle) floatingToggle.hide();
-            $('#status-filename').css('left', '10px');
         }
         if (bottomBar && bottomEls.length < 1) {
             bottomView.hide();
         } else if (bottomEls && bottomEls.length > 0) {
             if (!swipe) {
                 swipe = SwipeDetector(bottomBar, function () {
-                    bottomBar.css('height', 'auto');
+                    bottomBar.css("height", "auto");
                     bottomView.layout_height = bottomBar.height();
                     bottomView.parent.render();
                     if (floatingToggle)
-                        floatingToggle.css('bottom', bottomView.layout_height);
+                        floatingToggle.css(
+                            "bottom",
+                            bottomView.layout_height + 30
+                        );
                 });
                 bottomBar.on(event_mousedown, swipe.start);
                 bottomBar.on(event_mousemove, swipe.move);
                 bottomBar.click(stopPropagation);
                 bottomView = new View(bottomBar);
                 rootView.addView(bottomView, 100, 40, 0);
-                if (!pageToggle) bottomEls[0].css('padding-left', '20px');
+                if (!pageToggle) bottomEls[0].css("padding-left", "20px");
             } else {
                 bottomView.show();
                 if (bottomEls.length > 1) {
                     $(pageToggle).show();
-                    bottomBar.addClass('edge_box-1-0');
+                    bottomBar.addClass("edge_box-1-0");
                 } else {
                     if (pageToggle) {
                         $(pageToggle).hide();
-                        bottomBar.removeClass('edge_box-1-0');
+                        bottomBar.removeClass("edge_box-1-0");
                     }
-                    bottomEls[0].css('padding-left', '20px');
+                    bottomEls[0].css("padding-left", "20px");
                 }
             }
+        }
+        
+        if (bottomBar && bottomEls.length > 0 && appConfig.showToolbarToggle) {
+            if (floatingToggle) floatingToggle.show();
+            else createFloatingToggle();
+            if (floatingToggle)
+                floatingToggle.css("bottom", bottomView.layout_height + 30);
+        } else {
+            if (floatingToggle) floatingToggle.hide();
         }
 
         //todo remove topBar/bottomBar if unneeded
@@ -544,32 +549,32 @@ It's a bit similar to snippets. But with a different syntax\n\
     var updateRecordingIcon = Utils.delay(function () {
         var editor = getEditor();
         if (toolbar && editor && editor.commands.recording) {
-            $('#togglerecording', toolbar).addClass('blink');
-        } else $('#togglerecording', toolbar).removeClass('blink');
+            $("#togglerecording", toolbar).addClass("blink");
+        } else $("#togglerecording", toolbar).removeClass("blink");
     }, 100);
     var updateSaveIcon = function () {
-        var saveBtn = $('#save', toolbar);
+        var saveBtn = $("#save", toolbar);
         var doc = getActiveDoc();
-        if (!doc) saveBtn.attr('disabled', true);
-        else saveBtn.removeAttr('disabled');
-        if (doc && doc.dirty) saveBtn.addClass('indicator-unsaved');
-        else saveBtn.removeClass('indicator-unsaved');
+        if (!doc) saveBtn.attr("disabled", true);
+        else saveBtn.removeAttr("disabled");
+        if (doc && doc.dirty) saveBtn.addClass("indicator-unsaved");
+        else saveBtn.removeClass("indicator-unsaved");
     };
     var trackStatus = function (e) {
-        (e.editor || e).on('changeStatus', updateRecordingIcon);
+        (e.editor || e).on("changeStatus", updateRecordingIcon);
     };
-    var getActiveDoc = require('grace/setup/setup_editors').getActiveDoc;
-    var appEvents = require('grace/core/app_events').AppEvents;
-    var getEditor = require('grace/setup/setup_editors').getEditor;
-    var onEachEditor = require('grace/editor/editors').Editors.onEach;
+    var getActiveDoc = require("grace/setup/setup_editors").getActiveDoc;
+    var appEvents = require("grace/core/app_events").AppEvents;
+    var getEditor = require("grace/setup/setup_editors").getEditor;
+    var onEachEditor = require("grace/editor/editors").Editors.onEach;
 
-    appEvents.on('changeEditor', updateRecordingIcon);
-    appEvents.on('changeDoc', updateSaveIcon);
-    appEvents.on('docStatusChanged', updateSaveIcon);
+    appEvents.on("changeEditor", updateRecordingIcon);
+    appEvents.on("changeDoc", updateSaveIcon);
+    appEvents.on("docStatusChanged", updateSaveIcon);
     onEachEditor(trackStatus);
     editor = getEditor();
     Mods.setEditor(editor);
-    appEvents.on('changeEditor', function (e) {
+    appEvents.on("changeEditor", function (e) {
         editor = e.editor;
         Mods.setEditor(e.editor);
     });

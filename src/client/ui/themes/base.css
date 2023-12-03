@@ -201,6 +201,7 @@ button:active {
   }
 }
 
+.tab:active,
 .clipper:hover {
   background: rgba(13, 71, 161, 0.1);
 }
@@ -608,10 +609,12 @@ input:focus[readonly] {
 
 #status-bar {
   border-top: 1px solid #dddddd;
+  border-left-color: #2196f3;
 }
 
 .theme-dark #status-bar {
   border-top: 1px solid black;
+  border-left-color: #0d47a1;
 }
 
 .app-theme-dark #status-bar,
@@ -662,6 +665,7 @@ input:focus[readonly] {
   background-color: rgb(150, 150, 150);
 }
 
+
 .editor > .ace_scrollbar::-webkit-scrollbar {
   background: rgb(250, 250, 250);
   background: rgba(128, 128, 128, 0.1);
@@ -674,10 +678,12 @@ input:focus[readonly] {
 
 .editor > .ace_scrollbar::-webkit-scrollbar-thumb {
   border-color: #c0cfd8;
+  background: #2196f3;
 }
 
 .theme-dark .editor > .ace_scrollbar::-webkit-scrollbar-thumb {
   border-color: rgb(150, 150, 150);
+  background: #0d47a1;
 }
 
 /*default styling for keyboard focus, just !important the whole thing*/
@@ -727,7 +733,7 @@ input[type='checkbox'].nav-focused + span,
 
 .theme-auto .border-inactive {
   border-color: #333333;
-  border-color: rgba(0, 0, 0, 0.15);
+  border-color: rgba(64, 64, 64, 0.5);
 }
 
 .theme-auto .nav-breadcrumb {
@@ -858,15 +864,22 @@ input[type='checkbox'].nav-focused + span,
   border-color: rgb(3, 238, 3);
 }
 
+.theme-ace-gob .border-inactive {
+  border-color: rgb(10, 53, 20);
+}
 .theme-ace-gob .nav-main,
 .theme-ace-gob .shadow-bottom {
-  border-bottom: 1px solid #101010;
+  border-bottom: 1px solid rgb(20, 116, 40);
   box-shadow: none;
 }
 
 .theme-ace-gob .shadow-top {
   border-top: 2px solid #222;
   box-shadow: none;
+}
+
+.theme-ace-gob #status-bar {
+  border-left-color: rgb(20, 116, 40);
 }
 
 .theme-ace-gob #toolbar-toggle {

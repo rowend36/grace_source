@@ -6,7 +6,7 @@ module.exports = function (handleArg) {
     var results;
     var counter = createCounter(function () {
       res.status(200);
-      res.json(results);
+      res.json(results || "");
       res.end();
     });
     counter.increment();

@@ -99,7 +99,7 @@ define(function (require, exports, module) {
         return (
             '<li class="tab" data-tab="' +
             id +
-            '"><a href="#">' +
+            '"><a>' +
             '<i class="material-icons" style="width:100%">' +
             name +
             '</i></a>' +

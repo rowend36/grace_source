@@ -1,9 +1,9 @@
 define(function (require, exports, module) {
-    'use strict';
-    var vsLspProtocol = require('./libs/open_rpc_lsp').VSCodeLSP;
-    var Notify = require('grace/ui/notify').Notify;
+    "use strict";
+    var vsLspProtocol = require("./libs/open_rpc_lsp").VSCodeLSP;
+    var Notify = require("grace/ui/notify").Notify;
     //TODO: remove this dependency since we monkey patch around it for most operations.
-    var openRpc = require('./libs/open_rpc_lsp').OpenRPC;
+    var openRpc = require("./libs/open_rpc_lsp").OpenRPC;
     var RequestManager = openRpc.RequestManager;
     var Client = openRpc.Client;
     var WebSocketTransport = openRpc.WebSocketTransport;
@@ -34,15 +34,15 @@ define(function (require, exports, module) {
         this.$handleNotification = this.handleNotification.bind(this);
         this.client.onNotification(this.$handleNotification);
         this.socket.connection.addEventListener(
-            'message',
+            "message",
             function (message) {
                 //OpenRpc does not understand requests
                 const data = JSON.parse(message.data);
                 if (data.method && data.id) this.handleRequest(data);
             }.bind(this)
         );
-        this.socket.connection.addEventListener('open', this.$checkConnection);
-        this.socket.connection.addEventListener('close', this.$checkConnection);
+        this.socket.connection.addEventListener("open", this.$checkConnection);
+        this.socket.connection.addEventListener("close", this.$checkConnection);
     };
     LspTransport.prototype.checkConnection = function () {
         switch (this.socket.connection.readyState) {
@@ -50,7 +50,7 @@ define(function (require, exports, module) {
                 if (this.state & LspTransport.CONNECTING) {
                     this.state ^= LspTransport.CONNECTING;
                     this.state |= LspTransport.DISCONNECTED;
-                    this.handleInit(new Error('Failed connection.'), null);
+                    this.handleInit(new Error("Failed connection."), null);
                 }
                 //TODO Retry connection
                 break;
@@ -72,7 +72,7 @@ define(function (require, exports, module) {
         this.state |= LspTransport.INITIALIZING;
         var project = this.provider.workspace;
         this.request(
-            'initialize',
+            "initialize",
             {
                 capabilities: {
                     textDocument: {
@@ -90,7 +90,7 @@ define(function (require, exports, module) {
                             completionItem: {
                                 snippetSupport: false, //ToDo
                                 commitCharactersSupport: true,
-                                documentationFormat: ['plaintext', 'markdown'],
+                                documentationFormat: ["plaintext", "markdown"],
                                 deprecatedSupport: false,
                                 preselectSupport: false,
                                 insertReplaceSupport: true,
@@ -100,12 +100,12 @@ define(function (require, exports, module) {
                         },
                         hover: {
                             dynamicRegistration: true,
-                            contentFormat: ['plaintext', 'markdown'],
+                            contentFormat: ["plaintext", "markdown"],
                         },
                         signatureHelp: {
                             dynamicRegistration: true,
                             signatureInformation: {
-                                documentationFormat: ['plaintext', 'markdown'],
+                                documentationFormat: ["plaintext", "markdown"],
                                 activeParameterSupport: true,
                                 parameterInformation: {
                                     labelOffsetSupport: true,
@@ -173,19 +173,19 @@ define(function (require, exports, module) {
         var has;
         if (err) {
             has = {failed: true};
-            Notify.error('Failed to initialize Language Server');
+            Notify.error("Failed to initialize Language Server");
         } else {
             has = res.capabilities;
-            this.notify('initialized', {});
+            this.notify("initialized", {});
             //send this regardless of source of capabilities
-            this.notify('lspServer/didInitialize', res);
+            this.notify("lspServer/didInitialize", res);
         }
         this.capabilities = has;
         if (this.provider) {
             var prov = this.provider;
             /**@see LspClient*/
             var syncKind =
-                has.textDocumentSync && typeof has.textDocumentSync === 'object'
+                has.textDocumentSync && typeof has.textDocumentSync === "object"
                     ? has.textDocumentSync.changes
                     : has.textDocumentSync;
             if (syncKind !== vsLspProtocol.TextDocumentSyncKind.Incremental)
@@ -201,13 +201,13 @@ define(function (require, exports, module) {
     };
     LspTransport.prototype.request = function (method, params, timeout, cb) {
         if (this._debug) {
-            console.debug('Request ', method, params);
+            console.debug("Request ", method, params);
             cb = (function (cb) {
                 return function (err, res) {
                     console.log(
                         method,
-                        ' got ',
-                        err ? 'error' : 'result',
+                        " got ",
+                        err ? "error" : "result",
                         err || res
                     );
                     cb.apply(this, arguments);
@@ -215,7 +215,7 @@ define(function (require, exports, module) {
             })(cb);
         }
         if (!(this.state & LspTransport.CONNECTED))
-            return cb(new Error('Disconnected'));
+            return cb(new Error("Disconnected"));
         return this.client
             .request({method: method, params: params}, timeout)
             .then(cb.bind(this, null), cb.bind(this));
@@ -223,11 +223,11 @@ define(function (require, exports, module) {
 
     LspTransport.prototype.notify = function (method, params, cb) {
         if (!(this.state & LspTransport.CONNECTED))
-            return cb && cb(new Error('Disconnected'));
+            return cb && cb(new Error("Disconnected"));
         var conn = this.socket.connection;
         conn.send(
             JSON.stringify({
-                jsonrpc: '2.0',
+                jsonrpc: "2.0",
                 method: method,
                 params: params,
             })
@@ -250,7 +250,7 @@ define(function (require, exports, module) {
     LspTransport.prototype.handleRequest = function (request) {
         this.socket.connection.send(
             JSON.stringify({
-                jsonrpc: '2.0',
+                jsonrpc: "2.0",
                 id: request.id,
                 result: null,
             })
@@ -260,7 +260,7 @@ define(function (require, exports, module) {
     LspTransport.prototype.handleNotification = function (notification) {
         try {
             switch (notification.method) {
-                case 'textDocument/publishDiagnostics':
+                case "textDocument/publishDiagnostics":
                     var instance = this.provider.instance;
                     if (instance)
                         instance.onAnnotations(
@@ -268,7 +268,7 @@ define(function (require, exports, module) {
                             notification.params.diagnostics
                         );
                     break;
-                case 'lspServer/hasInitialized':
+                case "lspServer/hasInitialized":
                     if (notification.params) {
                         this.handleInit(null, notification.params);
                         this.provider.changeWorkspace();
@@ -278,18 +278,18 @@ define(function (require, exports, module) {
                         if (this.waitInit) this.initialize();
                     }
                     break;
-                case 'window/logMessage':
+                case "window/logMessage":
                     var d = notification.params;
                     console[
                         d.type === 1
-                            ? 'error'
+                            ? "error"
                             : d.type === 2
-                            ? 'warning'
-                            : 'debug'
-                    ]('>>>' + d.message);
+                            ? "warning"
+                            : "debug"
+                    ](">>>" + d.message);
                     break;
                 default:
-                    console.log('Unhandled notification', notification);
+                    console.log("Unhandled notification", notification);
             }
         } catch (error) {
             console.error(error);
@@ -306,9 +306,17 @@ define(function (require, exports, module) {
                 });
         }
         if (this.socket) {
+            if (this.socket.connection) {
+                this.socket.connection.removeEventListener(
+                    "close",
+                    this.$checkConnection
+                );
+                this.socket.connection.removeEventListener(
+                    "open",
+                    this.$checkConnection
+                );
+            }
             this.socket.close();
-            this.socket.removeEventListener('close', this.$checkConnection);
-            this.socket.removeEventListener('open', this.$checkConnection);
             this.socket = null;
         }
         this.state = LspTransport.DISCONNECTED;

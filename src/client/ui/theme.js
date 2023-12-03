@@ -12,7 +12,7 @@ define(function (require, exports, module) {
   var Utils = require('../core/utils').Utils;
   var appConfig = require('../core/config').Config.registerAll({
     appFontSize: 'normal',
-    useThemeForUI: true,
+    adaptiveTheme: true,
     customThemes: [],
   });
   var getSettingsEditor = require('../editor/editors').Editors
@@ -20,7 +20,7 @@ define(function (require, exports, module) {
   var themelist = require('ace!ext/themelist');
 
   require('../core/config').Config.registerInfo({
-    useThemeForUI: {
+    adaptiveTheme: {
       doc: 'Allow Editor theme to control application UI',
       values: [true, 'force', false],
     },
@@ -43,7 +43,7 @@ define(function (require, exports, module) {
 
   function onChange(ev) {
     switch (ev.config) {
-      case 'useThemeForUI':
+      case 'adaptiveTheme':
         applyTheme($('.editor-primary'), true);
         break;
       case 'customThemes':
@@ -136,8 +136,8 @@ define(function (require, exports, module) {
     var ev = themeData;
     clearClass(els, /theme|^ace/);
     if (
-      appConfig.useThemeForUI == 'force' ||
-      (appConfig.useThemeForUI == true && ev.isAppUITheme)
+      appConfig.adaptiveTheme == 'force' ||
+      (appConfig.adaptiveTheme == true && ev.isAppUITheme)
     ) {
       if (ev.isDark) {
         els.addClass('theme-dark');

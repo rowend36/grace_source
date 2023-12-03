@@ -51,8 +51,8 @@ define(function (require, exports, module) {
             editors[i].env && editors[i].env.onResize();
         }
         var viewRoot = editorView.$el[0];
-        margins.marginTop = parseInt(viewRoot.style.top) || 0;
-        margins.marginBottom = (parseInt(viewRoot.style.bottom) || 0) + 50;
+        margins.marginTop = viewRoot.offsetTop || 0;
+        margins.marginBottom = (viewRoot.offsetParent.offsetHeight - viewRoot.offsetTop - viewRoot.offsetHeight || 0) + 50;
     });
 
     //Link documents and tabs

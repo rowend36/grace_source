@@ -9,6 +9,7 @@
     margin: 0;
     line-height: 24px;
     height: 24px;
+    font-size: 0.875rem;
 }
 
 #searchResults>ul li {
@@ -23,6 +24,14 @@
 
 #search_container {
     overflow: auto;
+}
+
+#searchInfo {
+    font-size: 0.875rem;   
+}
+
+#searchStatus {
+    font-size: 0.875rem;
 }
 
 .panel-container {
@@ -44,6 +53,12 @@
 #search_container .ace_search_options {
     height: 40px;
     padding-top: 10px;
+}
+
+#search_container>.divider{
+    margin: 5px -15px 30px;
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
 }
 
 #searchResults .range_renderer {

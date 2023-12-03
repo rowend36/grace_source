@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+  <title>Hello Lezer</title>
+</head>
+
+<body>
+  <style type="text/css" media="all">
+    #output {
+      background: #dddddd;
+      border: 2px solid green;
+      width: 90vw;
+      height: 33vh;
+      margin: 10px auto;
+      overflow: scroll;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+    }
+
+    #grammar,
+    #input {
+      margin: 10px auto 0;
+      width: 90vw;
+      border-radius: 2px;
+      display: block;
+    }
+
+    .props {
+      font-size: 10px;
+    }
+
+    body {
+      background: #202020;
+      color: #eeeeee;
+    }
+  </style>
+  <script src="eruda.min.js" type="text/javascript" charset="utf-8"></script>
+  <script type="text/javascript" charset="utf-8">
+    // window.process = {
+    //   env: {
+    //     LOG: 'time'
+    //   }
+    // }
+    eruda.init([]);
+  </script>
+  <script src="./dist/lezer-generator.js" type="text/javascript" charset="utf-8"></script>
+  <pre><textarea name="grammar" id=grammar rows="8">
+@top JsonText { value }
+
+value { True | False | Null | Number | String | Object | Array }
+
+String { string }
+Object { "{" list<Property>? "}" }
+Array  { "[" list<value>? "]" }
+
+Property { PropertyName ":" value }
+PropertyName { string }
+
+
+@tokens {
+  True  { "true" }
+  False { "false" }
+  Null  { "null" }
+
+  Number { '-'? int frac? exp?  }
+  int  { '0' | $[1-9] @digit* }
+  frac { '.' @digit+ }
+  exp  { $[eE] $[+\-]? @digit+ }
+
+  string { '"' char* '"' }
+  char { $[\u{20}\u{21}\u{23}-\u{5b}\u{5d}-\u{10ffff}] | "\\" esc }
+  esc  { $["\\\/bfnrt] | "u" hex hex hex hex }
+  hex  { $[0-9a-fA-F] }
+
+  whitespace { $[ \n\r\t] }
+
+  "{" "}" "[" "]"
+}
+
+@skip { whitespace }
+list<item> { item ("," item)* }
+
+@external propSource jsonHighlighting from "./highlight"
+
+@detectDelim
+</textarea>
+<textarea name="input" id=input rows="8">
+   
+</textarea>
+</pre>
+  <label for='debug'>Step by Step Execution</label>
+  <input type='checkbox' id='debug' />
+  <label for='debug'>Incremental Parsing</label>
+  <input type='checkbox' id='incremental' />
+  <div id='output'>
+  </div>
+  <script type="text/javascript" charset="utf-8">
+    const TreeFragment = LezerGenerator.TreeFragment;
+    const debounce = ((func, delay) => {
+      let timeout;
+      return (...args) => {
+        if (timeout) clearTimeout(timeout);
+        timeout = setTimeout(() => {
+          timeout = null;
+          func(...args);
+        }, delay || 1000);
+      }
+    })
+    let _html = '';
+    const commit = debounce(() => output.innerHTML = _html, 17);
+    Object.defineProperty(output, 'asyncInnerHTML', {
+      get: () => _html,
+      set: (e) => {
+        _html = e;
+        commit()
+      }
+    });
+    const print = (...args) => {
+      output.asyncInnerHTML += '<pre>' + args.map(a => Array.isArray(a) ? a : [a, '#454545'])
+        .map(e => `<span style="color:${e[1]}">${e[0]}</span>`)
+        .join('') + '</pre>';
+    }
+    const truncate = (str, len) => str.length > len ? str.slice(0, len - 3) + '<span style="color:green">...</span>' :
+      str;
+    const getText = (str, node) => truncate(str.slice(node.from, node.to), 20)
+      .replace(/\n/g, '<small><i style="color:grey">\\n</i></small>');
+    const printNode = (str, node, depth) => {
+      print(' '.repeat(depth), [node.type.name, 'purple'], ':', ['"', node.type.isError ? 'red' : 'blue'], getText(
+          str, node) || (node.type.isError ? ['', 'red'] : ''), ['"', node.type.isError ? 'red' : 'blue'], Object
+        .keys(node.type.props)
+        .length ? objToText(node.type.props) : '')
+    }
+    const objToText = (obj) => '<i class="props">' + JSON.stringify(obj) + '</i>'
+    const startAnim = (parse) => {
+      let stopped = false;
+      let next = debounce(() => {
+        if (stopped) return;
+        output.asyncInnerHTML = '';
+        let m = parse.advance();
+        if (m) show(m);
+        else {
+          parse.stacks.forEach(e => show(parse.stackToTree(e)));
+          next();
+        }
+      }, 600);
+      next();
+      return () => stopped = true;
+    }
+    const show = (tree) => {
+      for (let [cursor, depth] of walk(tree.cursor())) {
+        printNode(input.value, cursor, depth);
+      }
+    }
+    const walk = function*(cursor, depth = 0) {
+      do {
+        yield [cursor, depth];
+        if (cursor.firstChild()) {
+          yield* walk(cursor, depth + 1);
+          cursor.parent();
+        }
+      }
+      while (cursor.nextSibling());
+    }
+    const persist = (ev) => {
+        localStorage.setItem(ev.target.id, ev.target.checked === undefined ? ev.target.value : ev.target.checked);
+      }
+      ([input, grammar, debug, incremental])
+      .forEach(e => e.type === 'checkbox' ? (e.checked = localStorage[e.id] === 'true') : (e.value = localStorage[e
+        .id] || e.value));
+    let parser, stopAnim, lastTree, lastValue;
+    let getFragments = (tree, oldVal, newVal) => {
+      let fromA = 0,
+        fromB = 0,
+        toA = oldVal.length,
+        toB = newVal.length;
+      let i = 0,
+        j = 0;
+      for (; i < toA && i < toB; i++) {
+        if (newVal.charCodeAt(i) !== oldVal.charCodeAt(i)) break;
+      }
+      for (; j < toA - i && j < toB - i; j++) {
+        if (newVal.charCodeAt(toB - j - 1) !== oldVal.charCodeAt(toA - j - 1)) break;
+      }
+      fromA = i;
+      fromB = i;
+      toA -= j;
+      toB -= j;
+      let changes = [{
+        fromA,
+        toA,
+        fromB,
+        toB,
+      }];
+      print(objToText(changes))
+      let fragments = TreeFragment.addTree(lastTree);
+      return TreeFragment.applyChanges(fragments, changes);
+    }
+    incremental.onchange = persist;
+    let build = debug.onchange = input.onkeyup = grammar.onkeyup = debounce((ev) => {
+      if (stopAnim) stopAnim();
+      if (ev) persist(ev);
+      output.asyncInnerHTML = '';
+      try {
+        if (!parser || ev.target === grammar) {
+          parser = null;
+          lastTree = null;
+          let spec = grammar.value;
+          let start = performance.now();
+          parser = LezerGenerator.buildParser(spec);
+          let dur = performance.now() - start;
+          print(`Built in ${Math.floor(dur)/1000}s`);
+        }
+        let start = performance.now();
+        let parse = parser.startParse(input.value, lastTree && incremental.checked ? getFragments(lastTree,
+          lastValue, input.value) : null);
+        if (!debug.checked) {
+          let tree;
+          while (!(tree = parse.advance()));
+          let dur = performance.now() - start;
+          print(`Parsed in ${Math.floor(dur)/1000}s`);
+          lastTree = tree;
+          lastValue = input.value;
+          show(tree);
+        } else {
+          stopAnim = startAnim(parse);
+        }
+      } catch (e) {
+        print([e.stack, "red"]);
+      }
+    });
+    build();
+  </script>
+</body>
+</html>

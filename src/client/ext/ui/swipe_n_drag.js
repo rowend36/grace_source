@@ -138,8 +138,7 @@ define(function(require, exports, module) {
             .scrollBehaviourDragImageTranslateOverride,
     });
     var dragTabs = require("./libs/drag-tabs");
-    var dragger = new dragTabs.DragTabs($(
-        "#menu")[0], {
+    var dragger = new dragTabs.DragTabs($("#docstab")[0], {
         selectors: {
             tab: ".tab",
         },

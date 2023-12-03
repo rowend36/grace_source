@@ -6,7 +6,7 @@ define(function (require, exports, module) {
     var Actions = require('grace/core/actions').Actions;
     require('grace/setup/setup_sideview');
     var appConfig = require('grace/core/config').Config.registerAll({
-        disableOptimizedFileBrowser: false,
+        disableOptimizedFileBrowser: true,
     });
     require('grace/core/config').Config.registerInfo({
         disableOptimizedFileBrowser:
@@ -69,10 +69,10 @@ define(function (require, exports, module) {
 
     function stopFind() {
         if ($('#find_file_cancel_btn').text() == 'stop') {
-            projectView.stopFind();
+            projectView.filterTask && projectView.filterTask.stop()
             $('#find_file_cancel_btn').text('refresh');
         } else {
-            projectView.cancelFind();
+            projectView.stopFind();
         }
     }
 

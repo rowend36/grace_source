@@ -113,7 +113,8 @@ define(function (require, exports, module) {
     var sendRequests = delay(function () {
         for (var i in waiting) {
             var m = waiting[i];
-            waiting[i] = null;
+            if(!m) return;
+            delete waiting[i]
             if (m.args.length === 1) {
                 request(i, Object.assign(m.data, m.args[0]), m.cbs[0]);
             } else {

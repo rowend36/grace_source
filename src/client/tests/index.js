@@ -103,18 +103,18 @@ define(function (require, exports, module) {
     mocha.checkLeaks();
 
     require([
-        // './docs/test_docs',
-        // './core/test_core',
-        // './core/test_ajax',
-        // './core/test_schema',
-        // './core/test_fs',
-        // './core/test_parser',
-        // './ext/test_shared_store',
-        // './ext/test_glob',
-        // './ext/test_config',
-        // './ext/test_tab_window',
-        // './ext/test_language',
-        // './ext/test_diff',
+        './docs/test_docs',
+        './core/test_core',
+        './core/test_ajax',
+        './core/test_schema',
+        './core/test_fs',
+        './core/test_parser',
+        './ext/test_shared_store',
+        './ext/test_glob',
+        './ext/test_config',
+        './ext/test_tab_window',
+        './ext/test_language',
+        './ext/test_diff',
         './ext/test_git',
     ], function () {
         mocha.run();

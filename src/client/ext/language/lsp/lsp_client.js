@@ -103,6 +103,7 @@ define(function (require, exports, module) {
                     trigChar,
                 ],
                 function (e, r) {
+                    console.log({e, r});
                     if (r) {
                         callback(e, buildCompletions(r, self));
                     } else callback(e);
@@ -341,6 +342,7 @@ define(function (require, exports, module) {
     function buildCompletions(completions, ts) {
         var entries;
         var MAX = 5000;
+        console.log({completions});
         entries =
             completions &&
             completions.map(function (e) {
@@ -455,15 +457,13 @@ define(function (require, exports, module) {
                     },
                     timeout,
                     function (err, items) {
-                        console.log('Got completions');
-                        console.log(err, items);
                         if (err) cb(err);
                         else {
                             items =
                                 !items || Array.isArray(items)
                                     ? items
                                     : items.items;
-                            cb(null, null);
+                            cb(null, items);
                         }
                     }
                 );

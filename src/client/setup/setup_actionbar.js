@@ -55,8 +55,7 @@ define(function (require, exports, module) {
     tabView.$el.addClass('tabs');
     FocusManager.trap(tabView.$el, true);
 
-    var tabs = new TabRenderer();
-    tabs.$el = tabView.$el;
+    var tabs = new TabRenderer(tabView.$el);
     tabs.$setSingleTabs(appConfig.singleTabLayout);
     tabs.setFadeCloseIcon();
     tabs.$el.on('click', '.tab a', tabs.getOnClickListener(DocsTab));

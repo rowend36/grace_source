@@ -1,0 +1,6 @@
+langservers:
+  typescript:
+    - npx
+    - typescript-language-server
+    - --stdio
+timeout: 3000

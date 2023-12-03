@@ -1,6 +1,6 @@
 define(function (require, exports, module) {
-    var Utils = require('../core/utils').Utils;
-    var View = require('./view').View;
+    var Utils = require("../core/utils").Utils;
+    var View = require("./view").View;
 
     /** @constructor */
     function LinearLayout(root, size, orientation) {
@@ -13,51 +13,62 @@ define(function (require, exports, module) {
     LinearLayout.HORIZONTAL = 2;
     Utils.inherits(LinearLayout, View);
     LinearLayout.prototype.render = function () {
-        var edge1 = this.orientation == LinearLayout.VERTICAL ? 'top' : 'left';
-        var edge2 =
-            this.orientation == LinearLayout.VERTICAL ? 'bottom' : 'right';
+        this.$el.css("display", "flex");
+        this.$el.css(
+            "flex-direction",
+            this.orientation === LinearLayout.VERTICAL ? "column" : "row"
+        );
+        
         var size =
-            this.orientation == LinearLayout.VERTICAL ? 'height' : 'width';
-        var totalSize = 0,
-            totalWeight = 0;
-        this.size =
-            parseInt(this.$el.css(size)) ||
-            window['inner' + Utils.sentenceCase(size)];
-        var view;
+            this.orientation == LinearLayout.VERTICAL ? "height" : "width";
         for (var i in this.views) {
-            view = this.views[i];
-            if (view.hidden) continue;
-            totalSize += view['layout_' + size] || 0;
-            totalWeight += view.layout_weight || 0;
+            this.views[i].$el.css('position','relative');
+            this.views[i].$el.css("flex-grow", this.views[i].layout_weight || 0);
+            this.views[i].$el.css(size, this.views[i][(this.views[i]["layout_" + size] || 0)])
         }
-        if (this.size < totalSize) this.size = totalSize;
-        var remSize = this.size - totalSize;
-        var sizePerWeight = remSize / (totalWeight || 1);
-        var lastPos = 0;
-        var pivot = this.views.length - 1;
-        for (i in this.views) {
-            view = this.views[i];
-            if (view.hidden) continue;
-            view[size] =
-                (view['layout_' + size] || 0) +
-                (view.layout_weight || 0) * sizePerWeight;
-            var nextPos = lastPos + view[size];
-            if (view.layout_weight) {
-                pivot = i;
-                view.$el.css(edge1, lastPos);
-                view.$el.css(edge2, this.size - nextPos);
-                view.$el.css(size, 'auto');
-            } else if (i < pivot) {
-                view.$el.css(edge1, lastPos);
-                view.$el.css(size, view[size]);
-                view.$el.css(edge2, 'auto');
-            } else {
-                view.$el.css(edge2, this.size - nextPos);
-                view.$el.css(size, view[size]);
-                view.$el.css(edge1, 'auto');
-            }
-            lastPos = nextPos;
-        }
+        // var edge1 = this.orientation == LinearLayout.VERTICAL ? "top" : "left";
+        // var edge2 =
+        //     this.orientation == LinearLayout.VERTICAL ? "bottom" : "right";
+        // var totalSize = 0,
+        //     totalWeight = 0;
+        // this.size =
+        //     parseInt(this.$el.css(size)) ||
+        //     window["inner" + Utils.sentenceCase(size)];
+        // var view;
+        // for (var i in this.views) {
+        //     view = this.views[i];
+        //     if (view.hidden) continue;
+        //     totalSize += view["layout_" + size] || 0;
+        //     totalWeight += view.layout_weight || 0;
+        // }
+        // if (this.size < totalSize) this.size = totalSize;
+        // var remSize = this.size - totalSize;
+        // var sizePerWeight = remSize / (totalWeight || 1);
+        // var lastPos = 0;
+        // var pivot = this.views.length - 1;
+        // for (i in this.views) {
+        //     view = this.views[i];
+        //     if (view.hidden) continue;
+        //     view[size] =
+        //         (view["layout_" + size] || 0) +
+        //         (view.layout_weight || 0) * sizePerWeight;
+        //     var nextPos = lastPos + view[size];
+        //     if (view.layout_weight) {
+        //         pivot = i;
+        //         view.$el.css(edge1, lastPos);
+        //         view.$el.css(edge2, this.size - nextPos);
+        //         view.$el.css(size, "auto");
+        //     } else if (i < pivot) {
+        //         view.$el.css(edge1, lastPos);
+        //         view.$el.css(size, view[size]);
+        //         view.$el.css(edge2, "auto");
+        //     } else {
+        //         view.$el.css(edge2, this.size - nextPos);
+        //         view.$el.css(size, view[size]);
+        //         view.$el.css(edge1, "auto");
+        //     }
+        //     lastPos = nextPos;
+        // }
         this.onRender();
     };
     LinearLayout.prototype.onContentChanged = function () {
@@ -66,8 +77,8 @@ define(function (require, exports, module) {
     LinearLayout.prototype.addView = function (view, index, size, weight) {
         view.layout_weight = weight;
         view[
-            'layout_' +
-                (this.orientation == LinearLayout.VERTICAL ? 'height' : 'width')
+            "layout_" +
+                (this.orientation == LinearLayout.VERTICAL ? "height" : "width")
         ] = size;
         View.prototype.addView.apply(this, arguments);
         return view;

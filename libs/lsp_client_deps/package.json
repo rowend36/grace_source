@@ -1,0 +1,17 @@
+{
+  "name": "grace-lsp",
+  "version": "0.0.1",
+  "description": "Bundle dependencies for grace lsp server",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@open-rpc/client-js": "^1.7.1",
+    "events": "^3.3.0",
+    "vscode-languageserver-types": "^3.17.2",
+    "vscode-languageserver-protocol": "^3.17.2"
+  }
+}

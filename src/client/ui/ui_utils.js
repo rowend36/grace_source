@@ -66,7 +66,7 @@ define(function (require, exports, module) {
             chunks.reverse().forEach(function (e, i) {
                 var span = document.createElement('span');
                 span.className = 'clipper-text';
-                span.innerText = (i < t ? '/' : '') + e;
+                span.innerHTML = (i < t ? '/' : '') + e;
                 clipper.appendChild(span);
             });
         });

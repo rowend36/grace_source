@@ -1,0 +1,12 @@
+[submodule "libs/git"]
+	path = libs/git
+	url = git@github.com:ROWEND36/grace_source.git
+	branch = git
+[submodule "libs/ace"]
+	path = libs/ace
+	url = git@github.com:ROWEND36/grace_source.git
+	branch = ace
+[submodule "libs/tern_worker/tern"]
+	path = libs/tern_worker/tern
+	url = git@github.com:ROWEND36/grace_source.git
+	branch = tern

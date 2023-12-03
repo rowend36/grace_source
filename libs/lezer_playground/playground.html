@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+  <title>Hello Lezer</title>
+</head>
+
+<body>
+  <style type="text/css" media="all">
+    #outputDiv {
+      background: #dddddd;
+      border: 2px solid green;
+      width: 90vw;
+      height: 33vh;
+      margin: 10px auto;
+      overflow: scroll;
+    }
+
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+    }
+
+    #inputDiv {
+      margin: 10px auto 0;
+      width: 90vw;
+      border-radius: 2px;
+      display: block;
+      height: 50vh;
+    }
+
+    .props {
+      font-size: 10px;
+    }
+
+    body {
+      background: #202020;
+      color: #eeeeee;
+    }
+  </style>
+  <script src="eruda.min.js" type="text/javascript" charset="utf-8"></script>
+  <script src="./proxy.js" type="text/javascript" charset="utf-8"></script>
+  <script src="print_object.js" type="text/javascript" charset="utf-8"></script>
+  <script type="text/javascript" charset="utf-8">
+    // window.process = {
+    //   env: {
+    //     LOG: 'time'
+    //   }
+    // }
+    eruda.init([]);
+  </script>
+  <pre>
+<textarea name="inputDiv" id=inputDiv rows="8">
+   
+</textarea>
+</pre>
+  <label for='debug'>Step by Step Execution</label>
+  <input type='checkbox' id='debug' />
+  <div id='outputDiv'>
+  </div>
+  <script type="text/javascript" charset="utf-8">
+    const debounce = ((func, delay) => {
+      let timeout;
+      const m = (...args) => {
+        if (timeout) clearTimeout(timeout);
+        timeout = setTimeout(() => {
+          timeout = null;
+          func(...args);
+        }, delay || 1000);
+      }
+      m.cancel = () => clearTimeout(timeout);
+      return m;
+    })
+    let _html = '';
+    const commit = debounce(() => outputDiv.innerHTML = _html, 17);
+    Object.defineProperty(outputDiv, 'asyncInnerHTML', {
+      get: () => _html,
+      set: (e) => {
+        if (e.length > 20000) e = truncate(e, 20000)
+        _html = e;
+        commit()
+      }
+    });
+    const print = (...args) => {
+      outputDiv.asyncInnerHTML += '<pre>' + args.map(a => Array.isArray(a) ? a : [a, '#454545'])
+        .map(e => `<span style="color:${e[1]}">${e[0]}</span>`)
+        .join('') + '</pre>';
+    }
+    const truncate = (str, len) => str.length > len ? str.slice(0, len - 3) + '<span style="color:green">...</span>' :
+      str;
+    const objToText = (obj) => {
+      return '<i class="props">' + truncate(printObject(obj), 10000) + '</i>';
+    }
+    const startAnim = (parse) => {
+      let stopped = false;
+      let next = debounce(() => {
+        if (stopped) return;
+        outputDiv.asyncInnerHTML = '';
+      }, 600);
+      next();
+      return () => stopped = true;
+    }
+    const createURL = (e) => {
+      setTimeout(() => print(...(run.toString()
+          .replace(/\$\w+\$/g, (e) => eval(e.slice(1, -1))
+            .toString()) + ')()')
+        .split('\n')
+        .map((e, i) => '<pre><small>' + (1 + i) + ':' + e + '</small></pre>')), 3000)
+      return URL.createObjectURL(new Blob(['(' + e.toString()
+        .replace(/\$\w+\$/g, (e) => eval(e.slice(1, -1))
+          .toString()) + ')()'
+      ]));
+    }
+    const run = () => {
+      let debounce = $debounce$;
+      self.OPEN = "$OPEN$";
+      self.CLOSE = "$CLOSE$";
+      self.noop = $noop$;
+      self.cyclic = $cyclic$;
+      self.printObject = $printObject$;
+      const [parseMessage, sendMessage] = ($proxy$)(postMessage);
+      let output = [];
+      let sendOutput = () => {
+        postOutput.cancel();
+        sendMessage({
+          output: output.slice(0)
+        });
+        output.length = 0;
+        start = Date.now();
+      }
+      let postOutput = debounce(sendOutput, 20);
+      let start = 0;
+      let log = (...data) => {
+        if (output.length > 100) {
+          output.shift();
+          output[0] = ['warn', 'Truncated'];
+        }
+        output.push(data);
+        if (!output.length) {
+          postOutput();
+          start = Date.now();
+        } else if (Date.now() - start > 500) {
+          sendOutput();
+        }
+      };
+      self.console = {};
+      (['log', 'warn', 'error', 'debug'])
+      .forEach(e => self.console[e] = log.bind(null, e));
+      self.onmessage = ({
+        data
+      }) => {
+        if (parseMessage(data)) return;
+        let m, err;
+        try {
+          m = eval(data);
+        } catch (e) {
+          err = e;
+        }
+        sendOutput();
+        Promise.resolve(m)
+          .then(e => {
+            sendMessage({
+              m: e,
+              err: err && err.stack
+            });
+          }, err => {
+            sendMessage({
+              err: err && err.stack,
+              m
+            })
+          });
+      };
+    };
+    let destroyWorker = debounce(() => {
+      print(['Worker Terminated', 'red']);
+      worker.terminate();
+      worker = null;
+      waiting = 0;
+    }, 50000);
+    let waiting = 0;
+    let url;
+    let worker;
+    const remoteOutput = (e) => {
+      let color = {
+        log: 'blue',
+        warn: 'orange',
+        debug: 'grey',
+        error: 'red'
+      }
+      if (e.output.length) e.output.forEach(function(f) {
+        let [method, ...e] = f;
+        if (e.length > 1) print([objToText(e), color[method]]);
+        else print([e[0] && typeof e[0] === 'object' ? objToText(e[0]) : e[0], color[method]]);
+      });
+    }
+    let last = null;
+    const flush = async (d) => {
+      while (last) await last;
+      last = d;
+      try {
+        return await d;
+      } catch (e) {
+        console.error('Flush failed', e);
+      } finally {
+        last = null;
+      }
+    }
+    const sval = async function(code) {
+      if (!worker) {
+        url = url || createURL(run);
+        worker = new Worker(url);
+        const [parseMessage, , invoke] = proxy(worker.postMessage.bind(worker));
+        worker.onmessage = async ({
+          data,
+          target
+        }) => {
+          let res = parseMessage(data);
+          if (res) {
+            if (res === true) return;
+            data = res.toValue();
+          }
+          data = await flush(data);
+          if (target !== worker) print('Old output');
+          if (data.output) {
+            remoteOutput(data);
+          } else {
+            if (data.err !== undefined) print('Error: ', [data.err, 'red']);
+            else print('Result: ', objToText(data.m));
+            if (target !== worker) {
+              print('Old output end');
+              z
+              return;
+            }
+            print('Done')
+            if (--waiting === 0) destroyWorker.cancel();
+          }
+        }
+        worker.onerror = (e) => {
+          print([e.message, 'red'], ' Line ' + e.lineno, ', column ' + e.colno);
+        }
+        try {
+          await invoke(null, 'setProp', ['alert', alert]);
+          let _console = await invoke(null, 'getProp', ['console']);
+          await invoke(_console, 'setProp', ['time', console.time]);
+          await invoke(_console, 'setProp', ['timeEnd', console.timeEnd]);
+        } catch (e) {
+          console.error('Failed to set props ', e)
+        }
+      }
+      waiting++;
+      worker.postMessage(code);
+      destroyWorker();
+    }
+    const persist = (ev) => {
+        localStorage.setItem(ev.target.id, ev.target.checked === undefined ? ev.target.value : ev.target.checked);
+      }
+      ([inputDiv, debug])
+      .forEach(e => e.type === 'checkbox' ? (e.checked = localStorage[e.id] === 'true') : (e.value = localStorage[e
+        .id] || e.value));
+    let stopAnim;
+    let lastVal = '';
+    let build = debug.onchange = inputDiv.onkeyup = debounce((ev) => {
+      if (inputDiv.value === lastVal) return;
+      lastVal = inputDiv.value;
+      if (stopAnim) stopAnim();
+      if (ev) persist(ev);
+      outputDiv.asyncInnerHTML = '';
+      try {
+        let start = performance.now();
+        if (!debug.checked) {
+          sval(inputDiv.value);
+        } else {
+          stopAnim = startAnim(parse);
+        }
+      } catch (e) {
+        print([e.stack, "red"]);
+      }
+    });
+    // build();
+    let proxy1 = proxy(async (ev) => {
+      let res = proxy2[0](ev);
+      if (res && res !== true) {
+        console.log((await res.toValue(2)));
+      }
+    });
+    let proxy2 = proxy((ev) => {
+      proxy1[0](ev);
+    });
+    proxy1[1]({
+      'hello': 'Hie',
+      '34': '39393',
+      a: window
+    })
+  </script>
+</body>
+</html>

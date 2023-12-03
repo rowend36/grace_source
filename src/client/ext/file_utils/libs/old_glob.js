@@ -181,9 +181,10 @@ define(function (require, exports, module) {
                         return dotstar;
                     }
                     //**/?*
-                    // if (starHeight === 3) {
-                    star   ght = 4;
-                           star;
+                    if (starHeight === 3) {
+                        starHeight = 4;
+                        return star
+                    }
                     
                 }
                 if (double_star) {

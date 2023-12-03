@@ -19,11 +19,9 @@ define(function (require, exports, module) {
             this.ID_ATTR +
             '=' +
             id +
-            '><a href=#' +
-            id +
-            ' >' +
+            '><a  >' +
             name +
-            '<i class="material-icons close-icon tab-close-icon">close</i></a></li>'
+            '<i class="material-icons close-icon tab-close-icon red-text">close</i></a></li>'
         );
     };
     TabRenderer.prototype.createAnnotationItem = function (anno) {
@@ -66,8 +64,8 @@ define(function (require, exports, module) {
             if (closeIcon.css('display') !== 'none') {
                 return closeIcon.fadeIn(0);
             }
-            var otherIcons = $el.children().not(tab).find(m);
-            otherIcons.finish().fadeOut(0);
+            // var otherIcons = $el.children().not(tab).find(m);
+            // otherIcons.finish().fadeOut(0);
             closeIcon
                 .delay(17) //hack to prevent receiving click event
                 .fadeIn('fast')
@@ -86,7 +84,7 @@ define(function (require, exports, module) {
                         Node.DOCUMENT_POSITION_CONTAINED_BY
                     ))
             ) {
-                (e.type === 'mouseout' ? mouseleave : mouseenter).call(tab);
+                (e.type === 'mouseout' ? mouseleave : mouseenter).call(this);
             }
         });
     };
