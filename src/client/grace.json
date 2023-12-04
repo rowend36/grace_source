@@ -31,7 +31,7 @@
       semi: true,
 
       // Use single quotes instead of double quotes.
-      singleQuote: false,
+      singleQuote: true,
 
       // Print trailing commas wherever possible when multi-line.
       // --->es5

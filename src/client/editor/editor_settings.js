@@ -79,12 +79,16 @@ define(function (require, exports, module) {
     };
     //default settings for editors
     var editorDefaults = {
-        theme: 'ace/theme/cobalt',
+        theme: 'ace/theme/one_dark',
         hideNonLatinChars: false,
         readOnly: false,
         fontSize: 12,
+        fontFamily: 'Fira Code',
         annotateScrollbar: true,
         wrap: false,
+        cursorStyle: 'slim',
+        keyboardHandler: 'ace/keyboard/vscode',
+        scrollableGutter: true,
         useNativeContextMenu: true,
     };
     //runtime class

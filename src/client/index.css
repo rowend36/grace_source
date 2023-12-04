@@ -690,6 +690,12 @@ input[type='url'] {
 
 /*endregion*/
 /*region materialize*/
+.toast{
+    font-size: 0.875rem;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
 .modal .toast-icon {
     font-size: 1em;
     display: inline-block;

@@ -77,6 +77,11 @@ requirejs.config({
 
 requirejs.onError = function (err) {
   if (err.requireType === "scripterror" || err.requireType === "timeout") {
+    require(["grace/ui/notify"], function (mod) {
+      mod.Notify.error(
+        "This feature needs an internet connection for first use."
+      );
+    });
     setTimeout(function () {
       err.requireModules.forEach(function (moduleId) {
         if (requirejs.specified(moduleId) && !requirejs.defined(moduleId))
