@@ -1,5 +1,5 @@
 cd libs/
-git clone https://github.com/rowend36/grace_source --branch ace
+git clone https://github.com/rowend36/grace_source.git --branch ace
 rmdir ace
 mv grace_source ace
 cd ace
