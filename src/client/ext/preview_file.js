@@ -210,6 +210,7 @@ define(function (require, exports, module) {
         png: previewImage,
         gif: previewImage,
         jpeg: previewImage,
+        ico: previewImage,
         mp4: previewVideo,
         "3gp": previewVideo,
         mp3: previewAudio,

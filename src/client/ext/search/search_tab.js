@@ -26,6 +26,7 @@ define(function (require, exports, module) {
     var SearchResults, SearchReplace, SearchList;
     var Doc = require('grace/docs/document').Doc;
     var FocusManager = require('grace/ui/focus_manager').FocusManager;
+    var after = require('grace/core/depend').after;
     
     var configure = require('grace/core/config').Config.configure;
     var ConfigEvents = require('grace/core/config').Config;
@@ -426,7 +427,7 @@ define(function (require, exports, module) {
         }
         var searchResults, searchReplace;
         //Make this bit load asynchronously
-        find = require('grace/core/depend').after(function (cb) {
+        find = after(function (cb) {
             require([
                 './search_list',
                 './search_results',
@@ -603,7 +604,7 @@ define(function (require, exports, module) {
         }, 60000);
 
         var createWorker; // :D All this work to save one event loop.
-        var workerSearch = require('grace/core/depend').after(
+        var workerSearch = after(
             function (cb) {
                 require(['./search_worker'], function (mod) {
                     createWorker = mod.createWorker;

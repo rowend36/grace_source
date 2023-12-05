@@ -13,7 +13,7 @@ define(function (require, exports, module) {
     var ServerHost = require('grace/ext/language/server_host').ServerHost;
     var override = require('override');
     var revert = require('revert');
-    const ensureCb = require('ensureCb');
+    var ensureCb = require('ensureCb');
     require('ace!mode/javascript');
     exports.createTests = function (provider) {
         var editor, plugin;

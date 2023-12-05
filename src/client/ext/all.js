@@ -27,6 +27,7 @@ define(function (require) {
   require('css!grace/libs/css/materialize-colors');
 
   //run
+  require('./run/previewer');
   require('./run/run_button');
   require('./run/node');
   require('./run/svg');

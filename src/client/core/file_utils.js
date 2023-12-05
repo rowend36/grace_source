@@ -47,6 +47,7 @@ define(function (require, exports, module) {
         '.tar',
         '.jar',
         '.png',
+        '.pdf',
         '.jpg',
         '.jpeg',
         '.ttf',
